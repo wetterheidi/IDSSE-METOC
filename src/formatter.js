@@ -14,13 +14,17 @@ function getUnitMode(profile) {
 export function formatSpeed(value_kmh, profile) {
     const mode = getUnitMode(profile);
     const unit = UNITS[mode].speed;
-    let value = value_kmh;
 
+    // PRÜFUNG HINZUFÜGEN
+    if (value_kmh === null || !isFinite(value_kmh)) {
+        return { value: 'N/A', unit: unit };
+    }
+    
+    let value = value_kmh;
     if (mode === 'aviation') {
         value = value_kmh * CONVERSIONS.KMH_TO_KTS;
     }
-    
-    return { value: value.toFixed(0), unit: unit }; // Runden auf 0 Nachkommastellen
+    return { value: value.toFixed(0), unit: unit };
 }
 
 /**
@@ -29,14 +33,17 @@ export function formatSpeed(value_kmh, profile) {
 export function formatAltitude(value_m, profile) {
     const mode = getUnitMode(profile);
     const unit = UNITS[mode].altitude;
-    let value = value_m;
 
-    if (mode === 'aviation') {
-        value = value_m * CONVERSIONS.METER_TO_FEET;
-        // Piloten runden oft auf die nächsten 100 Fuß
-        value = Math.round(value / 100) * 100; 
+    // PRÜFUNG HINZUFÜGEN
+    if (value_m === null || !isFinite(value_m)) {
+        return { value: 'N/A', unit: unit };
     }
     
+    let value = value_m;
+    if (mode === 'aviation') {
+        value = value_m * CONVERSIONS.METER_TO_FEET;
+        value = Math.round(value / 100) * 100; 
+    }
     return { value: value.toFixed(0), unit: unit };
 }
 
@@ -46,7 +53,12 @@ export function formatAltitude(value_m, profile) {
 export function formatTemp(value_c, profile) {
     const mode = getUnitMode(profile);
     const unit = UNITS[mode].temp;
-    // (Hier käme die °F Umrechnung hin, falls wir sie wollen)
+
+    // PRÜFUNG HINZUFÜGEN
+    if (value_c === null || !isFinite(value_c)) {
+        return { value: 'N/A', unit: unit };
+    }
+    
     return { value: value_c.toFixed(1), unit: unit };
 }
 
@@ -54,5 +66,9 @@ export function formatTemp(value_c, profile) {
  * Formatiert %-Werte (Niederschlag)
  */
 export function formatPercent(value_perc, profile) {
+    // Fängt null, undefined, -Infinity, +Infinity ab
+    if (value_perc === null || !isFinite(value_perc)) {
+        return { value: 'N/A', unit: '%' }; // Zeige "N/A" statt Absturz
+    }
      return { value: value_perc.toFixed(0), unit: '%' };
 }

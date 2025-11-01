@@ -73,18 +73,22 @@ function handleAutoupdateChange(isEnabled) {
 
 /**
  * Führt den automatischen Voll-Check aus und aktualisiert das Dashboard.
- * (Version 2.0: Sequenziell, um API-Limits (429) zu vermeiden)
+ * (Version 3.0: Sequenziell UND holt gridPoints für Tiling)
  */
 async function runAndUpdateDashboard() {
     ui.setDashboardMessage(`<p>Prüfe ${await db.getProfileCount()} Profile...</p>`);
 
     const profiles = await db.getProfiles();
-    const results = []; // Hier sammeln wir die Ergebnisse
+    const results = [];
 
-    // --- NEU: Sequenzielle Schleife statt Promise.all ---
-    // Wir nutzen 'for...of', weil es 'await' in der Schleife erlaubt.
+    // Wir rufen die "Live"-Version von getGridPoints, da der Demo-Schalter
+    // erst *innerhalb* von fetchAndCheckProfile greift.
+    const gridPointGetter = (getWeatherModule() === weather_MOCK)
+        ? weather_MOCK.getGridPoints
+        : weather_LIVE.getGridPoints;
+
     for (const profile of profiles) {
-        // 1. Profil aufbereiten (wie vorher)
+
         const profileData = {
             id: profile.id,
             name: profile.name,
@@ -92,46 +96,45 @@ async function runAndUpdateDashboard() {
             geojson: JSON.parse(profile.geojsonString)
         };
 
-        // (Wir rufen die "Live"-Version auf, da dies der Live-Check ist)
-        const { gridPoints, error } = weather_LIVE.getGridPoints(profileData.geojson);
-
-        if (error) {
-            results.push({ profile: profileData, summary: weather_LIVE.getEmptySummary() });
-            continue; // Nächstes Profil
+        // KUGELSICHERER CHECK: Hat das Profil eine Form?
+        if (!profileData.geojson) {
+            console.warn(`Profil "${profileData.name}" wird übersprungen (keine Geometrie).`);
+            continue;
         }
 
-        // 2. WARTEN, bis dieser eine Aufruf fertig ist
+        const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
+        if (error) {
+            results.push({ profile: profileData, summary: weather_LIVE.getEmptySummary() });
+            continue;
+        }
+
         const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
-        // 3. Ergebnis sammeln
+
         results.push({ profile: profileData, summary: summary });
-
-        // (Optional: Eine kleine künstliche Pause, um ganz sicher zu gehen)
-        // await new Promise(resolve => setTimeout(resolve, 200)); // 200ms Pause
     }
-    // --- Ende der neuen Schleife ---
 
-    // Filtern und anzeigen (wie vorher)
-    const activeAlarms = results.filter(r =>
-        (r.summary.wind && r.summary.wind.triggered) ||
-        (r.summary.temp && r.summary.temp.triggered) ||
-        (r.summary.vis && r.summary.vis.triggered) ||
-        (r.summary.cloud && r.summary.cloud.triggered) ||
-        (r.summary.precip && r.summary.precip.triggered)
-    );
+    const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
 
     ui.displayAutoWarnings(activeAlarms);
 }
 
 /**
  * Wird aufgerufen, wenn ein Profil manuell geprüft werden soll.
+ * (Version 3.0: KORRIGIERT für Tiling-Engine)
  */
 async function handleManualCheck(profileData) {
+    // KUGELSICHERER CHECK: Hat das Profil eine Form?
+    if (!profileData.geojson) {
+        alert("Fehler: Dieses Profil hat keine gezeichnete Form. Bitte löschen und neu anlegen.");
+        ui.setManualMonitorMessage(`<p>Fehler: Profil "${profileData.name}" hat keine Geometrie.</p>`);
+        return;
+    }
+
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
 
-    // 1. Punkte "offline" berechnen (kein API-Call)
-    const { gridPoints, error } = getWeatherModule().getGridPoints(profileData.geojson);
-
+    // 1. Punkte "offline" berechnen (Demo-Modus-kompatibel)
+    const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
     if (error) {
         ui.setManualMonitorMessage(`<p>Fehler beim Berechnen der Punkte: ${error}</p>`);
         return;
@@ -147,7 +150,8 @@ async function handleManualCheck(profileData) {
     // 4. Ergebnisse speichern & anzeigen
     currentManualProfile = profileData;
     currentManualSummary = summary;
-    ui.displayManualWarning(profileData, summary);
+    ui.displayManualWarning(profileData, summary); // <-- Aktualisiert die Matrix
+    charts.updateWeatherChart(profileData, summary); // <-- HIER IST DIE REPARATUR
     map.visualizeWarnings(currentManualSummary, currentSliderHour);
 }
 

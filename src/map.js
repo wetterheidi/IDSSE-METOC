@@ -108,14 +108,22 @@ export const visualizeWarnings = (summary, hour) => {
 
 /**
  * Zeichnet die Sampling-Punkte (grau)
+ * (Version 2.0: Filtert nicht mehr selbst, zeichnet nur 'gridPoints')
  */
 export const drawSamplePoints = (gridPoints, geojson) => {
     samplePointsLayer.clearLayers();
+
+    // KUGELSICHERER CHECK:
+    if (!gridPoints || !gridPoints.features) {
+        console.warn("drawSamplePoints: 'gridPoints' ist ungültig, nichts zu zeichnen.");
+        return;
+    }
     
-    // Filtere die Punkte, die *innerhalb* des Polygons liegen
-    const pointsInside = turf.pointsWithinPolygon(gridPoints, geojson);
-    
-    pointsInside.features.forEach(pointFeature => {
+    // Wir filtern nicht mehr (das macht getGridPoints), wir zeichnen einfach
+    gridPoints.features.forEach(pointFeature => {
+        // KUGELSICHERER CHECK für GeoJSON-Punkt
+        if (!pointFeature || !pointFeature.geometry || !pointFeature.geometry.coordinates) return;
+        
         const coords = pointFeature.geometry.coordinates;
         const latLng = [coords[1], coords[0]]; // Leaflet braucht [Lat, Lon]
         L.circleMarker(latLng, {

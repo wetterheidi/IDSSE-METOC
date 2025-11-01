@@ -3,9 +3,15 @@ import { DB_NAME, DB_VERSION, STORES } from './config.js';
 
 // 1. Datenbank initialisieren und exportieren
 export const db = new Dexie(DB_NAME);
-db.version(DB_VERSION).stores(STORES);
 
-console.log("Lokale Dexie-Datenbank initialisiert (Version " + DB_VERSION + ").");
+// NEU: Version 3 mit dem weatherCache
+db.version(3).stores({
+  profiles: '++id, name',
+  templates: '++id, name',
+  weatherCache: 'id' // 'id' wird unser Cache-Schlüssel (z.B. "profilID_modell_laufzeit")
+});
+
+console.log("Lokale Dexie-Datenbank initialisiert (Version " + db.verno + ").");
 
 // --- PROFIL-FUNKTIONEN ---
 
@@ -32,9 +38,6 @@ export const getTemplates = () => db.templates.toArray();
 export const getTemplate = (id) => db.templates.get(id);
 export const saveTemplate = (template) => db.templates.add(template);
 
-/**
- * Holt einen Eintrag aus dem Wetter-Cache.
- */
 export const getCache = (key) => {
     try {
         return db.weatherCache.get(key);
@@ -43,10 +46,6 @@ export const getCache = (key) => {
         return null;
     }
 };
-
-/**
- * Schreibt einen Eintrag in den Wetter-Cache.
- */
 export const setCache = (key, summary) => {
     try {
         return db.weatherCache.put({
@@ -56,6 +55,5 @@ export const setCache = (key, summary) => {
         });
     } catch (e) {
         console.error("Cache-Schreibfehler:", e);
-        // Nicht-kritischer Fehler, wir loggen ihn nur
     }
 };
