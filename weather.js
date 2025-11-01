@@ -60,10 +60,12 @@ export function checkThresholds(profile, data, geojson) {
     }
 
     const timeStamps = data.hourly.time.map(t => new Date(t).getHours());
-    timeStamps.forEach(hour => {
-        statusParams.forEach(param => {
-            if (summary[param]) summary[param].hourlyStatus[hour] = 'ok';
-        });
+    timeStamps.forEach((hour, h) => {
+        summary.wind.hourlyData[h] = -Infinity;
+        summary.temp.hourlyData[h] = +Infinity;
+        summary.vis.hourlyData[h] = +Infinity;
+        summary.cloud.hourlyData[h] = +Infinity;
+        summary.precip.hourlyData[h] = -Infinity;
     });
 
     const gridLats = data.latitude;
@@ -94,6 +96,19 @@ export function checkThresholds(profile, data, geojson) {
             const hour = timeStamps[h];
             const dataIndex = (i * numHours) + h;
             let currentStatus;
+
+            const wind = h_wind[dataIndex];
+            const temp = h_temp[dataIndex];
+            const vis = h_vis[dataIndex];
+            const cloud = h_cloud[dataIndex];
+            const precip = h_precip[dataIndex];
+
+            // Speichere den jeweils "schlimmsten" Wert für diese Stunde
+            if (wind > summary.wind.hourlyData[h]) summary.wind.hourlyData[h] = wind;
+            if (temp < summary.temp.hourlyData[h]) summary.temp.hourlyData[h] = temp;
+            if (vis < summary.vis.hourlyData[h]) summary.vis.hourlyData[h] = vis;
+            if (cloud !== null && cloud < summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud;
+            if (precip > summary.precip.hourlyData[h]) summary.precip.hourlyData[h] = precip;
 
             // Wind
             if (rules.maxWind) {
@@ -242,12 +257,12 @@ export async function getGridPoints(geojson) {
  */
 export function getEmptySummary() {
     return {
-        // HINWEIS: 'affectedPoints' wurde entfernt
-        wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {} },
-        temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: {} },
-        vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {} },
-        cloud: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {} },
-        precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {} },
+        // 'hourlyData' ist NEU. Es speichert die 24-Stunden-Zeitreihe.
+        wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        cloud: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
         combined: { triggered: false, hourlyStatus: {} },
         error: null
     };
