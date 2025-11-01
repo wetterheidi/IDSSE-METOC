@@ -363,3 +363,70 @@ button:hover {
     box-shadow: var(--shadow);
     z-index: 3000;
 }
+
+/* --- NEU: Footer-Tab-System --- */
+.page-footer {
+    /* Wir überschreiben das alte Padding und nutzen Flexbox */
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.footer-tabs {
+    flex-shrink: 0; /* Verhindert, dass die Tabs schrumpfen */
+    background: #e9ecef; /* Helles Grau */
+    border-bottom: 1px solid var(--border-color);
+    padding-left: 10px;
+}
+
+.footer-tab {
+    /* Setzt Button-Styles zurück, die wir global gesetzt haben */
+    width: auto;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 10px 15px;
+    margin: 0;
+    font-size: 1em;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 0;
+}
+.footer-tab:hover {
+    background: #fff;
+    color: var(--text-primary);
+}
+.footer-tab.active {
+    background: var(--background-surface); /* Weiß */
+    color: var(--color-primary); /* Blau */
+    border-bottom: 3px solid var(--color-primary);
+}
+
+.footer-content {
+    flex-grow: 1; /* Füllt den Rest des Footers */
+    position: relative; /* Wichtig für Umschaltung */
+    overflow: auto; /* HIER wird gescrollt */
+}
+
+.footer-tab-content {
+    display: none; /* Alle Inhalte standardmäßig versteckt */
+    padding: 10px;
+}
+.footer-tab-content.active {
+    display: block; /* Nur der aktive Inhalt wird gezeigt */
+}
+
+/* Anpassung für den Monitor, da er jetzt ein Tab ist */
+#manualWarningMonitor {
+    /* Das Padding kommt jetzt vom Eltern-Container */
+    padding: 0; 
+}
+
+/* Wichtig: Sorgt dafür, dass der Graph nicht überläuft */
+#graphContainer {
+    position: relative;
+    /* Höhe = 100% des Footers - Tabs - Padding */
+    height: calc(250px - 45px - 20px); 
+    width: 100%;
+}

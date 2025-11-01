@@ -20,9 +20,9 @@
 
         <header class="page-header">
             IDSSE-M Cockpit
-                        <div id="slider-container">
+            <div id="slider-container">
                 <div class="slider-content-wrapper">
-                    
+
                     <div class="time-row">
                         <span id="selectedTime">Ausgewählte Zeit: --:--</span>
                         <div id="autoupdateToggle">
@@ -30,13 +30,13 @@
                             <input type="checkbox" id="autoupdateCheckbox">
                         </div>
                     </div>
-                    
+
                     <div class="slider-wrapper">
                         <div id="slider-track-highlight"></div>
                         <input type="range" id="timeSlider" min="0" max="23" value="0" disabled>
                         <div id="slider-labels"></div>
                     </div>
-                    
+
                     <div id="model-row">
                         <label id="modelLabel" for="modelSelect" title="Modell-Lauf">Modell:</label>
                         <select id="modelSelect">
@@ -129,8 +129,22 @@
         <div id="map"></div>
 
         <footer class="page-footer">
-            <div id="manualWarningMonitor">
-                Keine manuelle Prüfung aktiv.
+
+            <div class="footer-tabs">
+                <button id="showMatrixTab" class="footer-tab active">Ampel-Matrix</button>
+                <button id="showGraphTab" class="footer-tab">24h-Graph</button>
+            </div>
+
+            <div class="footer-content">
+
+                <div id="manualWarningMonitor" class="footer-tab-content active">
+                    Keine manuelle Prüfung aktiv.
+                </div>
+
+                <div id="graphContainer" class="footer-tab-content">
+                    <canvas id="weatherChartCanvas"></canvas>
+                </div>
+
             </div>
         </footer>
 
@@ -139,6 +153,7 @@
     <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.min.js"></script>
     <script src="https://unpkg.com/@turf/turf@latest/turf.min.js"></script>
     <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="module" src="main.js"></script>
 </body>
 

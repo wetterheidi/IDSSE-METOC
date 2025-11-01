@@ -42,7 +42,7 @@ export const initUI = (handlers) => {
     // --- SCHRITT 2: DANN alle Event-Listener anhängen ---
 
     // Akkordeon
-if (uiElements.accordions) {
+    if (uiElements.accordions) {
         uiElements.accordions.forEach(acc => {
             acc.addEventListener('click', function () {
                 const panel = this.nextElementSibling;
@@ -70,7 +70,7 @@ if (uiElements.accordions) {
     if (uiElements.demoModeCheckbox) {
         uiElements.demoModeCheckbox.addEventListener('change', () => {
             console.log("Demo-Modus umgeschaltet. Lade Dashboard neu...");
-            handlers.onRunAutoCheck(); 
+            handlers.onRunAutoCheck();
         });
     } else {
         console.error("UI-Element 'demoModeCheckbox' nicht gefunden!");
@@ -103,7 +103,7 @@ if (uiElements.accordions) {
         uiElements.saveButton.addEventListener('click', () => {
             const profileData = {
                 name: uiElements.profileNameInput.value,
-                rules: getRulesFromInputs() 
+                rules: getRulesFromInputs()
             };
             if (!profileData.name) {
                 alert("Bitte einen Profil-Namen eingeben.");
@@ -151,6 +151,29 @@ if (uiElements.accordions) {
     if (uiElements.importFile) {
         uiElements.importFile.addEventListener('change', (e) => handleFileImport(e, handlers.onImport));
     }
+
+    // --- NEU: Tab-Umschalt-Logik für den Footer ---
+    const showMatrixTab = document.getElementById('showMatrixTab');
+    const showGraphTab = document.getElementById('showGraphTab');
+    const matrixContent = document.getElementById('manualWarningMonitor');
+    const graphContent = document.getElementById('graphContainer');
+
+    if (showMatrixTab && showGraphTab && matrixContent && graphContent) {
+        
+        showMatrixTab.addEventListener('click', () => {
+            matrixContent.classList.add('active');
+            graphContent.classList.remove('active');
+            showMatrixTab.classList.add('active');
+            showGraphTab.classList.remove('active');
+        });
+
+        showGraphTab.addEventListener('click', () => {
+            matrixContent.classList.remove('active');
+            graphContent.classList.add('active');
+            showMatrixTab.classList.remove('active');
+            showGraphTab.classList.add('active');
+        });
+    }
 };
 
 
@@ -172,10 +195,10 @@ export const displayAutoWarnings = (alarmResults) => {
     alarmResults.forEach(result => {
         const p = result.profile;
         const s = result.summary;
-        
+
         html += `<div class="alarm-item" ...>
                     <strong>Profil: ${p.name}</strong><br>`;
-        
+
         if (s.wind && s.wind.triggered) {
             const { value, unit } = formatter.formatSpeed(s.wind.max, p);
             html += `<span style="color: red;">&#9658; Wind: ${value} ${unit}</span><br>`;
@@ -195,7 +218,7 @@ export const displayAutoWarnings = (alarmResults) => {
         if (s.precip && s.precip.triggered) {
             const { value, unit } = formatter.formatPercent(s.precip.max, p);
             html += `<span style="color: #000080;">&#9658; Niederschl.: ${value}${unit}</span><br>`;
-        }        if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
+        } if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
         html += `</div>`;
     });
     monitor.innerHTML = html;
@@ -207,7 +230,7 @@ export const displayAutoWarnings = (alarmResults) => {
  */
 export const displayManualWarning = (profile, summary) => {
     const monitor = uiElements.manualWarningMonitor;
-    monitor.innerHTML = ''; 
+    monitor.innerHTML = '';
 
     // --- 1. Robustheits-Checks ---
     if (!summary || !profile || !profile.rules) {
@@ -217,16 +240,16 @@ export const displayManualWarning = (profile, summary) => {
     }
 
     let html = `<h4>Prüfbericht für: ${profile.name}</h4>`;
-    let hasWarnings = false; 
+    let hasWarnings = false;
     const rules = profile.rules;
-    
+
     // --- 2. Text-Zusammenfassung (Aufgeräumt & mit Einheiten) ---
-    
+
     if (summary.error) {
         html += `<div style="color: magenta; border: 1px solid magenta; padding: 5px; margin-bottom: 5px;"><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
         hasWarnings = true;
     }
-    
+
     // Wind
     if (summary.wind && summary.wind.triggered) {
         hasWarnings = true;
@@ -259,7 +282,7 @@ export const displayManualWarning = (profile, summary) => {
                     Min. Sicht: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
                  </div>`;
     }
-    
+
     // Wolkenuntergrenze
     if (summary.cloud && summary.cloud.triggered) {
         hasWarnings = true;
@@ -281,14 +304,14 @@ export const displayManualWarning = (profile, summary) => {
                     Max. Chance: <strong>${value}${unit}</strong> (Limit: ${limit}${limitUnit})
                  </div>`;
     }
-    
+
     // --- 3. "Alle OK"-Text ---
     if (!hasWarnings && Object.keys(rules).length > 0) {
         html = `<h4>Prüfbericht für: ${profile.name}</h4><p style="color: green; font-weight: bold;">Alle Parameter im grünen Bereich.</p>`;
     }
 
     // --- 4. Ampel-Matrix ---
-    
+
     let tableHtml = ""; // Starte mit einer leeren Tabelle
 
     const buildRow = (paramName, statusObject, hoursArray, cssClass = '') => {
@@ -300,12 +323,12 @@ export const displayManualWarning = (profile, summary) => {
         rowHtml += `</tr>`;
         return rowHtml;
     };
-    
-    const hours = (summary.wind && summary.wind.hourlyStatus) 
-                  ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b)) 
-                  : [];
 
-    if(hours.length > 0) { 
+    const hours = (summary.wind && summary.wind.hourlyStatus)
+        ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
+        : [];
+
+    if (hours.length > 0) {
         tableHtml = `<table class="ampel-table"><thead><tr><th>Parameter</th>`;
         hours.forEach(hour => tableHtml += `<th>${hour}h</th>`);
         tableHtml += `</tr></thead><tbody>`;
@@ -314,7 +337,7 @@ export const displayManualWarning = (profile, summary) => {
         if (summary.combined) {
             tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'summary-row');
         }
-        
+
         // Einzel-Parameter
         if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours);
         if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours);
@@ -338,30 +361,30 @@ export const displayProfileList = (profiles, handlers) => {
     profiles.forEach(profile => {
         const li = document.createElement('li');
         li.textContent = `${profile.name}`;
-        
+
         // Prüfen-Button
         const testButton = document.createElement('button');
         testButton.textContent = 'Prüfen & Laden';
         testButton.className = 'check-profile-button'; // <-- NEU: CSS-Klasse
         testButton.style.marginLeft = '10px';
-        
+
         // NEU: 'async' und 'await' Logik
         testButton.onclick = async () => {
             // 1. Alle Knöpfe sperren
-            setProfileButtonsDisabled(true); 
-            
+            setProfileButtonsDisabled(true);
+
             const profileData = {
                 id: profile.id,
                 name: profile.name,
                 rules: profile.rules,
                 geojson: JSON.parse(profile.geojsonString)
             };
-            
+
             // 2. WARTEN, bis die Prüfung (inkl. API-Call) fertig ist
-            await handlers.onCheck(profileData); 
-            
+            await handlers.onCheck(profileData);
+
             // 3. Alle Knöpfe wieder freigeben
-            setProfileButtonsDisabled(false); 
+            setProfileButtonsDisabled(false);
         };
         li.appendChild(testButton);
 
@@ -374,7 +397,7 @@ export const displayProfileList = (profiles, handlers) => {
             handlers.onDelete(profile);
         };
         li.appendChild(deleteButton);
-        
+
         uiElements.profileList.appendChild(li);
     });
 };

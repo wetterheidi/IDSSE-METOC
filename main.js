@@ -7,6 +7,7 @@ import * as weather_MOCK from './weather_mock.js';
 import * as map from './map.js';
 import * as ui from './ui.js';
 import * as timeSlider from './timeSlider.js';
+import * as charts from './charts.js'; // <-- NEU
 
 // --- Globaler App-Zustand ---
 // (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
@@ -130,18 +131,20 @@ async function handleManualCheck(profileData) {
     map.drawSamplePoints(gridPoints, profileData.geojson);
     map.zoomToGeoJSON(profileData.geojson);
 
-    // Engine aufrufen
     const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel);
+    
+    currentManualProfile = profileData; 
+    currentManualSummary = summary; 
 
-    // --- NEU: Summary global speichern ---
-    currentManualProfile = profileData; // Merken, welches Profil aktiv ist
-    currentManualSummary = summary; // Merken, was das ERGEBNIS ist
-
-    // Ergebnisse anzeigen
-    ui.displayManualWarning(profileData, summary);
-
-    // --- NEU: Karte für die AKTUELLE Slider-Stunde zeichnen ---
-    map.visualizeWarnings(currentManualSummary, currentSliderHour);
+    // --- NEU: Ruft BEIDE Anzeige-Funktionen auf ---
+    // 1. Füllt die Tabelle (wie bisher)
+    ui.displayManualWarning(profileData, summary); 
+    
+    // 2. Zeichnet den Graphen
+    charts.updateWeatherChart(profileData, summary); 
+    
+    // 3. Zeichnet die Karte (wie bisher)
+    map.visualizeWarnings(currentManualSummary, currentSliderHour); 
 }
 
 /**
