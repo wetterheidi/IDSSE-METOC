@@ -16,15 +16,13 @@ export async function fetchAndCheckProfile(profile) {
 
     const bboxString = `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`; // lat,lon,lat,lon
     const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_base,precipitation_probability';
-    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&models=auto&forecast_days=1`;
-
-    try {
+    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&forecast_days=1`; try {
         const response = await fetch(apiUrl);
         if (!response.ok) {
             throw new Error(`API-Fehler: ${response.statusText}`);
         }
         const data = await response.json();
-        
+
         // WICHTIG: Wir übergeben 'data' (die GANZE Antwort) und das 'geojson'
         const summary = checkThresholds(profile, data, geojson);
         return summary;
@@ -42,7 +40,7 @@ export function checkThresholds(profile, data, geojson) {
     const rules = profile.rules;
     const summary = getEmptySummary();
     const statusParams = ['wind', 'temp', 'vis', 'cloud', 'precip'];
-    
+
     // API kann manchmal 'hourly' nicht liefern
     if (!data.hourly || !data.hourly.time) {
         summary.error = "Keine 'hourly' Daten in API-Antwort gefunden.";
@@ -162,12 +160,12 @@ export function checkThresholds(profile, data, geojson) {
             }
         }
     }
-    
+
     if (validPointsFound === 0) {
         summary.error = "Keine Datenpunkte im Polygon gefunden.";
     }
 
-        const getWorseStatus = (s1, s2) => { // (Wir brauchen den Helfer hier nochmal)
+    const getWorseStatus = (s1, s2) => { // (Wir brauchen den Helfer hier nochmal)
         if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
         if (s1 === 'warn' || s2 === 'warn') return 'warn';
         return 'ok';
@@ -175,14 +173,14 @@ export function checkThresholds(profile, data, geojson) {
 
     timeStamps.forEach(hour => {
         let combinedStatus = 'ok'; // Starte unschuldig
-        
+
         // Gehe alle Parameter durch
         if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[hour]);
         if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[hour]);
         if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[hour]);
         if (rules.minCloud) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[hour]);
         if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[hour]);
-        
+
         summary.combined.hourlyStatus[hour] = combinedStatus;
         if (combinedStatus !== 'ok') {
             summary.combined.triggered = true;
@@ -197,7 +195,7 @@ export function checkThresholds(profile, data, geojson) {
  * (Dupliziert den API-Call, aber sauberer als 'fetchAndCheckProfile' damit zu belasten)
  */
 export async function getGridPoints(geojson) {
-     let bbox;
+    let bbox;
     try {
         bbox = turf.bbox(geojson); // [minLon, minLat, maxLon, maxLat]
     } catch (e) {
@@ -205,13 +203,12 @@ export async function getGridPoints(geojson) {
     }
     const bboxString = `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`;
     // Wir fragen nur 'temperature' ab, um die Raster-Koordinaten zu bekommen
-    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=temperature_2m&models=auto&forecast_days=1`;
-
+    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&forecast_days=1`;
     try {
         const response = await fetch(apiUrl);
         if (!response.ok) throw new Error(`API-Fehler: ${response.statusText}`);
         const data = await response.json();
-        
+
         const points = [];
         for (let i = 0; i < data.latitude.length; i++) {
             points.push([data.longitude[i], data.latitude[i]]); // [Lon, Lat]
@@ -233,7 +230,7 @@ export function getEmptySummary() {
         vis: { triggered: false, min: 99999, hourlyStatus: {}, affectedPoints: new Set() },
         cloud: { triggered: false, min: 99999, hourlyStatus: {}, affectedPoints: new Set() },
         precip: { triggered: false, max: 0, hourlyStatus: {}, affectedPoints: new Set() },
-        combined: { triggered: false, hourlyStatus: {} }, 
+        combined: { triggered: false, hourlyStatus: {} },
         error: null
     };
 }

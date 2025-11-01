@@ -12,7 +12,7 @@ export const uiElements = {};
  */
 export const initUI = (handlers) => {
 
-       // --- KORREKTUR: DOM-Elemente hier suchen, NACHDEM die Seite geladen ist ---
+    // --- SCHRITT 1: ERST alle DOM-Elemente finden ---
     uiElements.autoWarnDashboard = document.getElementById('autoWarnDashboard');
     uiElements.manualWarningMonitor = document.getElementById('manualWarningMonitor');
     uiElements.profileList = document.getElementById('profileList');
@@ -33,95 +33,124 @@ export const initUI = (handlers) => {
     uiElements.importFile = document.getElementById('importFile');
     uiElements.runAutoCheckButton = document.getElementById('runAutoCheckButton');
     uiElements.accordions = document.querySelectorAll('.accordion-header');
-    uiElements.demoModeCheckbox = document.getElementById('demoModeCheckbox'); // <-- Wird jetzt gefunden!
-    
-    // NEU: Einheiten-Umschalter
+    uiElements.demoModeCheckbox = document.getElementById('demoModeCheckbox'); // Gefunden!
     uiElements.unitModeMetric = document.querySelector('input[name="unitMode"][value="metric"]');
     uiElements.unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
-    // --- ENDE KORREKTUR ---
+    // --- ENDE Element-Suche ---
+
+
+    // --- SCHRITT 2: DANN alle Event-Listener anhängen ---
 
     // Akkordeon
-    uiElements.accordions.forEach(acc => {
-        acc.addEventListener('click', function () {
-            const panel = this.nextElementSibling; // Das Panel
-
-            // Ist dieses Panel schon offen?
-            const isOpen = panel.classList.contains('open');
-
-            // 1. Alle Panels und Header schließen/deaktivieren
-            accordions.forEach(otherAcc => {
-                otherAcc.classList.remove('active');
-                otherAcc.nextElementSibling.classList.remove('open');
+if (uiElements.accordions) {
+        uiElements.accordions.forEach(acc => {
+            acc.addEventListener('click', function () {
+                const panel = this.nextElementSibling;
+                const isOpen = panel.classList.contains('open');
+                uiElements.accordions.forEach(otherAcc => {
+                    otherAcc.classList.remove('active');
+                    otherAcc.nextElementSibling.classList.remove('open');
+                });
+                if (!isOpen) {
+                    this.classList.add('active');
+                    panel.classList.add('open');
+                }
             });
-
-            // 2. Nur das geklickte Panel öffnen (WENN es vorher zu war)
-            if (!isOpen) {
-                this.classList.add('active');
-                panel.classList.add('open');
-            }
-            // (Wenn es offen war, wurde es durch Schritt 1 bereits geschlossen)
         });
-    });
+    }
 
     // Auto-Check
-    uiElements.runAutoCheckButton.addEventListener('click', handlers.onRunAutoCheck);
+    if (uiElements.runAutoCheckButton) {
+        uiElements.runAutoCheckButton.addEventListener('click', handlers.onRunAutoCheck);
+    } else {
+        console.error("UI-Element 'runAutoCheckButton' nicht gefunden!");
+    }
+
+    // Demo-Schalter
+    if (uiElements.demoModeCheckbox) {
+        uiElements.demoModeCheckbox.addEventListener('change', () => {
+            console.log("Demo-Modus umgeschaltet. Lade Dashboard neu...");
+            handlers.onRunAutoCheck(); 
+        });
+    } else {
+        console.error("UI-Element 'demoModeCheckbox' nicht gefunden!");
+    }
 
     // Klick auf Alarm im Auto-Dashboard
-    uiElements.autoWarnDashboard.addEventListener('click', async (e) => {
-        const alarmItem = e.target.closest('.alarm-item');
-        if (alarmItem) {
-            const profileId = parseInt(alarmItem.dataset.profileId);
-            if (!profileId) return;
+    if (uiElements.autoWarnDashboard) {
+        uiElements.autoWarnDashboard.addEventListener('click', async (e) => {
+            const alarmItem = e.target.closest('.alarm-item');
+            if (alarmItem) {
+                const profileId = parseInt(alarmItem.dataset.profileId);
+                if (!profileId) return;
+                const profile = await db.getProfile(profileId);
+                if (!profile) return;
+                const profileData = {
+                    id: profile.id,
+                    name: profile.name,
+                    rules: profile.rules,
+                    geojson: JSON.parse(profile.geojsonString)
+                };
+                handlers.onDashboardClick(profileData);
+            }
+        });
+    } else {
+        console.error("UI-Element 'autoWarnDashboard' nicht gefunden!");
+    }
 
-            const profile = await db.getProfile(profileId);
-            if (!profile) return;
-
-            // Aufbereiten für den Handler
+    // Profil speichern (Hier war wahrscheinlich der Fehler)
+    if (uiElements.saveButton) {
+        uiElements.saveButton.addEventListener('click', () => {
             const profileData = {
-                id: profile.id,
-                name: profile.name,
-                rules: profile.rules,
-                geojson: JSON.parse(profile.geojsonString)
+                name: uiElements.profileNameInput.value,
+                rules: getRulesFromInputs() 
             };
-            handlers.onDashboardClick(profileData);
-        }
-    });
-
-    // Profil speichern
-    uiElements.saveButton.addEventListener('click', () => {
-        const profileData = {
-            name: uiElements.profileNameInput.value,
-            rules: getRulesFromInputs()
-        };
-        if (!profileData.name) {
-            alert("Bitte einen Profil-Namen eingeben.");
-            return;
-        }
-        handlers.onSaveProfile(profileData);
-    });
+            if (!profileData.name) {
+                alert("Bitte einen Profil-Namen eingeben.");
+                return;
+            }
+            handlers.onSaveProfile(profileData);
+        });
+    } else {
+        console.error("UI-Element 'saveButton' nicht gefunden!"); // Das wird dir sagen, ob ich recht habe
+    }
 
     // Vorlage speichern
-    uiElements.saveTemplateButton.addEventListener('click', () => {
-        const name = uiElements.templateNameInput.value;
-        const rules = getRulesFromInputs();
-        if (!name) {
-            alert("Bitte einen Namen für die Vorlage eingeben.");
-            return;
-        }
-        handlers.onSaveTemplate(name, rules);
-    });
+    if (uiElements.saveTemplateButton) {
+        uiElements.saveTemplateButton.addEventListener('click', () => {
+            const name = uiElements.templateNameInput.value;
+            const rules = getRulesFromInputs();
+            if (!name) {
+                alert("Bitte einen Namen für die Vorlage eingeben.");
+                return;
+            }
+            handlers.onSaveTemplate(name, rules);
+        });
+    } else {
+        console.error("UI-Element 'saveTemplateButton' nicht gefunden!");
+    }
 
     // Vorlage anwenden
-    uiElements.templateSelect.addEventListener('change', () => {
-        const templateId = parseInt(uiElements.templateSelect.value);
-        if (!templateId) return;
-        handlers.onTemplateSelect(templateId);
-    });
+    if (uiElements.templateSelect) {
+        uiElements.templateSelect.addEventListener('change', () => {
+            const templateId = parseInt(uiElements.templateSelect.value);
+            if (!templateId) return;
+            handlers.onTemplateSelect(templateId);
+        });
+    } else {
+        console.error("UI-Element 'templateSelect' nicht gefunden!");
+    }
 
     // Backup
-    uiElements.exportButton.addEventListener('click', handlers.onExport);
-    uiElements.importButton.addEventListener('click', () => uiElements.importFile.click());
-    uiElements.importFile.addEventListener('change', (e) => handleFileImport(e, handlers.onImport));
+    if (uiElements.exportButton) {
+        uiElements.exportButton.addEventListener('click', handlers.onExport);
+    }
+    if (uiElements.importButton) {
+        uiElements.importButton.addEventListener('click', () => uiElements.importFile.click());
+    }
+    if (uiElements.importFile) {
+        uiElements.importFile.addEventListener('change', (e) => handleFileImport(e, handlers.onImport));
+    }
 };
 
 
@@ -174,11 +203,11 @@ export const displayAutoWarnings = (alarmResults) => {
 
 /**
  * Zeigt das Ergebnis einer *manuellen* Prüfung (inkl. Ampel-Tabelle).
- * (Version 2.3: Robuster Render-Pfad)
+ * (Version 3.0: "Master-Update" mit allen Fixes)
  */
 export const displayManualWarning = (profile, summary) => {
     const monitor = uiElements.manualWarningMonitor;
-    monitor.innerHTML = '';
+    monitor.innerHTML = ''; 
 
     // --- 1. Robustheits-Checks ---
     if (!summary || !profile || !profile.rules) {
@@ -187,79 +216,83 @@ export const displayManualWarning = (profile, summary) => {
         return;
     }
 
-    // --- 2. Text-Zusammenfassung ---
     let html = `<h4>Prüfbericht für: ${profile.name}</h4>`;
-    let hasWarnings = false;
+    let hasWarnings = false; 
     const rules = profile.rules;
-
-    // (Dieser ganze Block ist super, den lassen wir 1:1 wie er war)
+    
+    // --- 2. Text-Zusammenfassung (Aufgeräumt & mit Einheiten) ---
+    
     if (summary.error) {
-        html += `<div style="color: magenta; ..."><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
+        html += `<div style="color: magenta; border: 1px solid magenta; padding: 5px; margin-bottom: 5px;"><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
         hasWarnings = true;
     }
-
+    
     // Wind
     if (summary.wind && summary.wind.triggered) {
         hasWarnings = true;
         const { value, unit } = formatter.formatSpeed(summary.wind.max, profile);
         const { value: limit, unit: limitUnit } = formatter.formatSpeed(rules.maxWind, profile);
-
         html += `<div style="color: red; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
                     <strong>WIND-ALARM</strong><br>
                     Max. Böe: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
                  </div>`;
-    } // Die "else if" wurde gelöscht
+    }
 
     // Temperatur
     if (summary.temp && summary.temp.triggered) {
         hasWarnings = true;
-        html += `<div style="color: blue; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
-                    <strong>TEMPERATUR-ALARM</strong><br>
+        const { value, unit } = formatter.formatTemp(summary.temp.min, profile);
+        const { value: limit, unit: limitUnit } = formatter.formatTemp(rules.minTemp, profile);
+        html += `<div style="color: blue; border: 1px solid blue; padding: 5px; margin-bottom: 5px;">
+                    <strong>FROST-ALARM</strong><br>
                     Min. Temp: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
                  </div>`;
-    } // Die "else if" wurde gelöscht
+    }
 
     // Sichtweite
     if (summary.vis && summary.vis.triggered) {
         hasWarnings = true;
-        html += `<div style="color: #8B4513; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
-                    <strong>SICHT-ALARM</strong><br>
+        const { value, unit } = formatter.formatAltitude(summary.vis.min, profile);
+        const { value: limit, unit: limitUnit } = formatter.formatAltitude(rules.minVis, profile);
+        html += `<div style="color: #8B4513; border: 1px solid #8B4513; padding: 5px; margin-bottom: 5px;">
+                    <strong>SICHT-ALARM (IFR)</strong><br>
                     Min. Sicht: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
                  </div>`;
-    } // Die "else if" wurde gelöscht
-
+    }
+    
     // Wolkenuntergrenze
     if (summary.cloud && summary.cloud.triggered) {
         hasWarnings = true;
-        html += `<div style="color: #555; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+        const { value, unit } = formatter.formatAltitude(summary.cloud.min, profile);
+        const { value: limit, unit: limitUnit } = formatter.formatAltitude(rules.minCloud, profile);
+        html += `<div style="color: #555; border: 1px solid #555; padding: 5px; margin-bottom: 5px;">
                     <strong>WOLKEN-ALARM</strong><br>
                     Min. Untergrenze: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
                  </div>`;
-    } // Die "else if" wurde gelöscht
+    }
 
     // Niederschlag
     if (summary.precip && summary.precip.triggered) {
         hasWarnings = true;
-        html += `<div style="color: #000080; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+        const { value, unit } = formatter.formatPercent(summary.precip.max, profile);
+        const { value: limit, unit: limitUnit } = formatter.formatPercent(rules.maxPrecipProb, profile);
+        html += `<div style="color: #000080; border: 1px solid #000080; padding: 5px; margin-bottom: 5px;">
                     <strong>NIEDERSCHLAGS-ALARM</strong><br>
                     Max. Chance: <strong>${value}${unit}</strong> (Limit: ${limit}${limitUnit})
                  </div>`;
-    } // Die "else if" wurde gelöscht
-
+    }
+    
     // --- 3. "Alle OK"-Text ---
-    // (Dieser Block bleibt unverändert und funktioniert jetzt korrekt)
     if (!hasWarnings && Object.keys(rules).length > 0) {
-        html = `<h4>Prüfbericht für: ${profile.name}</h4><p style="color: green; ...">Alle Parameter im grünen Bereich.</p>`;
+        html = `<h4>Prüfbericht für: ${profile.name}</h4><p style="color: green; font-weight: bold;">Alle Parameter im grünen Bereich.</p>`;
     }
 
-    // --- 4. Ampel-Matrix (Der ROBUSTE Ansatz) ---
-
+    // --- 4. Ampel-Matrix ---
+    
     let tableHtml = ""; // Starte mit einer leeren Tabelle
 
     const buildRow = (paramName, statusObject, hoursArray, cssClass = '') => {
-        // 'cssClass' ist neu, mit '' als Standard
-        let rowHtml = `<tr class="${cssClass}"><td><strong>${paramName.replace(/\*\*/g, '')}</strong></td>`; // .replace entfernt die **
-
+        let rowHtml = `<tr class="${cssClass}"><td><strong>${paramName.replace(/\*\*/g, '')}</strong></td>`;
         hoursArray.forEach(hour => {
             const status = statusObject[hour] || 'ok';
             rowHtml += `<td class="status-${status}"></td>`;
@@ -267,21 +300,22 @@ export const displayManualWarning = (profile, summary) => {
         rowHtml += `</tr>`;
         return rowHtml;
     };
+    
+    const hours = (summary.wind && summary.wind.hourlyStatus) 
+                  ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b)) 
+                  : [];
 
-    // Hol die Stunden (WENN sie existieren)
-    const hours = (summary.wind && summary.wind.hourlyStatus)
-        ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
-        : [];
-
-    // Baue die Tabelle NUR, WENN wir Stunden haben
-    if (hours.length > 0) {
+    if(hours.length > 0) { 
         tableHtml = `<table class="ampel-table"><thead><tr><th>Parameter</th>`;
         hours.forEach(hour => tableHtml += `<th>${hour}h</th>`);
         tableHtml += `</tr></thead><tbody>`;
 
-        // Fügt die "Gesamt"-Zeile als erste Zeile in den Body ein
-        tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'summary-row');
-
+        // Kombi-Zeile
+        if (summary.combined) {
+            tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'summary-row');
+        }
+        
+        // Einzel-Parameter
         if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours);
         if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours);
         if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus, hours);
@@ -291,8 +325,7 @@ export const displayManualWarning = (profile, summary) => {
         tableHtml += `</tbody></table>`;
     }
 
-    // --- 5. Alles rendern (Der KORRIGIERTE Teil) ---
-    // Setze IMMER den Text, und füge die (eventuell leere) Tabelle hinzu.
+    // --- 5. Alles rendern ---
     monitor.innerHTML = html + tableHtml;
 };
 
