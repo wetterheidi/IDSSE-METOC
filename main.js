@@ -120,30 +120,26 @@ async function runAndUpdateDashboard() {
 async function handleManualCheck(profileData) {
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
-
-    // Sampling-Punkte von BBox-Antwort holen (neuer Plan)
-    const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
+    
+    // 1. Punkte "offline" berechnen (kein API-Call)
+    const { gridPoints, error } = getWeatherModule().getGridPoints(profileData.geojson);
+    
     if (error) {
-        ui.setManualMonitorMessage(`<p>Fehler beim Holen der Grid-Punkte: ${error}</p>`);
+        ui.setManualMonitorMessage(`<p>Fehler beim Berechnen der Punkte: ${error}</p>`);
         return;
     }
-
+    
+    // 2. Graue Punkte zeichnen
     map.drawSamplePoints(gridPoints, profileData.geojson);
     map.zoomToGeoJSON(profileData.geojson);
 
-    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel);
+    // 3. Engine aufrufen (MIT den Punkten)
+    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
     
+    // 4. Ergebnisse speichern & anzeigen
     currentManualProfile = profileData; 
     currentManualSummary = summary; 
-
-    // --- NEU: Ruft BEIDE Anzeige-Funktionen auf ---
-    // 1. Füllt die Tabelle (wie bisher)
     ui.displayManualWarning(profileData, summary); 
-    
-    // 2. Zeichnet den Graphen
-    charts.updateWeatherChart(profileData, summary); 
-    
-    // 3. Zeichnet die Karte (wie bisher)
     map.visualizeWarnings(currentManualSummary, currentSliderHour); 
 }
 

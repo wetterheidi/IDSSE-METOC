@@ -10,11 +10,12 @@ export const WARN_FACTORS = {
     precip: 0.9     // Gelb bei 90% des Max-Limits
 };
 
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const DB_NAME = "IDSSE_M_Database";
 export const STORES = {
     profiles: '++id, name',
-    templates: '++id, name'
+    templates: '++id, name',
+    weatherCache: 'id'
 };
 
 export const CONVERSIONS = {

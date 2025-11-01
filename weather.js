@@ -1,122 +1,117 @@
 // weather.js
 import { WARN_FACTORS } from './config.js';
+import { db } from './db.js';
 
 /**
- * Holt Daten für EIN Profil (via Bounding Box), prüft die Regeln und GIBT DAS ERGEBNIS ZURÜCK.
+ * Holt Daten für EINE LISTE von Punkten (Sampling-Ansatz)
+ * (Sollte von 'main.js' sequenziell aufgerufen werden, um Limits zu vermeiden)
  */
-export async function fetchAndCheckProfile(profile, modelInfo) {
-
-    const geojson = profile.geojson;
-    let bbox;
-    try {
-        bbox = turf.bbox(geojson); // [minLon, minLat, maxLon, maxLat]
-    } catch (e) {
-        console.error("Turf.js BBox-Fehler:", e);
-        return { error: "Turf.js BBox-Fehler", ...getEmptySummary() };
+export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
+    
+    // 1. URL bauen (Der "Sampling-Ansatz")
+    if (!gridPoints || !gridPoints.features || gridPoints.features.length === 0) {
+        return { error: "Keine Sampling-Punkte zum Abfragen.", ...getEmptySummary() };
     }
 
-    const bboxString = `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`; // lat,lon,lat,lon
-    const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_base,precipitation_probability';
-    let apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&forecast_days=1`;
+    // Saubere, komma-getrennte Listen von Lats und Lons
+    const lats = gridPoints.features.map(p => p.geometry.coordinates[1].toFixed(2)).join(',');
+    const lons = gridPoints.features.map(p => p.geometry.coordinates[0].toFixed(2)).join(',');
 
-    // Füge Modell-Parameter hinzu, WENN sie definiert sind
+    const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_base,precipitation_probability';
+    
+    let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
+    
+    // Modell-Info hinzufügen
     if (modelInfo && modelInfo.apiName && modelInfo.runTimeISO) {
-        // Hinweis: Der Parameter für die Laufzeit ist 'forecast_run'
-        // (Das habe ich aus deinem DZMaster-Code gelernt)
         apiUrl += `&models=${modelInfo.apiName}&forecast_run=${modelInfo.runTimeISO}`;
     } else {
-        // Fallback auf "auto", wenn kein Modell gewählt ist
         apiUrl += `&models=auto`;
     }
+
+    console.log("Frage Sampling-Punkt-API an:", apiUrl);
+
     try {
+        // 3. Daten abrufen
         const response = await fetch(apiUrl);
         if (!response.ok) {
             throw new Error(`API-Fehler: ${response.statusText}`);
         }
         const data = await response.json();
-
-        // WICHTIG: Wir übergeben 'data' (die GANZE Antwort) und das 'geojson'
-        const summary = checkThresholds(profile, data, geojson);
-        return summary;
-
+        
+        // 4. Daten prüfen
+        const summary = checkThresholds_Sampling(profile, data);
+        return summary; 
+        
     } catch (err) {
-        console.error("Fehler beim Abrufen der BBox-Wetterdaten:", err);
-        return { error: err.message, ...getEmptySummary() };
+        console.error("Fehler beim Abrufen der Sampling-Wetterdaten:", err);
+        // HIER WAR DER FEHLER (Zeile ~38): ...getEmptySummary()
+        // Wir ersetzen es durch einen "saubereren" Objekt-Merge
+        return Object.assign(getEmptySummary(), { error: err.message });
     }
 }
 
 /**
- * Prüft BBox-Raster-Daten gegen Regeln und Polygon.
+ * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
+ * (Version 2.0: Vollständig implementiert)
  */
-export function checkThresholds(profile, data, geojson) {
+function checkThresholds_Sampling(profile, data) {
     const rules = profile.rules;
     const summary = getEmptySummary();
     const statusParams = ['wind', 'temp', 'vis', 'cloud', 'precip'];
+    
+    const locationsData = Array.isArray(data) ? data : [data];
 
-    // API kann manchmal 'hourly' nicht liefern
-    if (!data.hourly || !data.hourly.time) {
-        summary.error = "Keine 'hourly' Daten in API-Antwort gefunden.";
-        return summary;
+    if (!locationsData[0] || !locationsData[0].hourly || !locationsData[0].hourly.time) {
+        console.error("API-Antwort ist ungültig, 'hourly.time' fehlt.", data);
+        return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort." });
     }
 
-    const timeStamps = data.hourly.time.map(t => new Date(t).getHours());
+    // 1. Stunden-Header initialisieren (0-23)
+    const timeStamps = locationsData[0].hourly.time.map(t => new Date(t).getHours());
     timeStamps.forEach((hour, h) => {
-        summary.wind.hourlyData[h] = -Infinity;
-        summary.temp.hourlyData[h] = +Infinity;
-        summary.vis.hourlyData[h] = +Infinity;
-        summary.cloud.hourlyData[h] = +Infinity;
-        summary.precip.hourlyData[h] = -Infinity;
+        statusParams.forEach(param => {
+            if (summary[param]) {
+                 summary[param].hourlyStatus[h] = 'ok';
+                 summary.wind.hourlyData[h] = -Infinity;
+                 summary.temp.hourlyData[h] = +Infinity;
+                 summary.vis.hourlyData[h] = +Infinity;
+                 summary.cloud.hourlyData[h] = +Infinity;
+                 summary.precip.hourlyData[h] = -Infinity;
+            }
+        });
+        summary.combined.hourlyStatus[h] = 'ok';
     });
 
-    const gridLats = data.latitude;
-    const gridLons = data.longitude;
-    const numHours = timeStamps.length;
+    const getWorseStatus = (s1, s2) => (s1 === 'alarm' || s2 === 'alarm') ? 'alarm' : (s1 === 'warn' || s2 === 'warn') ? 'warn' : 'ok';
+    
+    // 2. Durch alle Standorte (Punkte) iterieren
+    locationsData.forEach(locationData => {
+        const hourly = locationData.hourly;
+        const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
 
-    const h_wind = data.hourly.windgusts_10m;
-    const h_temp = data.hourly.temperature_2m;
-    const h_vis = data.hourly.visibility;
-    const h_cloud = data.hourly.cloud_base;
-    const h_precip = data.hourly.precipitation_probability;
-
-    let validPointsFound = 0;
-
-    for (let i = 0; i < gridLats.length; i++) {
-        const pointLat = gridLats[i];
-        const pointLon = gridLons[i];
-        const point = turf.point([pointLon, pointLat]);
-        const isInside = turf.booleanPointInPolygon(point, geojson);
-
-        if (!isInside) continue;
-
-        const locationId = `${pointLat.toFixed(2)},${pointLon.toFixed(2)}`; // Format "lat,lon"
-
-        validPointsFound++;
-
-        for (let h = 0; h < numHours; h++) {
-            const hour = timeStamps[h];
-            const dataIndex = (i * numHours) + h;
+        // Iteriere durch die Stunden (0-23)
+        hourly.time.forEach((time, h) => { // 'h' ist der Index (0-23)
+            const hour = timeStamps[h]; 
             let currentStatus;
-
-            const wind = h_wind[dataIndex];
-            const temp = h_temp[dataIndex];
-            const vis = h_vis[dataIndex];
-            const cloud = h_cloud[dataIndex];
-            const precip = h_precip[dataIndex];
-
-            // Speichere den jeweils "schlimmsten" Wert für diese Stunde
+            
+            const wind = hourly.windgusts_10m[h];
+            const temp = hourly.temperature_2m[h];
+            const vis = hourly.visibility[h];
+            const cloud = hourly.cloud_base[h];
+            const precip = hourly.precipitation_probability[h];
+            
             if (wind > summary.wind.hourlyData[h]) summary.wind.hourlyData[h] = wind;
             if (temp < summary.temp.hourlyData[h]) summary.temp.hourlyData[h] = temp;
             if (vis < summary.vis.hourlyData[h]) summary.vis.hourlyData[h] = vis;
             if (cloud !== null && cloud < summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud;
             if (precip > summary.precip.hourlyData[h]) summary.precip.hourlyData[h] = precip;
 
-            // Wind
+            // --- Regel-Checks (Vollständig) ---
             if (rules.maxWind) {
-                const wind = h_wind[dataIndex];
                 if (wind > rules.maxWind) {
                     currentStatus = 'alarm';
-                    if (wind > summary.wind.max) summary.wind.max = wind;
                     summary.wind.triggered = true;
+                    if (wind > summary.wind.max) summary.wind.max = wind;
                     if (!summary.wind.hourlyAlarms[hour]) summary.wind.hourlyAlarms[hour] = new Set();
                     summary.wind.hourlyAlarms[hour].add(locationId);
                 } else if (wind > rules.maxWind * WARN_FACTORS.wind) {
@@ -126,13 +121,11 @@ export function checkThresholds(profile, data, geojson) {
                 }
                 summary.wind.hourlyStatus[hour] = getWorseStatus(summary.wind.hourlyStatus[hour], currentStatus);
             }
-            // Temp
             if (rules.minTemp !== null) {
-                const temp = h_temp[dataIndex];
                 if (temp < rules.minTemp) {
                     currentStatus = 'alarm';
-                    if (temp < summary.temp.min) summary.temp.min = temp;
                     summary.temp.triggered = true;
+                    if (temp < summary.temp.min) summary.temp.min = temp;
                     if (!summary.temp.hourlyAlarms[hour]) summary.temp.hourlyAlarms[hour] = new Set();
                     summary.temp.hourlyAlarms[hour].add(locationId);
                 } else if (temp < rules.minTemp + WARN_FACTORS.temp) {
@@ -142,13 +135,11 @@ export function checkThresholds(profile, data, geojson) {
                 }
                 summary.temp.hourlyStatus[hour] = getWorseStatus(summary.temp.hourlyStatus[hour], currentStatus);
             }
-            // Sicht
             if (rules.minVis) {
-                const vis = h_vis[dataIndex];
                 if (vis < rules.minVis) {
                     currentStatus = 'alarm';
-                    if (vis < summary.vis.min) summary.vis.min = vis;
                     summary.vis.triggered = true;
+                    if (vis < summary.vis.min) summary.vis.min = vis;
                     if (!summary.vis.hourlyAlarms[hour]) summary.vis.hourlyAlarms[hour] = new Set();
                     summary.vis.hourlyAlarms[hour].add(locationId);
                 } else if (vis < rules.minVis * WARN_FACTORS.vis) {
@@ -158,29 +149,25 @@ export function checkThresholds(profile, data, geojson) {
                 }
                 summary.vis.hourlyStatus[hour] = getWorseStatus(summary.vis.hourlyStatus[hour], currentStatus);
             }
-            // Wolken
             if (rules.minCloud) {
-                const cloud = h_cloud[dataIndex];
                 if (cloud !== null && cloud < rules.minCloud) {
                     currentStatus = 'alarm';
-                    if (cloud < summary.cloud.min) summary.cloud.min = cloud;
                     summary.cloud.triggered = true;
+                    if (cloud < summary.cloud.min) summary.cloud.min = cloud;
                     if (!summary.cloud.hourlyAlarms[hour]) summary.cloud.hourlyAlarms[hour] = new Set();
                     summary.cloud.hourlyAlarms[hour].add(locationId);
                 } else if (cloud !== null && cloud < rules.minCloud * WARN_FACTORS.cloud) {
                     currentStatus = 'warn';
                 } else {
                     currentStatus = 'ok';
-                }
+T                }
                 summary.cloud.hourlyStatus[hour] = getWorseStatus(summary.cloud.hourlyStatus[hour], currentStatus);
             }
-            // Niederschlag
             if (rules.maxPrecipProb !== null) {
-                const precip = h_precip[dataIndex];
                 if (precip > rules.maxPrecipProb) {
                     currentStatus = 'alarm';
-                    if (precip > summary.precip.max) summary.precip.max = precip;
                     summary.precip.triggered = true;
+                    if (precip > summary.precip.max) summary.precip.max = precip;
                     if (!summary.precip.hourlyAlarms[hour]) summary.precip.hourlyAlarms[hour] = new Set();
                     summary.precip.hourlyAlarms[hour].add(locationId);
                 } else if (precip > rules.maxPrecipProb * WARN_FACTORS.precip) {
@@ -190,64 +177,43 @@ export function checkThresholds(profile, data, geojson) {
                 }
                 summary.precip.hourlyStatus[hour] = getWorseStatus(summary.precip.hourlyStatus[hour], currentStatus);
             }
-        }
-    }
+        });
+    });
 
-    if (validPointsFound === 0) {
-        summary.error = "Keine Datenpunkte im Polygon gefunden.";
-    }
-
-    const getWorseStatus = (s1, s2) => { // (Wir brauchen den Helfer hier nochmal)
-        if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
-        if (s1 === 'warn' || s2 === 'warn') return 'warn';
-        return 'ok';
-    };
-
+    // --- Kombi-Zeile berechnen (Vollständig) ---
     timeStamps.forEach(hour => {
-        let combinedStatus = 'ok'; // Starte unschuldig
-
-        // Gehe alle Parameter durch
+        let combinedStatus = 'ok'; 
         if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[hour]);
         if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[hour]);
         if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[hour]);
         if (rules.minCloud) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[hour]);
         if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[hour]);
-
+        
         summary.combined.hourlyStatus[hour] = combinedStatus;
-        if (combinedStatus !== 'ok') {
-            summary.combined.triggered = true;
-        }
+        if (combinedStatus !== 'ok') summary.combined.triggered = true;
     });
 
-    return summary;
+    return summary; 
 }
 
 /**
- * Holt nur die Raster-Punkte für die Anzeige.
- * (Dupliziert den API-Call, aber sauberer als 'fetchAndCheckProfile' damit zu belasten)
+ * Berechnet die Sampling-Punkte (graue Punkte) für ein GeoJSON.
+ * Macht KEINEN API-Anruf.
  */
-export async function getGridPoints(geojson) {
-    let bbox;
+export function getGridPoints(geojson) {
     try {
-        bbox = turf.bbox(geojson); // [minLon, minLat, maxLon, maxLat]
-    } catch (e) {
-        return { error: "Turf.js BBox-Fehler" };
-    }
-    const bboxString = `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`;
-    const minimalHourlyParam = 'temperature_2m';
-    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${minimalHourlyParam}&forecast_days=1`;
-    try {
-        const response = await fetch(apiUrl);
-        if (!response.ok) throw new Error(`API-Fehler: ${response.statusText}`);
-        const data = await response.json();
+        const bbox = turf.bbox(geojson); // [minLon, minLat, maxLon, maxLat]
+        // TODO: Später die 'cellSide' dynamisch an das Modell (z.B. ICON-D2) anpassen
+        const cellSide = 10; // km
+        const options = { units: 'kilometers' };
+        const pointGrid = turf.pointGrid(bbox, cellSide, options);
+        const pointsInside = turf.pointsWithinPolygon(pointGrid, geojson);
+        
+        return { gridPoints: pointsInside }; // Gibt die GeoJSON-Punkte zurück
 
-        const points = [];
-        for (let i = 0; i < data.latitude.length; i++) {
-            points.push([data.longitude[i], data.latitude[i]]); // [Lon, Lat]
-        }
-        return { gridPoints: turf.featureCollection(points.map(p => turf.point(p))) };
-    } catch (err) {
-        return { error: err.message };
+    } catch (e) {
+        console.error("Turf.js Fehler in getGridPoints:", e);
+        return { error: "Turf.js Fehler" };
     }
 }
 
@@ -257,7 +223,6 @@ export async function getGridPoints(geojson) {
  */
 export function getEmptySummary() {
     return {
-        // 'hourlyData' ist NEU. Es speichert die 24-Stunden-Zeitreihe.
         wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
         temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
         vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
