@@ -56,12 +56,6 @@ export function checkThresholds(profile, data, geojson) {
         });
     });
 
-    const getWorseStatus = (s1, s2) => {
-        if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
-        if (s1 === 'warn' || s2 === 'warn') return 'warn';
-        return 'ok';
-    };
-
     const gridLats = data.latitude;
     const gridLons = data.longitude;
     const numHours = timeStamps.length;
@@ -172,6 +166,29 @@ export function checkThresholds(profile, data, geojson) {
     if (validPointsFound === 0) {
         summary.error = "Keine Datenpunkte im Polygon gefunden.";
     }
+
+        const getWorseStatus = (s1, s2) => { // (Wir brauchen den Helfer hier nochmal)
+        if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
+        if (s1 === 'warn' || s2 === 'warn') return 'warn';
+        return 'ok';
+    };
+
+    timeStamps.forEach(hour => {
+        let combinedStatus = 'ok'; // Starte unschuldig
+        
+        // Gehe alle Parameter durch
+        if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[hour]);
+        if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[hour]);
+        if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[hour]);
+        if (rules.minCloud) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[hour]);
+        if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[hour]);
+        
+        summary.combined.hourlyStatus[hour] = combinedStatus;
+        if (combinedStatus !== 'ok') {
+            summary.combined.triggered = true;
+        }
+    });
+
     return summary;
 }
 
@@ -216,6 +233,7 @@ export function getEmptySummary() {
         vis: { triggered: false, min: 99999, hourlyStatus: {}, affectedPoints: new Set() },
         cloud: { triggered: false, min: 99999, hourlyStatus: {}, affectedPoints: new Set() },
         precip: { triggered: false, max: 0, hourlyStatus: {}, affectedPoints: new Set() },
+        combined: { triggered: false, hourlyStatus: {} }, 
         error: null
     };
 }

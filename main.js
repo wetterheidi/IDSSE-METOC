@@ -2,13 +2,32 @@
 
 import { AUTO_CHECK_INTERVAL } from './config.js';
 import * as db from './db.js';
-import * as weather from './weather.js';
+import * as weather_LIVE from './weather.js';
+import * as weather_MOCK from './weather_mock.js';
 import * as map from './map.js';
 import * as ui from './ui.js';
 
 // --- Globaler App-Zustand ---
 // (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
 let currentLayer = null;
+
+/**
+ * Die Weiche: Entscheidet, ob wir die echte API oder den Fake benutzen.
+ * (Version 2.0: "Kugelsicher" - fragt das DOM direkt ab)
+ */
+function getWeatherModule() {
+    // Wir fragen das Element DIREKT im DOM ab, statt uns auf das ui-Modul zu verlassen.
+    // Das ist robuster gegen Timing-Fehler.
+    const checkbox = document.getElementById('demoModeCheckbox');
+    
+    // WICHTIG: Prüfen, ob das Element existiert UND ob es .checked ist
+    if (checkbox && checkbox.checked) {
+        return weather_MOCK;
+    }
+    
+    // Standard-Verhalten
+    return weather_LIVE;
+}
 
 // --- KERN-WORKFLOWS (Die "Orchestrator"-Funktionen) ---
 
@@ -34,7 +53,7 @@ async function runAndUpdateDashboard() {
         };
         
         // 2. WARTEN, bis dieser eine Aufruf fertig ist
-        const summary = await weather.fetchAndCheckProfile(profileData);
+        const summary = await getWeatherModule().fetchAndCheckProfile(profileData);
         
         // 3. Ergebnis sammeln
         results.push({ profile: profileData, summary: summary });
@@ -64,7 +83,7 @@ async function handleManualCheck(profileData) {
     map.clearMapLayers();
     
     // Sampling-Punkte von BBox-Antwort holen (neuer Plan)
-    const { gridPoints, error } = await weather.getGridPoints(profileData.geojson);
+    const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
     if (error) {
         ui.setManualMonitorMessage(`<p>Fehler beim Holen der Grid-Punkte: ${error}</p>`);
         return;
@@ -74,7 +93,7 @@ async function handleManualCheck(profileData) {
     map.zoomToGeoJSON(profileData.geojson);
 
     // Engine aufrufen
-    const summary = await weather.fetchAndCheckProfile(profileData);
+    const summary = await getWeatherModule().fetchAndCheckProfile(profileData);
     
     // Ergebnisse anzeigen
     ui.displayManualWarning(profileData, summary); 

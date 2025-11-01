@@ -16,3 +16,22 @@ export const STORES = {
     profiles: '++id, name',
     templates: '++id, name'
 };
+
+export const CONVERSIONS = {
+    KMH_TO_KTS: 0.539957,
+    METER_TO_FEET: 3.28084
+};
+
+// NEU: Einheiten-Labels
+export const UNITS = {
+    metric: {
+        speed: 'km/h',
+        altitude: 'm',
+        temp: '°C'
+    },
+    aviation: {
+        speed: 'kts',
+        altitude: 'ft',
+        temp: '°C' // (Wir bleiben bei °C, °F ist zu viel Aufwand)
+    }
+};

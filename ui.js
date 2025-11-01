@@ -1,44 +1,8 @@
 // ui.js
 import * as db from './db.js'; // Wird für Callbacks benötigt
+import * as formatter from './formatter.js'; // <-- NEU
 
-// --- 1. UI-Elemente holen ---
-// (Wir exportieren sie, falls main.js sie braucht)
-export const uiElements = {
-    // Monitore
-    autoWarnDashboard: document.getElementById('autoWarnDashboard'),
-    manualWarningMonitor: document.getElementById('manualWarningMonitor'),
-
-    // Profil-Liste
-    profileList: document.getElementById('profileList'),
-
-    // Profil-Inputs
-    profileNameInput: document.getElementById('profileName'),
-    saveButton: document.getElementById('saveButton'),
-    ruleInputs: {
-        maxWind: document.getElementById('maxWind'),
-        minTemp: document.getElementById('minTemp'),
-        minVis: document.getElementById('minVis'),
-        minCloud: document.getElementById('minCloud'),
-        maxPrecipProb: document.getElementById('maxPrecipProb')
-    },
-
-    // Vorlagen-Inputs
-    templateNameInput: document.getElementById('templateName'),
-    saveTemplateButton: document.getElementById('saveTemplateButton'),
-    templateSelect: document.getElementById('templateSelect'),
-
-    // Backup-Buttons
-    exportButton: document.getElementById('exportButton'),
-    importButton: document.getElementById('importButton'),
-    importFile: document.getElementById('importFile'),
-
-    // Auto-Check
-    runAutoCheckButton: document.getElementById('runAutoCheckButton'),
-
-    // Akkordeon
-    accordions: document.querySelectorAll('.accordion-header')
-};
-
+export const uiElements = {};
 
 // --- 2. Initialisierungs-Funktion ---
 
@@ -48,10 +12,36 @@ export const uiElements = {
  */
 export const initUI = (handlers) => {
 
-    // Akkordeon
-    const accordions = document.querySelectorAll('.accordion-header');
+       // --- KORREKTUR: DOM-Elemente hier suchen, NACHDEM die Seite geladen ist ---
+    uiElements.autoWarnDashboard = document.getElementById('autoWarnDashboard');
+    uiElements.manualWarningMonitor = document.getElementById('manualWarningMonitor');
+    uiElements.profileList = document.getElementById('profileList');
+    uiElements.profileNameInput = document.getElementById('profileName');
+    uiElements.saveButton = document.getElementById('saveButton');
+    uiElements.ruleInputs = {
+        maxWind: document.getElementById('maxWind'),
+        minTemp: document.getElementById('minTemp'),
+        minVis: document.getElementById('minVis'),
+        minCloud: document.getElementById('minCloud'),
+        maxPrecipProb: document.getElementById('maxPrecipProb')
+    };
+    uiElements.templateNameInput = document.getElementById('templateName');
+    uiElements.saveTemplateButton = document.getElementById('saveTemplateButton');
+    uiElements.templateSelect = document.getElementById('templateSelect');
+    uiElements.exportButton = document.getElementById('exportButton');
+    uiElements.importButton = document.getElementById('importButton');
+    uiElements.importFile = document.getElementById('importFile');
+    uiElements.runAutoCheckButton = document.getElementById('runAutoCheckButton');
+    uiElements.accordions = document.querySelectorAll('.accordion-header');
+    uiElements.demoModeCheckbox = document.getElementById('demoModeCheckbox'); // <-- Wird jetzt gefunden!
+    
+    // NEU: Einheiten-Umschalter
+    uiElements.unitModeMetric = document.querySelector('input[name="unitMode"][value="metric"]');
+    uiElements.unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
+    // --- ENDE KORREKTUR ---
 
-    accordions.forEach(acc => {
+    // Akkordeon
+    uiElements.accordions.forEach(acc => {
         acc.addEventListener('click', function () {
             const panel = this.nextElementSibling; // Das Panel
 
@@ -153,14 +143,30 @@ export const displayAutoWarnings = (alarmResults) => {
     alarmResults.forEach(result => {
         const p = result.profile;
         const s = result.summary;
-        html += `<div class="alarm-item" data-profile-id="${p.id}" style="border-bottom: 1px solid #ccc; padding: 5px; margin-bottom: 5px; cursor: pointer;">
+        
+        html += `<div class="alarm-item" ...>
                     <strong>Profil: ${p.name}</strong><br>`;
-        if (s.wind && s.wind.triggered) html += `<span style="color: red;">&#9658; Wind: ${s.wind.max.toFixed(1)} km/h</span><br>`;
-        if (s.temp && s.temp.triggered) html += `<span style="color: blue;">&#9658; Temp: ${s.temp.min.toFixed(1)} °C</span><br>`;
-        if (s.vis && s.vis.triggered) html += `<span style="color: #8B4513;">&#9658; Sicht: ${s.vis.min.toFixed(0)} m</span><br>`;
-        if (s.cloud && s.cloud.triggered) html += `<span style="color: #555;">&#9658; Wolken: ${s.cloud.min.toFixed(0)} m</span><br>`;
-        if (s.precip && s.precip.triggered) html += `<span style="color: #000080;">&#9658; Niederschl.: ${s.precip.max.toFixed(0)}%</span><br>`;
-        if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
+        
+        if (s.wind && s.wind.triggered) {
+            const { value, unit } = formatter.formatSpeed(s.wind.max, p);
+            html += `<span style="color: red;">&#9658; Wind: ${value} ${unit}</span><br>`;
+        }
+        if (s.temp && s.temp.triggered) {
+            const { value, unit } = formatter.formatTemp(s.temp.min, p);
+            html += `<span style="color: blue;">&#9658; Temp: ${value} ${unit}</span><br>`;
+        }
+        if (s.vis && s.vis.triggered) {
+            const { value, unit } = formatter.formatAltitude(s.vis.min, p);
+            html += `<span style="color: #8B4513;">&#9658; Sicht: ${value} ${unit}</span><br>`;
+        }
+        if (s.cloud && s.cloud.triggered) {
+            const { value, unit } = formatter.formatAltitude(s.cloud.min, p);
+            html += `<span style="color: #555;">&#9658; Wolken: ${value} ${unit}</span><br>`;
+        }
+        if (s.precip && s.precip.triggered) {
+            const { value, unit } = formatter.formatPercent(s.precip.max, p);
+            html += `<span style="color: #000080;">&#9658; Niederschl.: ${value}${unit}</span><br>`;
+        }        if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
         html += `</div>`;
     });
     monitor.innerHTML = html;
@@ -168,57 +174,125 @@ export const displayAutoWarnings = (alarmResults) => {
 
 /**
  * Zeigt das Ergebnis einer *manuellen* Prüfung (inkl. Ampel-Tabelle).
+ * (Version 2.3: Robuster Render-Pfad)
  */
 export const displayManualWarning = (profile, summary) => {
     const monitor = uiElements.manualWarningMonitor;
     monitor.innerHTML = '';
 
+    // --- 1. Robustheits-Checks ---
     if (!summary || !profile || !profile.rules) {
         monitor.innerHTML = `<p>Fehler beim Laden der Daten.</p>`;
         if (!summary) monitor.innerHTML = `<p>${profile}</p>`;
         return;
     }
 
+    // --- 2. Text-Zusammenfassung ---
     let html = `<h4>Prüfbericht für: ${profile.name}</h4>`;
     let hasWarnings = false;
     const rules = profile.rules;
 
-    // Text-Zusammenfassung
+    // (Dieser ganze Block ist super, den lassen wir 1:1 wie er war)
     if (summary.error) {
         html += `<div style="color: magenta; ..."><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
         hasWarnings = true;
     }
-    // (Hier die Text-Zusammenfassungen für wind, temp etc. einfügen)
-    // ...
 
+    // Wind
+    if (summary.wind && summary.wind.triggered) {
+        hasWarnings = true;
+        const { value, unit } = formatter.formatSpeed(summary.wind.max, profile);
+        const { value: limit, unit: limitUnit } = formatter.formatSpeed(rules.maxWind, profile);
+
+        html += `<div style="color: red; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+                    <strong>WIND-ALARM</strong><br>
+                    Max. Böe: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
+                 </div>`;
+    } // Die "else if" wurde gelöscht
+
+    // Temperatur
+    if (summary.temp && summary.temp.triggered) {
+        hasWarnings = true;
+        html += `<div style="color: blue; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+                    <strong>TEMPERATUR-ALARM</strong><br>
+                    Min. Temp: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
+                 </div>`;
+    } // Die "else if" wurde gelöscht
+
+    // Sichtweite
+    if (summary.vis && summary.vis.triggered) {
+        hasWarnings = true;
+        html += `<div style="color: #8B4513; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+                    <strong>SICHT-ALARM</strong><br>
+                    Min. Sicht: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
+                 </div>`;
+    } // Die "else if" wurde gelöscht
+
+    // Wolkenuntergrenze
+    if (summary.cloud && summary.cloud.triggered) {
+        hasWarnings = true;
+        html += `<div style="color: #555; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+                    <strong>WOLKEN-ALARM</strong><br>
+                    Min. Untergrenze: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
+                 </div>`;
+    } // Die "else if" wurde gelöscht
+
+    // Niederschlag
+    if (summary.precip && summary.precip.triggered) {
+        hasWarnings = true;
+        html += `<div style="color: #000080; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
+                    <strong>NIEDERSCHLAGS-ALARM</strong><br>
+                    Max. Chance: <strong>${value}${unit}</strong> (Limit: ${limit}${limitUnit})
+                 </div>`;
+    } // Die "else if" wurde gelöscht
+
+    // --- 3. "Alle OK"-Text ---
+    // (Dieser Block bleibt unverändert und funktioniert jetzt korrekt)
     if (!hasWarnings && Object.keys(rules).length > 0) {
-        html = `<h4>Prüfbericht für: ${profile.name}</h4><p style="color: green; font-weight: bold;">Alle Parameter im grünen Bereich.</p>`;
+        html = `<h4>Prüfbericht für: ${profile.name}</h4><p style="color: green; ...">Alle Parameter im grünen Bereich.</p>`;
     }
 
-    // Ampel-Matrix
-    const buildRow = (paramName, statusObject) => {
-        let rowHtml = `<tr><td><strong>${paramName}</strong></td>`;
-        const hours = Object.keys(statusObject).sort((a, b) => a - b);
-        hours.forEach(hour => {
-            const status = statusObject[hour];
+    // --- 4. Ampel-Matrix (Der ROBUSTE Ansatz) ---
+
+    let tableHtml = ""; // Starte mit einer leeren Tabelle
+
+    const buildRow = (paramName, statusObject, hoursArray, cssClass = '') => {
+        // 'cssClass' ist neu, mit '' als Standard
+        let rowHtml = `<tr class="${cssClass}"><td><strong>${paramName.replace(/\*\*/g, '')}</strong></td>`; // .replace entfernt die **
+
+        hoursArray.forEach(hour => {
+            const status = statusObject[hour] || 'ok';
             rowHtml += `<td class="status-${status}"></td>`;
         });
         rowHtml += `</tr>`;
         return rowHtml;
     };
 
-    let tableHtml = `<table class="ampel-table"><thead><tr><th>Parameter</th>`;
-    const hours = Object.keys(summary.wind.hourlyStatus).sort((a, b) => a - b);
-    hours.forEach(hour => tableHtml += `<th>${hour}h</th>`);
-    tableHtml += `</tr></thead><tbody>`;
+    // Hol die Stunden (WENN sie existieren)
+    const hours = (summary.wind && summary.wind.hourlyStatus)
+        ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
+        : [];
 
-    if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus);
-    if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus);
-    if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus);
-    if (rules.minCloud) tableHtml += buildRow('Wolken (UG)', summary.cloud.hourlyStatus);
-    if (rules.maxPrecipProb !== null) tableHtml += buildRow('Niederschl.', summary.precip.hourlyStatus);
+    // Baue die Tabelle NUR, WENN wir Stunden haben
+    if (hours.length > 0) {
+        tableHtml = `<table class="ampel-table"><thead><tr><th>Parameter</th>`;
+        hours.forEach(hour => tableHtml += `<th>${hour}h</th>`);
+        tableHtml += `</tr></thead><tbody>`;
 
-    tableHtml += `</tbody></table>`;
+        // Fügt die "Gesamt"-Zeile als erste Zeile in den Body ein
+        tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'summary-row');
+
+        if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours);
+        if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours);
+        if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus, hours);
+        if (rules.minCloud) tableHtml += buildRow('Wolken (UG)', summary.cloud.hourlyStatus, hours);
+        if (rules.maxPrecipProb !== null) tableHtml += buildRow('Niederschl.', summary.precip.hourlyStatus, hours);
+
+        tableHtml += `</tbody></table>`;
+    }
+
+    // --- 5. Alles rendern (Der KORRIGIERTE Teil) ---
+    // Setze IMMER den Text, und füge die (eventuell leere) Tabelle hinzu.
     monitor.innerHTML = html + tableHtml;
 };
 
@@ -286,6 +360,13 @@ export const applyTemplateToInputs = (template) => {
     uiElements.ruleInputs.minCloud.value = rules.minCloud || '';
     uiElements.ruleInputs.maxPrecipProb.value = rules.maxPrecipProb !== null ? rules.maxPrecipProb : '';
     uiElements.templateNameInput.value = template.name;
+
+    // NEU: Setze den Radio-Button basierend auf der Vorlage
+    if (rules.unitMode === 'aviation') {
+        uiElements.unitModeAviation.checked = true;
+    } else {
+        uiElements.unitModeMetric.checked = true;
+    }
 };
 
 
@@ -304,7 +385,11 @@ export const resetProfileInputs = () => {
  * Liest die aktuellen Werte aus den Regel-Feldern.
  */
 const getRulesFromInputs = () => {
+    // NEU: Finde den aktiven Modus
+    const unitMode = uiElements.unitModeAviation.checked ? 'aviation' : 'metric';
+
     return {
+        unitMode: unitMode, // <-- DAS IST NEU
         maxWind: parseFloat(uiElements.ruleInputs.maxWind.value) || null,
         minTemp: parseFloat(uiElements.ruleInputs.minTemp.value),
         minVis: parseFloat(uiElements.ruleInputs.minVis.value) || null,
