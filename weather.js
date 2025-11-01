@@ -1,53 +1,126 @@
 // weather.js
 import { WARN_FACTORS } from './config.js';
-import { db } from './db.js';
+import { getCache, setCache } from './db.js';
 
 /**
- * Holt Daten für EINE LISTE von Punkten (Sampling-Ansatz)
- * (Sollte von 'main.js' sequenziell aufgerufen werden, um Limits zu vermeiden)
+ * Teilt ein Array in kleinere Stapel (Chunks) auf.
+ * @param {Array} array - Das Quell-Array
+ * @param {number} size - Die maximale Größe eines Chunks
+ * @returns {Array[]} Ein Array von Arrays (die Chunks)
+ */
+function chunkArray(array, size) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += size) {
+        chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+}
+
+/**
+ * Erstellt ein leeres Summary-Objekt (für Fehlerfälle oder Initialisierung)
+ */
+export function getEmptySummary() {
+    return {
+        wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        cloud: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
+        combined: { triggered: false, hourlyStatus: {} },
+        error: null
+    };
+}
+
+/**
+ * Holt Daten via "Tiling" (Kacheln) und nutzt Caching.
+ * (Version 5.0: "Kugelsicher")
  */
 export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     
-    // 1. URL bauen (Der "Sampling-Ansatz")
+    // 1. Eindeutigen Cache-Schlüssel erstellen
+    // (Wir nehmen an, modelInfo ist NIE null im Live-Modus)
+    const cacheKey = `${profile.id}_${modelInfo.apiName}_${modelInfo.runTimeISO}`;
+
+    // 2. Im Cache nachsehen
+    try {
+        const cachedData = await getCache(cacheKey);
+        // Cache ist "frisch", wenn er jünger als 30 Minuten ist
+        const THIRTY_MINUTES = 30 * 60 * 1000; 
+        if (cachedData && (Date.now() - cachedData.timestamp < THIRTY_MINUTES)) {
+            console.log(`%cDATEN AUS CACHE GELADEN: ${cacheKey}`, "color: green; font-weight: bold;");
+            return cachedData.summary; // SOFORT FERTIG!
+        }
+    } catch (e) {
+        console.warn("Cache-Lesefehler:", e);
+    }
+
+    // 3. Cache "kalt" -> Tiling-Logik (Kacheln)
+    console.warn(`%cCACHE KALT. FÜHRE LIVE-FETCH AUS: ${cacheKey}`, "color: orange;");
+
     if (!gridPoints || !gridPoints.features || gridPoints.features.length === 0) {
         return { error: "Keine Sampling-Punkte zum Abfragen.", ...getEmptySummary() };
     }
 
-    // Saubere, komma-getrennte Listen von Lats und Lons
-    const lats = gridPoints.features.map(p => p.geometry.coordinates[1].toFixed(2)).join(',');
-    const lons = gridPoints.features.map(p => p.geometry.coordinates[0].toFixed(2)).join(',');
-
+    // 4. Punkte in 50er-Stapel "zerhacken"
+    const CHUNK_SIZE = 50; 
+    const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
+    
+    let allApiResponses = []; // Hier sammeln wir ALLE Antworten
     const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_base,precipitation_probability';
-    
-    let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
-    
-    // Modell-Info hinzufügen
-    if (modelInfo && modelInfo.apiName && modelInfo.runTimeISO) {
-        apiUrl += `&models=${modelInfo.apiName}&forecast_run=${modelInfo.runTimeISO}`;
-    } else {
-        apiUrl += `&models=auto`;
-    }
 
-    console.log("Frage Sampling-Punkt-API an:", apiUrl);
+    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln à ${CHUNK_SIZE}.`);
 
-    try {
-        // 3. Daten abrufen
-        const response = await fetch(apiUrl);
-        if (!response.ok) {
-            throw new Error(`API-Fehler: ${response.statusText}`);
+    // 5. Sequenzielle Schleife (unsere "Spam-Bremse")
+    for (const chunk of pointChunks) {
+        const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(2)).join(',');
+        const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(2)).join(',');
+        
+        let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
+        
+        if (modelInfo && modelInfo.apiName && modelInfo.runTimeISO) {
+            apiUrl += `&models=${modelInfo.apiName}&forecast_run=${modelInfo.runTimeISO}`;
+        } else {
+            apiUrl += `&models=auto`;
         }
-        const data = await response.json();
-        
-        // 4. Daten prüfen
-        const summary = checkThresholds_Sampling(profile, data);
-        return summary; 
-        
-    } catch (err) {
-        console.error("Fehler beim Abrufen der Sampling-Wetterdaten:", err);
-        // HIER WAR DER FEHLER (Zeile ~38): ...getEmptySummary()
-        // Wir ersetzen es durch einen "saubereren" Objekt-Merge
-        return Object.assign(getEmptySummary(), { error: err.message });
+
+        try {
+            // WARTEN auf diesen einen Stapel
+            const response = await fetch(apiUrl);
+            if (!response.ok) {
+                // Wenn EIN Stapel fehlschlägt, bricht die ganze Prüfung ab
+                throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
+            }
+            const data = await response.json();
+            
+            // OpenMeteo liefert ein Array, eines pro Standort
+            const locationsData = Array.isArray(data) ? data : [data];
+            // Füge die Ergebnisse dem Master-Array hinzu
+            allApiResponses.push(...locationsData);
+            
+            // (Optionale kleine Pause, um die API zu schonen)
+            // await new Promise(resolve => setTimeout(resolve, 100)); 
+
+        } catch (err) {
+            console.error("Fehler beim Abrufen eines Tiling-Stapels:", err);
+            return Object.assign(getEmptySummary(), { error: err.message });
+        }
+    } // Ende der Tiling-Schleife
+
+    // 6. Daten zusammennähen
+    // Unsere 'checkThresholds_Sampling' (aus Schritt 80) ist perfekt,
+    // sie erwartet genau dieses 'allApiResponses'-Format!
+    console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
+    const finalSummary = checkThresholds_Sampling(profile, allApiResponses);
+
+    // 7. Ergebnis im Cache speichern
+    try {
+        await setCache(cacheKey, finalSummary);
+    } catch (e) {
+        console.warn("Cache-Schreibfehler:", e);
     }
+
+    // 8. Fertig
+    return finalSummary;
 }
 
 /**
@@ -160,7 +233,7 @@ function checkThresholds_Sampling(profile, data) {
                     currentStatus = 'warn';
                 } else {
                     currentStatus = 'ok';
-T                }
+                }
                 summary.cloud.hourlyStatus[hour] = getWorseStatus(summary.cloud.hourlyStatus[hour], currentStatus);
             }
             if (rules.maxPrecipProb !== null) {
@@ -217,18 +290,3 @@ export function getGridPoints(geojson) {
     }
 }
 
-
-/**
- * Erstellt ein leeres Summary-Objekt (für Fehlerfälle oder Initialisierung)
- */
-export function getEmptySummary() {
-    return {
-        wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
-        temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
-        vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
-        cloud: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
-        precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: new Set(), hourlyData: [] },
-        combined: { triggered: false, hourlyStatus: {} },
-        error: null
-    };
-}

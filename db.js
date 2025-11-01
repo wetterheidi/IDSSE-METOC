@@ -31,3 +31,31 @@ export const getProfilesForExport = async () => {
 export const getTemplates = () => db.templates.toArray();
 export const getTemplate = (id) => db.templates.get(id);
 export const saveTemplate = (template) => db.templates.add(template);
+
+/**
+ * Holt einen Eintrag aus dem Wetter-Cache.
+ */
+export const getCache = (key) => {
+    try {
+        return db.weatherCache.get(key);
+    } catch (e) {
+        console.error("Cache-Lesefehler:", e);
+        return null;
+    }
+};
+
+/**
+ * Schreibt einen Eintrag in den Wetter-Cache.
+ */
+export const setCache = (key, summary) => {
+    try {
+        return db.weatherCache.put({
+            id: key,
+            timestamp: Date.now(),
+            summary: summary
+        });
+    } catch (e) {
+        console.error("Cache-Schreibfehler:", e);
+        // Nicht-kritischer Fehler, wir loggen ihn nur
+    }
+};

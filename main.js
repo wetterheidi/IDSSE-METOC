@@ -43,7 +43,7 @@ function getWeatherModule() {
 function handleSliderChange(hour) {
     console.log(`Main.js: Slider-Stunde geändert auf ${hour}`);
     currentSliderHour = hour;
-    
+
     // --- NEU: Karte neu zeichnen, wenn der Slider bewegt wird ---
     // (Zeichnet nur was, wenn ein 'currentManualSummary' geladen ist)
     map.visualizeWarnings(currentManualSummary, currentSliderHour);
@@ -92,8 +92,16 @@ async function runAndUpdateDashboard() {
             geojson: JSON.parse(profile.geojsonString)
         };
 
+        // (Wir rufen die "Live"-Version auf, da dies der Live-Check ist)
+        const { gridPoints, error } = weather_LIVE.getGridPoints(profileData.geojson);
+
+        if (error) {
+            results.push({ profile: profileData, summary: weather_LIVE.getEmptySummary() });
+            continue; // Nächstes Profil
+        }
+
         // 2. WARTEN, bis dieser eine Aufruf fertig ist
-        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel);
+        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
         // 3. Ergebnis sammeln
         results.push({ profile: profileData, summary: summary });
 
@@ -120,27 +128,27 @@ async function runAndUpdateDashboard() {
 async function handleManualCheck(profileData) {
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
-    
+
     // 1. Punkte "offline" berechnen (kein API-Call)
     const { gridPoints, error } = getWeatherModule().getGridPoints(profileData.geojson);
-    
+
     if (error) {
         ui.setManualMonitorMessage(`<p>Fehler beim Berechnen der Punkte: ${error}</p>`);
         return;
     }
-    
+
     // 2. Graue Punkte zeichnen
     map.drawSamplePoints(gridPoints, profileData.geojson);
     map.zoomToGeoJSON(profileData.geojson);
 
     // 3. Engine aufrufen (MIT den Punkten)
     const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
-    
+
     // 4. Ergebnisse speichern & anzeigen
-    currentManualProfile = profileData; 
-    currentManualSummary = summary; 
-    ui.displayManualWarning(profileData, summary); 
-    map.visualizeWarnings(currentManualSummary, currentSliderHour); 
+    currentManualProfile = profileData;
+    currentManualSummary = summary;
+    ui.displayManualWarning(profileData, summary);
+    map.visualizeWarnings(currentManualSummary, currentSliderHour);
 }
 
 /**
