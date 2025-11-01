@@ -4,7 +4,8 @@ import { WARN_FACTORS } from './config.js';
 /**
  * Holt Daten für EIN Profil (via Bounding Box), prüft die Regeln und GIBT DAS ERGEBNIS ZURÜCK.
  */
-export async function fetchAndCheckProfile(profile) {
+export async function fetchAndCheckProfile(profile, modelInfo) {
+
     const geojson = profile.geojson;
     let bbox;
     try {
@@ -16,7 +17,18 @@ export async function fetchAndCheckProfile(profile) {
 
     const bboxString = `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`; // lat,lon,lat,lon
     const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_base,precipitation_probability';
-    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&forecast_days=1`; try {
+    let apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&forecast_days=1`;
+
+    // Füge Modell-Parameter hinzu, WENN sie definiert sind
+    if (modelInfo && modelInfo.apiName && modelInfo.runTimeISO) {
+        // Hinweis: Der Parameter für die Laufzeit ist 'forecast_run'
+        // (Das habe ich aus deinem DZMaster-Code gelernt)
+        apiUrl += `&models=${modelInfo.apiName}&forecast_run=${modelInfo.runTimeISO}`;
+    } else {
+        // Fallback auf "auto", wenn kein Modell gewählt ist
+        apiUrl += `&models=auto`;
+    }
+    try {
         const response = await fetch(apiUrl);
         if (!response.ok) {
             throw new Error(`API-Fehler: ${response.statusText}`);
@@ -202,8 +214,8 @@ export async function getGridPoints(geojson) {
         return { error: "Turf.js BBox-Fehler" };
     }
     const bboxString = `${bbox[1]},${bbox[0]},${bbox[3]},${bbox[2]}`;
-    // Wir fragen nur 'temperature' ab, um die Raster-Koordinaten zu bekommen
-    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${hourlyParams}&forecast_days=1`;
+    const minimalHourlyParam = 'temperature_2m';
+    const apiUrl = `https://api.open-meteo.com/v1/forecast?bounding_box=${bboxString}&hourly=${minimalHourlyParam}&forecast_days=1`;
     try {
         const response = await fetch(apiUrl);
         if (!response.ok) throw new Error(`API-Fehler: ${response.statusText}`);

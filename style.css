@@ -1,3 +1,31 @@
+:root {
+    /* Farben */
+    --color-primary: #007bff;
+    --color-secondary: #6c757d;
+    --color-success: #28a745;
+    --color-danger: #dc3545;
+    --color-warning: #ffc107;
+    --color-info: #17a2b8;
+
+    /* Hintergrund-Farben */
+    --background-main: #f8f9fa;
+    --background-surface: #ffffff;
+    --background-interactive: #e9ecef; /* Wichtig für den Slider! */
+    --background-dark: #343a40;
+
+    /* Text-Farben */
+    --text-primary: #212529; /* Wichtig für die Schrift! */
+    --text-secondary: #6c757d;
+    --text-on-dark: #ffffff;
+    --text-on-primary: #ffffff;
+
+    /* Ränder & Schatten */
+    --border-color: #dee2e6;
+    --border-color-strong: #adb5bd;
+    --border-radius: .25rem;
+    --shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+}
+
 /* --- GRUNDGERÜST (Version 2.0: Mit Footer) --- */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -9,8 +37,8 @@ body {
 /* Das NEUE Haupt-Layout (CSS Grid) */
 .page-container {
     display: grid;
-    /* Zeilen: 40px (Header), 1fr (Rest), 250px (Footer) */
-    grid-template-rows: 40px 1fr 250px; 
+    /* Zeilen: 80px (Header), 1fr (Rest), 250px (Footer) */
+    grid-template-rows: 150px 1fr 250px; 
     /* Spalten: 350px (Sidebar), 1fr (Rest) */
     grid-template-columns: 350px 1fr;
     height: 100vh;
@@ -19,12 +47,20 @@ body {
 .page-header {
     grid-row: 1;
     grid-column: 1 / span 2; /* Volle Breite */
-    background: #333;
-    color: white;
-    padding: 10px 15px;
+    
+    /* NEU: Helles Layout, das die Variablen nutzt */
+    background: var(--background-surface); 
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+
+    padding: 5px 15px;
     font-size: 1.2em;
-    line-height: 20px; 
     z-index: 10; 
+
+    /* NEU: Flexbox-Steuerung für die 3 Header-Teile */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 /* --- SIDEBAR & KARTE (Mittlere Zeile) --- */
@@ -174,4 +210,156 @@ button:hover {
 }
 .ampel-table tr.summary-row strong {
     color: #000;
+}
+
+
+#slider-container {
+    flex-grow: 1; /* Slider nimmt den mittleren Platz ein */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-width: 300px;
+    max-width: 900px;
+}
+
+.slider-content-wrapper {
+    width: 100%;
+    padding: 5px 10px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.slider-content-wrapper .time-row,
+.slider-content-wrapper .model-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    gap: 15px;
+    margin-bottom: 2px;
+}
+
+.slider-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 20px; /* Platz für Labels */
+}
+
+#slider-labels {
+    position: absolute;
+    top: 15px; /* Unter dem Slider */
+    left: 0;
+    right: 0;
+    height: 20px;
+    pointer-events: none;
+}
+
+.slider-label {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+#selectedTime,
+#modelLabel {
+    font-size: 14px;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+#autoupdateToggle label {
+    font-size: 24px;
+    color: var(--color-primary);
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+}
+#autoupdateCheckbox {
+    display: none; /* Wir verstecken die Box, nur das Label ist sichtbar */
+}
+
+#timeSlider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: var(--background-interactive);
+    border-radius: 3px;
+    outline: none;
+    transition: opacity 0.2s ease;
+    position: relative;
+    z-index: 2;
+    background: transparent; /* Wichtig, damit Highlight durchscheint */
+}
+
+#timeSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    cursor: pointer;
+}
+#timeSlider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+#slider-track-highlight {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    pointer-events: none;
+    background: var(--background-interactive);
+    z-index: 1;
+}
+
+#modelSelect {
+    font-size: 14px;
+    padding: 2px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--background-surface);
+}
+
+.info-button-shared {
+    background: transparent;
+    border: 1px solid var(--border-color-strong);
+    color: var(--text-primary);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0;
+    min-width: 0;
+}
+.info-popup {
+    display: none;
+    position: absolute;
+    bottom: 100%; /* Zeigt es über dem Button */
+    left: 50%;
+    transform: translateX(-50%);
+    width: 200px;
+    padding: 10px;
+    background: var(--background-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    z-index: 3000;
 }

@@ -10,7 +10,8 @@ export function getEmptySummary() {
  * Gibt SOFORT ein gefälschtes, alarmierendes Wetter-Summary zurück.
  * (Version 2.0: "Erwachsen" - initialisiert alle 24 Stunden)
  */
-export async function fetchAndCheckProfile(profile) {
+export async function fetchAndCheckProfile(profile, modelInfo) {
+    
     console.warn(`%cDEMO-MODUS: Gefälschte Daten für "${profile.name}" geladen.`, "color: magenta; font-weight: bold;");
     
     const summary = getEmptySummary();

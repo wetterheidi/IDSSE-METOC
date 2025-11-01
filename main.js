@@ -6,10 +6,15 @@ import * as weather_LIVE from './weather.js';
 import * as weather_MOCK from './weather_mock.js';
 import * as map from './map.js';
 import * as ui from './ui.js';
+import * as timeSlider from './timeSlider.js';
 
 // --- Globaler App-Zustand ---
 // (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
 let currentLayer = null;
+let currentManualProfile = null; // NEU: Merkt sich, welches Profil im Footer geladen ist
+let currentManualSummary = null; // NEU: Merkt sich das *Ergebnis* der letzten Prüfung
+let currentSliderHour = 0;       // NEU: Merkt sich die Stunde (0-23)
+let currentWeatherModel = null;  // NEU: Merkt sich { apiName, runTimeISO }
 
 /**
  * Die Weiche: Entscheidet, ob wir die echte API oder den Fake benutzen.
@@ -19,14 +24,47 @@ function getWeatherModule() {
     // Wir fragen das Element DIREKT im DOM ab, statt uns auf das ui-Modul zu verlassen.
     // Das ist robuster gegen Timing-Fehler.
     const checkbox = document.getElementById('demoModeCheckbox');
-    
+
     // WICHTIG: Prüfen, ob das Element existiert UND ob es .checked ist
     if (checkbox && checkbox.checked) {
         return weather_MOCK;
     }
-    
+
     // Standard-Verhalten
     return weather_LIVE;
+}
+
+// main.js
+
+/**
+ * HANDLER: Wird von timeSlider.js aufgerufen, wenn der Slider bewegt wird.
+ */
+function handleSliderChange(hour) {
+    console.log(`Main.js: Slider-Stunde geändert auf ${hour}`);
+    currentSliderHour = hour;
+
+    // TODO (später): Karten-Visualisierung für DIESE Stunde neu zeichnen
+    // z.B.: map.visualizeWarnings(currentManualSummary, currentSliderHour);
+}
+
+/**
+ * HANDLER: Wird von timeSlider.js aufgerufen, wenn das Modell geändert wird.
+ */
+function handleModelChange(apiName, runTimeISO) {
+    console.log(`Main.js: Modell geändert auf ${apiName} (Lauf: ${runTimeISO})`);
+    currentWeatherModel = { apiName, runTimeISO };
+
+    // TODO (später): Alle Prüfungen neu auslösen, da sich die Datenquelle geändert hat
+    // z.B.: runAndUpdateDashboard();
+    // z.B.: if (currentManualProfile) handleManualCheck(currentManualProfile);
+}
+
+/**
+ * HANDLER: Wird von timeSlider.js aufgerufen, wenn Autoupdate geklickt wird.
+ */
+function handleAutoupdateChange(isEnabled) {
+    console.log(`Main.js: Autoupdate ist jetzt ${isEnabled ? 'AN' : 'AUS'}`);
+    // (Logik hierfür später)
 }
 
 // --- KERN-WORKFLOWS (Die "Orchestrator"-Funktionen) ---
@@ -37,7 +75,7 @@ function getWeatherModule() {
  */
 async function runAndUpdateDashboard() {
     ui.setDashboardMessage(`<p>Prüfe ${await db.getProfileCount()} Profile...</p>`);
-    
+
     const profiles = await db.getProfiles();
     const results = []; // Hier sammeln wir die Ergebnisse
 
@@ -51,27 +89,26 @@ async function runAndUpdateDashboard() {
             rules: profile.rules,
             geojson: JSON.parse(profile.geojsonString)
         };
-        
+
         // 2. WARTEN, bis dieser eine Aufruf fertig ist
-        const summary = await getWeatherModule().fetchAndCheckProfile(profileData);
-        
+        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel);
         // 3. Ergebnis sammeln
         results.push({ profile: profileData, summary: summary });
-        
+
         // (Optional: Eine kleine künstliche Pause, um ganz sicher zu gehen)
         // await new Promise(resolve => setTimeout(resolve, 200)); // 200ms Pause
     }
     // --- Ende der neuen Schleife ---
 
     // Filtern und anzeigen (wie vorher)
-    const activeAlarms = results.filter(r => 
-        (r.summary.wind && r.summary.wind.triggered) || 
+    const activeAlarms = results.filter(r =>
+        (r.summary.wind && r.summary.wind.triggered) ||
         (r.summary.temp && r.summary.temp.triggered) ||
         (r.summary.vis && r.summary.vis.triggered) ||
         (r.summary.cloud && r.summary.cloud.triggered) ||
         (r.summary.precip && r.summary.precip.triggered)
     );
-    
+
     ui.displayAutoWarnings(activeAlarms);
 }
 
@@ -81,22 +118,21 @@ async function runAndUpdateDashboard() {
 async function handleManualCheck(profileData) {
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
-    
+
     // Sampling-Punkte von BBox-Antwort holen (neuer Plan)
     const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
     if (error) {
         ui.setManualMonitorMessage(`<p>Fehler beim Holen der Grid-Punkte: ${error}</p>`);
         return;
     }
-    
+
     map.drawSamplePoints(gridPoints, profileData.geojson);
     map.zoomToGeoJSON(profileData.geojson);
 
     // Engine aufrufen
-    const summary = await getWeatherModule().fetchAndCheckProfile(profileData);
-    
+    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel);
     // Ergebnisse anzeigen
-    ui.displayManualWarning(profileData, summary); 
+    ui.displayManualWarning(profileData, summary);
     map.visualizeWarnings(summary); // Visualisierung braucht noch die 'summary'
 }
 
@@ -119,7 +155,7 @@ async function handleSaveProfile(profileData) {
         alert("Bitte zuerst eine Fläche auf der Karte zeichnen.");
         return;
     }
-    
+
     const profile = {
         name: profileData.name,
         rules: profileData.rules,
@@ -127,12 +163,12 @@ async function handleSaveProfile(profileData) {
     };
 
     await db.saveProfile(profile);
-    
+
     // Aufräumen
     currentLayer.pm.disable();
     currentLayer = null;
     ui.resetProfileInputs();
-    
+
     // UI aktualisieren
     await updateProfileList();
 }
@@ -213,11 +249,11 @@ async function handleImport(profiles) {
 
 
 // --- ANWENDUNG STARTEN ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // 1. Karte initialisieren
     const leafletMap = map.initMap();
     map.initGeoman(leafletMap);
-    
+
     // 2. UI initialisieren und mit Handlern "füttern"
     ui.initUI({
         onMapCreate: handleMapCreate,
@@ -229,15 +265,28 @@ document.addEventListener('DOMContentLoaded', () => {
         onExport: handleExport,
         onImport: handleImport
     });
-    
-    // HIER IST DIE FEHLENDE VERDRAHTUNG:
+
+    // --- NEU: Schritt 3: Time-Slider initialisieren ---
+    // Wir übergeben unsere Handler als "Steckdosen"
+    try {
+        await timeSlider.initTimeSlider({
+            onSliderChange: handleSliderChange,
+            onModelChange: handleModelChange,
+            onAutoupdateChange: handleAutoupdateChange
+        });
+        console.log("Time-Slider erfolgreich initialisiert.");
+    } catch (err) {
+        console.error("FEHLER bei Initialisierung des Time-Sliders:", err);
+        // (z.B. wenn DOM-Elemente nicht gefunden wurden)
+    }
+
     map.onMapCreate(handleMapCreate);
 
-    // 3. App-Daten laden
+    // 4. App-Daten laden
     updateProfileList();
     updateTemplateList();
 
-    // 4. "Automatik-Light" starten
+    // 5. "Automatik-Light" starten
     runAndUpdateDashboard();
     setInterval(runAndUpdateDashboard, AUTO_CHECK_INTERVAL);
 });
