@@ -331,29 +331,41 @@ export const displayManualWarning = (profile, summary) => {
 
 /**
  * Baut die Profil-Liste in der Sidebar auf.
+ * (Version 2.0: Mit Spam-Bremse)
  */
 export const displayProfileList = (profiles, handlers) => {
     uiElements.profileList.innerHTML = '';
     profiles.forEach(profile => {
         const li = document.createElement('li');
         li.textContent = `${profile.name}`;
-
+        
         // Prüfen-Button
         const testButton = document.createElement('button');
         testButton.textContent = 'Prüfen & Laden';
+        testButton.className = 'check-profile-button'; // <-- NEU: CSS-Klasse
         testButton.style.marginLeft = '10px';
-        testButton.onclick = () => {
+        
+        // NEU: 'async' und 'await' Logik
+        testButton.onclick = async () => {
+            // 1. Alle Knöpfe sperren
+            setProfileButtonsDisabled(true); 
+            
             const profileData = {
                 id: profile.id,
                 name: profile.name,
                 rules: profile.rules,
                 geojson: JSON.parse(profile.geojsonString)
             };
-            handlers.onCheck(profileData);
+            
+            // 2. WARTEN, bis die Prüfung (inkl. API-Call) fertig ist
+            await handlers.onCheck(profileData); 
+            
+            // 3. Alle Knöpfe wieder freigeben
+            setProfileButtonsDisabled(false); 
         };
         li.appendChild(testButton);
 
-        // Löschen-Button
+        // Löschen-Button (unverändert)
         const deleteButton = document.createElement('button');
         deleteButton.textContent = 'Löschen';
         deleteButton.style.marginLeft = '5px';
@@ -362,7 +374,7 @@ export const displayProfileList = (profiles, handlers) => {
             handlers.onDelete(profile);
         };
         li.appendChild(deleteButton);
-
+        
         uiElements.profileList.appendChild(li);
     });
 };
@@ -462,3 +474,14 @@ const handleFileImport = (event, onImportCallback) => {
     };
     reader.readAsText(file);
 };
+
+/**
+ * Sperrt oder entsperrt alle "Prüfen & Laden"-Knöpfe in der Profil-Liste.
+ */
+function setProfileButtonsDisabled(disabled) {
+    const buttons = document.querySelectorAll('.check-profile-button'); // Wir brauchen diese Klasse
+    buttons.forEach(button => {
+        button.disabled = disabled;
+        button.textContent = disabled ? 'Prüfe...' : 'Prüfen & Laden';
+    });
+}

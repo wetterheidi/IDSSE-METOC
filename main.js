@@ -42,9 +42,10 @@ function getWeatherModule() {
 function handleSliderChange(hour) {
     console.log(`Main.js: Slider-Stunde geändert auf ${hour}`);
     currentSliderHour = hour;
-
-    // TODO (später): Karten-Visualisierung für DIESE Stunde neu zeichnen
-    // z.B.: map.visualizeWarnings(currentManualSummary, currentSliderHour);
+    
+    // --- NEU: Karte neu zeichnen, wenn der Slider bewegt wird ---
+    // (Zeichnet nur was, wenn ein 'currentManualSummary' geladen ist)
+    map.visualizeWarnings(currentManualSummary, currentSliderHour);
 }
 
 /**
@@ -131,9 +132,16 @@ async function handleManualCheck(profileData) {
 
     // Engine aufrufen
     const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel);
+
+    // --- NEU: Summary global speichern ---
+    currentManualProfile = profileData; // Merken, welches Profil aktiv ist
+    currentManualSummary = summary; // Merken, was das ERGEBNIS ist
+
     // Ergebnisse anzeigen
     ui.displayManualWarning(profileData, summary);
-    map.visualizeWarnings(summary); // Visualisierung braucht noch die 'summary'
+
+    // --- NEU: Karte für die AKTUELLE Slider-Stunde zeichnen ---
+    map.visualizeWarnings(currentManualSummary, currentSliderHour);
 }
 
 /**

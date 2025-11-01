@@ -102,7 +102,8 @@ export function checkThresholds(profile, data, geojson) {
                     currentStatus = 'alarm';
                     if (wind > summary.wind.max) summary.wind.max = wind;
                     summary.wind.triggered = true;
-                    summary.wind.affectedPoints.add(locationId);
+                    if (!summary.wind.hourlyAlarms[hour]) summary.wind.hourlyAlarms[hour] = new Set();
+                    summary.wind.hourlyAlarms[hour].add(locationId);
                 } else if (wind > rules.maxWind * WARN_FACTORS.wind) {
                     currentStatus = 'warn';
                 } else {
@@ -117,7 +118,8 @@ export function checkThresholds(profile, data, geojson) {
                     currentStatus = 'alarm';
                     if (temp < summary.temp.min) summary.temp.min = temp;
                     summary.temp.triggered = true;
-                    summary.temp.affectedPoints.add(locationId);
+                    if (!summary.temp.hourlyAlarms[hour]) summary.temp.hourlyAlarms[hour] = new Set();
+                    summary.temp.hourlyAlarms[hour].add(locationId);
                 } else if (temp < rules.minTemp + WARN_FACTORS.temp) {
                     currentStatus = 'warn';
                 } else {
@@ -132,7 +134,8 @@ export function checkThresholds(profile, data, geojson) {
                     currentStatus = 'alarm';
                     if (vis < summary.vis.min) summary.vis.min = vis;
                     summary.vis.triggered = true;
-                    summary.vis.affectedPoints.add(locationId);
+                    if (!summary.vis.hourlyAlarms[hour]) summary.vis.hourlyAlarms[hour] = new Set();
+                    summary.vis.hourlyAlarms[hour].add(locationId);
                 } else if (vis < rules.minVis * WARN_FACTORS.vis) {
                     currentStatus = 'warn';
                 } else {
@@ -147,7 +150,8 @@ export function checkThresholds(profile, data, geojson) {
                     currentStatus = 'alarm';
                     if (cloud < summary.cloud.min) summary.cloud.min = cloud;
                     summary.cloud.triggered = true;
-                    summary.cloud.affectedPoints.add(locationId);
+                    if (!summary.cloud.hourlyAlarms[hour]) summary.cloud.hourlyAlarms[hour] = new Set();
+                    summary.cloud.hourlyAlarms[hour].add(locationId);
                 } else if (cloud !== null && cloud < rules.minCloud * WARN_FACTORS.cloud) {
                     currentStatus = 'warn';
                 } else {
@@ -162,7 +166,8 @@ export function checkThresholds(profile, data, geojson) {
                     currentStatus = 'alarm';
                     if (precip > summary.precip.max) summary.precip.max = precip;
                     summary.precip.triggered = true;
-                    summary.precip.affectedPoints.add(locationId);
+                    if (!summary.precip.hourlyAlarms[hour]) summary.precip.hourlyAlarms[hour] = new Set();
+                    summary.precip.hourlyAlarms[hour].add(locationId);
                 } else if (precip > rules.maxPrecipProb * WARN_FACTORS.precip) {
                     currentStatus = 'warn';
                 } else {
@@ -237,11 +242,12 @@ export async function getGridPoints(geojson) {
  */
 export function getEmptySummary() {
     return {
-        wind: { triggered: false, max: 0, hourlyStatus: {}, affectedPoints: new Set() },
-        temp: { triggered: false, min: 999, hourlyStatus: {}, affectedPoints: new Set() },
-        vis: { triggered: false, min: 99999, hourlyStatus: {}, affectedPoints: new Set() },
-        cloud: { triggered: false, min: 99999, hourlyStatus: {}, affectedPoints: new Set() },
-        precip: { triggered: false, max: 0, hourlyStatus: {}, affectedPoints: new Set() },
+        // HINWEIS: 'affectedPoints' wurde entfernt
+        wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {} },
+        temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: {} },
+        vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {} },
+        cloud: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {} },
+        precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {} },
         combined: { triggered: false, hourlyStatus: {} },
         error: null
     };

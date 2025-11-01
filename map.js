@@ -51,21 +51,21 @@ export const onMapCreate = (callback) => {
     });
 };
 
-
 /**
- * Zeichnet die Alarm-Punkte (rot/blau/etc.)
- * (Version 2.0: Repariert nach BBox-Refactoring)
+ * Zeichnet die Alarm-Punkte für EINE BESTIMMTE STUNDE.
+ * (Version 3.0: "Stunden-bewusst")
  */
-export const visualizeWarnings = (summary) => {
+export const visualizeWarnings = (summary, hour) => {
     warningMarkersLayer.clearLayers();
 
-    // Helfer, um Marker zu zeichnen
+    // Wenn kein Summary da ist (z.B. vor der ersten Prüfung), tu nichts.
+    if (!summary) return;
+
+    // Helfer (unverändert)
     const drawMarkers = (pointSet, color, fillOpacity, tooltip) => {
         pointSet.forEach(locationString => {
-            // locationString ist "lat,lon"
             const coords = locationString.split(',');
             const latLng = [parseFloat(coords[0]), parseFloat(coords[1])];
-
             L.circleMarker(latLng, {
                 radius: 6,
                 color: color,
@@ -75,13 +75,35 @@ export const visualizeWarnings = (summary) => {
               .addTo(warningMarkersLayer);
         });
     };
+    
+    // --- NEUE LOGIK ---
+    // Wir holen die Alarm-Sets für die EINE Stunde, die der Slider anzeigt.
 
-    // 'affectedPoints' wird jetzt wieder von checkThresholds gefüllt
-    if (summary.wind.triggered) drawMarkers(summary.wind.affectedPoints, 'red', 0.7, `Wind: ${summary.wind.max.toFixed(1)} km/h`);
-    if (summary.temp.triggered) drawMarkers(summary.temp.affectedPoints, 'blue', 0.7, `Temp: ${summary.temp.min.toFixed(1)} °C`);
-    if (summary.vis.triggered) drawMarkers(summary.vis.affectedPoints, '#8B4513', 0.7, `Sicht: ${summary.vis.min.toFixed(0)} m`);
-    if (summary.cloud.triggered) drawMarkers(summary.cloud.affectedPoints, '#555', 0.7, `Wolken: ${summary.cloud.min.toFixed(0)} m`);
-    if (summary.precip.triggered) drawMarkers(summary.precip.affectedPoints, '#000080', 0.7, `Niederschlag: ${summary.precip.max.toFixed(0)}%`);
+    // Wind
+    const windAlarms = summary.wind.hourlyAlarms[hour];
+    if (windAlarms && windAlarms.size > 0) {
+        drawMarkers(windAlarms, 'red', 0.7, `Wind (${hour}h): ${summary.wind.max.toFixed(1)} km/h`);
+    }
+    // Temp
+    const tempAlarms = summary.temp.hourlyAlarms[hour];
+    if (tempAlarms && tempAlarms.size > 0) {
+        drawMarkers(tempAlarms, 'blue', 0.7, `Temp (${hour}h): ${summary.temp.min.toFixed(1)} °C`);
+    }
+    // Sicht
+    const visAlarms = summary.vis.hourlyAlarms[hour];
+    if (visAlarms && visAlarms.size > 0) {
+        drawMarkers(visAlarms, '#8B4513', 0.7, `Sicht (${hour}h): ${summary.vis.min.toFixed(0)} m`);
+    }
+    // Wolken
+    const cloudAlarms = summary.cloud.hourlyAlarms[hour];
+    if (cloudAlarms && cloudAlarms.size > 0) {
+        drawMarkers(cloudAlarms, '#555', 0.7, `Wolken (${hour}h): ${summary.cloud.min.toFixed(0)} m`);
+    }
+    // Niederschlag
+    const precipAlarms = summary.precip.hourlyAlarms[hour];
+    if (precipAlarms && precipAlarms.size > 0) {
+        drawMarkers(precipAlarms, '#000080', 0.7, `Niederschlag (${hour}h): ${summary.precip.max.toFixed(0)}%`);
+    }
 };
 
 /**
