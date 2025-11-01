@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leaflet Geoman (Strukturiert)</title>
+    <title>IDSSE-M Cockpit</title>
+    <link rel="icon" href="data:,">
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -14,18 +15,19 @@
 </head>
 
 <body>
-    
+
     <div class="page-container">
         <header class="page-header">
-            IDSSE-M Cockpit 
-            </header>
+            IDSSE-M Cockpit
+        </header>
 
         <div class="main-content">
-            
+
             <div id="sidebar">
-                
+
                 <button class="accordion-header active">Automatischer Monitor</button>
-                <div class="accordion-panel" style="max-height: 200px;"> <button id="runAutoCheckButton">Voll-Check jetzt starten</button>
+                <div class="accordion-panel" style="max-height: 200px;"> <button id="runAutoCheckButton">Voll-Check
+                        jetzt starten</button>
                     <div id="autoWarnDashboard">
                         <p>Starte automatische Prüfung...</p>
                     </div>
@@ -36,10 +38,10 @@
                     <h4>Gespeicherte Profile:</h4>
                     <ul id="profileList"></ul>
                     <hr>
-                    
+
                     <h4>Neues Profil erstellen:</h4>
                     <input type="text" id="profileName" placeholder="Profil-Name (z.B. Heli A)">
-                    
+
                     <label for="maxWind">Max. Windböe (km/h):</label>
                     <input type="number" id="maxWind" value="60">
                     <br>
@@ -55,9 +57,9 @@
                     <label for="maxPrecipProb">Max. Niederschl.-Chance (%):</label>
                     <input type="number" id="maxPrecipProb" value="30">
                     <hr>
-                    
+
                     <button id="saveButton" disabled>Aktuelles Shape speichern</button>
-                    
+
                     <div style="background: #eee; padding: 5px; margin-top: 10px; border-radius: 5px;">
                         <label for="templateName">Name für Regeln:</label>
                         <input type="text" id="templateName" placeholder="z.B. 'Heli VFR'">
@@ -76,7 +78,7 @@
                         Keine manuelle Prüfung aktiv.
                     </div>
                 </div>
-                
+
                 <button class="accordion-header">Daten-Backup</button>
                 <div class="accordion-panel">
                     <button id="exportButton">Alle Profile exportieren</button>
@@ -85,14 +87,16 @@
                     <button id="importButton">Profile importieren</button>
                 </div>
 
-            </div> <div id="map"></div>
-        
-        </div> </div> <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            </div>
+            <div id="map"></div>
+
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.min.js"></script>
     <script src="https://unpkg.com/@turf/turf@latest/turf.min.js"></script>
     <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
-    <script src="app.js"></script>
-
+    <script type="module" src="main.js"></script>
 </body>
 
 </html>

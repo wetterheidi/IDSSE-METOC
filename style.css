@@ -35,15 +35,20 @@ body {
 #sidebar {
     background: #f4f4f4;
     padding: 10px;
-    /* WICHTIG: Erlaubt Scrollen IN der Sidebar, nicht am Body */
-    overflow-y: auto;
     grid-column: 1;
     border-right: 1px solid #ccc;
+    
+    /* NEU: Flexbox-Layout für die Sidebar */
+    display: flex;
+    flex-direction: column;
+    /* Höhe - Header - (Padding oben+unten) */
+    height: calc(100vh - 40px - 20px); 
+    overflow: hidden; /* Die Sidebar selbst scrollt NIE */
 }
 
 #map {
     grid-column: 2;
-    height: 100%; /* Füllt die Zelle voll aus */
+    height: 100%; 
     width: 100%;
 }
 
@@ -62,6 +67,7 @@ body {
     transition: 0.4s;
     margin-top: 5px;
     border-radius: 3px;
+    flex-shrink: 0; /* Header schrumpfen nicht */
 }
 
 .accordion-header:hover, .accordion-header.active {
@@ -70,15 +76,24 @@ body {
 
 /* Das Panel (der Inhalt) - standardmäßig versteckt */
 .accordion-panel {
-    padding: 0 15px; /* Nur links/rechts, oben/unten kommt durch 'max-height' */
+    padding: 10px 15px; /* Jetzt auch oben/unten padding */
     background-color: white;
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.2s ease-out;
-    border-bottom-left-radius: 3px;
-    border-bottom-right-radius: 3px;
     border: 1px solid #ddd;
     border-top: none;
+    border-radius: 0 0 3px 3px;
+    
+    /* Standardmäßig geschlossen */
+    display: none; 
+    overflow-y: auto; /* HIER WIRD GEScrollt */
+    flex-grow: 1; /* Füllt den restlichen Platz */
+    
+    /* Wichtig für Flexbox-Kinder mit Overflow */
+    min-height: 0; 
+}
+
+/* NEU: Klasse für "offen" */
+.accordion-panel.open {
+    display: block; /* Macht das Panel sichtbar */
 }
 
 /* --- STYLING DER INHALTE (Ihr alter Code, leicht angepasst) --- */
