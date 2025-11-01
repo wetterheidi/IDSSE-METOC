@@ -19,25 +19,23 @@
     <div class="page-container">
 
         <header class="page-header">
-            IDSSE-M Cockpit
+            <div class="header-left-compact"> IDSSE-M Cockpit
+                <div id="demoModeCompact"> <label for="demoModeCheckbox" style="cursor: pointer;">
+                        <input type="checkbox" id="demoModeCheckbox" style="cursor: pointer;">
+                        Demo-Modus
+                    </label>
+                </div>
+            </div>
+
             <div id="slider-container">
                 <div class="slider-content-wrapper">
 
-                    <div class="time-row">
-                        <span id="selectedTime">Ausgewählte Zeit: --:--</span>
+                    <div class="time-model-row-compact"> <span id="selectedTime">Zeit: --:--</span>
                         <div id="autoupdateToggle">
                             <label for="autoupdateCheckbox" title="Autoupdate">⟳</label>
                             <input type="checkbox" id="autoupdateCheckbox">
                         </div>
-                    </div>
 
-                    <div class="slider-wrapper">
-                        <div id="slider-track-highlight"></div>
-                        <input type="range" id="timeSlider" min="0" max="23" value="0" disabled>
-                        <div id="slider-labels"></div>
-                    </div>
-
-                    <div id="model-row">
                         <label id="modelLabel" for="modelSelect" title="Modell-Lauf">Modell:</label>
                         <select id="modelSelect">
                             <option value="">-- Lade Modelle --</option>
@@ -46,13 +44,13 @@
                         <div id="modelInfoPopup" class="info-popup"></div>
                     </div>
 
+                    <div class="slider-wrapper">
+                        <div id="slider-track-highlight"></div>
+                        <input type="range" id="timeSlider" min="0" max="23" value="0" disabled>
+                        <div id="slider-labels"></div>
+                    </div>
+
                 </div>
-            </div>
-            <div style="float: right; font-size: 0.8em; margin-right: 20px; line-height: 20px;">
-                <label for="demoModeCheckbox" style="cursor: pointer;">
-                    <input type="checkbox" id="demoModeCheckbox" style="cursor: pointer;">
-                    Demo-Modus (Offline)
-                </label>
             </div>
         </header>
 
@@ -154,7 +152,8 @@
     <script src="https://unpkg.com/@turf/turf@latest/turf.min.js"></script>
     <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
     <script type="module" src="main.js"></script>
 </body>
 

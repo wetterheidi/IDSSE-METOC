@@ -38,7 +38,7 @@ body {
 .page-container {
     display: grid;
     /* Zeilen: 80px (Header), 1fr (Rest), 250px (Footer) */
-    grid-template-rows: 150px 1fr 250px; 
+    grid-template-rows: 80px 1fr 250px; /* Maximalhöhe auf 80px gesetzt */
     /* Spalten: 350px (Sidebar), 1fr (Rest) */
     grid-template-columns: 350px 1fr;
     height: 100vh;
@@ -57,7 +57,10 @@ body {
     font-size: 1.2em;
     z-index: 10; 
 
-    /* NEU: Flexbox-Steuerung für die 3 Header-Teile */
+    /* NEU: Einhaltung der Höhe sicherstellen */
+    height: 80px; 
+    
+    /* NEU: Flexbox-Steuerung für die 2 (statt 3) Header-Teile */
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -231,20 +234,21 @@ button:hover {
     align-items: center;
 }
 
-.slider-content-wrapper .time-row,
-.slider-content-wrapper .model-row {
+.slider-content-wrapper .time-model-row-compact {
     display: flex;
     justify-content: center;
     align-items: center;
     width: 100%;
-    gap: 15px;
-    margin-bottom: 2px;
+    gap: 10px; /* Abstand reduziert */
+    margin-bottom: 5px; /* Abstand zum Slider reduziert */
+    font-size: 0.9em; /* Schriftgröße leicht reduziert */
 }
 
 .slider-wrapper {
     position: relative;
     width: 100%;
-    margin-bottom: 20px; /* Platz für Labels */
+    margin-bottom: 30px;
+    margin-top: 5px; /* Platz für Labels oben (wie im letzten Schritt) */
 }
 
 #slider-labels {
@@ -265,7 +269,13 @@ button:hover {
     white-space: nowrap;
 }
 
-#selectedTime,
+#selectedTime {
+    font-size: 14px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    font-weight: bold; /* Macht die Zeit besser lesbar */
+}
+
 #modelLabel {
     font-size: 14px;
     color: var(--text-primary);
@@ -273,12 +283,13 @@ button:hover {
 }
 
 #autoupdateToggle label {
-    font-size: 24px;
+    font-size: 20px; /* Von 24px reduziert */
     color: var(--color-primary);
     font-weight: bold;
     cursor: pointer;
     line-height: 1;
 }
+
 #autoupdateCheckbox {
     display: none; /* Wir verstecken die Box, nur das Label ist sichtbar */
 }
@@ -334,6 +345,9 @@ button:hover {
     border-radius: 4px;
     border: 1px solid var(--border-color);
     background: var(--background-surface);
+    /* NEU: Erzwinge eine feste, kompakte Breite (z.B. 180px) */
+    width: 180px; 
+    max-width: 180px;
 }
 
 .info-button-shared {
@@ -429,4 +443,17 @@ button:hover {
     /* Höhe = 100% des Footers - Tabs - Padding */
     height: calc(250px - 45px - 20px); 
     width: 100%;
+}
+
+/* NEU: Kompakte linke Seite für Titel und Demo-Modus */
+.header-left-compact {
+    display: flex;
+    flex-direction: column; /* Stapelt Titel und Demo untereinander */
+    align-items: flex-start;
+}
+
+#demoModeCompact {
+    font-size: 0.8em; /* Kleinere Schrift */
+    margin-top: 5px; /* Abstand zum Titel */
+    line-height: 1;
 }
