@@ -169,17 +169,21 @@ function updateSliderHighlight(value) {
  */
 function updateModelInfoDisplay(apiName, runKey) {
     
-    // Formatierung der Laufzeit
     let runTimeDisplay;
+    
+    // 1. Logge den erhaltenen Schlüssel zur Fehlerbehebung
+    console.log(`[updateModelInfoDisplay] Erhaltener runKey: ${runKey}`); 
+
+    // 2. Prüfe auf den Fall, dass fetchLastRunTime keine spezifische Zeit liefern konnte.
     if (runKey === 'latest') {
-        // Informativer Text für dynamische/seamless Modelle
-        runTimeDisplay = 'Neuester Stand (dynamisch)'; 
+        // Dieser Fall tritt bei 'auto' oder API-Fehler in fetchLastRunTime auf.
+        runTimeDisplay = 'Laufzeit nicht abrufbar (Kein fester Run)'; 
     } else {
-        // Verwendet die Formatierungsfunktion YYYY-MM-DD HH:MMZ
+        // 3. WERT sollte ein ISO-String sein. Wir versuchen, ihn zu formatieren.
         runTimeDisplay = formatIsoToRunTime(runKey);
     }
     
-    // Info-Popup Text aktualisieren, um der gewünschten Struktur zu entsprechen: "Run: [Wert]"
+    // Info-Popup Text aktualisieren
     dom.modelInfoPopup.innerHTML = `<strong>Run:</strong> ${runTimeDisplay}`;
 }
 
@@ -241,39 +245,47 @@ async function fetchLastRunTime(selectedApiName) {
     }
 
     // 3. Metadaten-URL erstellen
-    // Die Metadaten-URL von Open-Meteo basiert auf der ID (z.B. dwd_icon)
-    const metaUrl = `https://api.open-meteo.com/v1/model-meta/${modelMetaId}.json`;
+    // KORREKTUR: Verwende das robuste Format aus dem anderen Projekt
+    const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`; 
     
     try {
         const metaResponse = await fetch(metaUrl);
         if (!metaResponse.ok) {
-            // Fängt 404 oder andere Fehler ab.
-            throw new Error(`Status ${metaResponse.status}`);
+            // Loggt den Statuscode (z.B. 404) zur besseren Diagnose
+            throw new Error(`Status ${metaResponse.status}`); 
         }
         const metaData = await metaResponse.json();
         
         // Zeitstempel ist in Sekunden (UNIX Epoch)
         const runDate = new Date(metaData.last_run_initialisation_time * 1000);
         
-        // WICHTIG: Rückgabe als ISO-String für das Date-Objekt in main.js
+        // WICHTIG: Rückgabe als ISO-String
         return runDate.toISOString(); 
         
     } catch (e) {
-        // Fallback, wenn der Abruf fehlschlägt (Netzwerkfehler, etc.)
-        console.warn(`[timeSlider] Konnte letzte Laufzeit für ${selectedApiName} nicht abrufen:`, e.message);
+        // Fallback, wenn der Abruf fehlschlägt
+        console.warn(`[timeSlider] Konnte letzte Laufzeit für ${selectedApiName} nicht abrufen: ${e.message}`);
         return 'latest';
     }
 }
 
 /**
- * NEU: Formatiert einen ISO-Zeitstempel in das gewünschte Laufzeit-Format.
+ * Formatiert einen ISO-Zeitstempel in das gewünschte Laufzeit-Format.
  * @param {string} isoString - Der ISO-Zeitstempel.
- * @returns {string} Das Format YYYY-MM-DD HH:MMZ (z.B. 2025-11-01 12:00Z).
+ * @returns {string} Das Format YYYY-MM-DD HH:MMZ (z.B. 2025-11-01 12:00Z) oder einen Fehlerstring.
  */
 function formatIsoToRunTime(isoString) {
-    if (!isoString) return 'N/A';
+    if (!isoString || typeof isoString !== 'string') return 'FEHLER: Ungültige Daten';
     
     const date = new Date(isoString);
+    
+    // KORREKTUR: Prüft auf ungültige Datumsobjekte (new Date(bad string) liefert 'Invalid Date')
+    if (isNaN(date.getTime())) {
+        console.error(`[formatIsoToRunTime] Konnte Datum nicht parsen. Erhalten: ${isoString}`);
+        // Gibt den Originalwert zurück, damit der Benutzer sehen kann, was schiefgelaufen ist.
+        return `FEHLER (NaN): ${isoString}`; 
+    }
+
     const year = date.getUTCFullYear();
     const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
     const day = date.getUTCDate().toString().padStart(2, '0');

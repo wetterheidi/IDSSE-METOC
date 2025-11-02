@@ -468,6 +468,7 @@ button:hover {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: var(--shadow);
+    font-size: 11px;
     z-index: 3000;
 }
 
