@@ -1,6 +1,7 @@
 // ui.js
 import * as db from './db.js'; // Wird für Callbacks benötigt
 import * as formatter from './formatter.js'; // <-- NEU
+import { UNITS } from './config.js';
 
 export const uiElements = {};
 
@@ -18,6 +19,10 @@ export const initUI = (handlers) => {
     uiElements.profileList = document.getElementById('profileList');
     uiElements.profileNameInput = document.getElementById('profileName');
     uiElements.saveButton = document.getElementById('saveButton');
+
+    uiElements.mapStatusContainer = document.getElementById('mapStatusContainer');
+    uiElements.mapStatusText = document.getElementById('mapStatusText');
+
     uiElements.ruleInputs = {
         maxWind: document.getElementById('maxWind'),
         minTemp: document.getElementById('minTemp'),
@@ -36,8 +41,13 @@ export const initUI = (handlers) => {
     uiElements.demoModeCheckbox = document.getElementById('demoModeCheckbox'); // Gefunden!
     uiElements.unitModeMetric = document.querySelector('input[name="unitMode"][value="metric"]');
     uiElements.unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
-    // --- ENDE Element-Suche ---
-
+    uiElements.unitSpans = {
+        maxWind: document.getElementById('unit-maxWind'),
+        minTemp: document.getElementById('unit-minTemp'),
+        minVis: document.getElementById('unit-minVis'),
+        minCloud: document.getElementById('unit-minCloud'),
+        maxPrecipProb: document.getElementById('unit-maxPrecipProb'),
+    };
 
     // --- SCHRITT 2: DANN alle Event-Listener anhängen ---
 
@@ -58,6 +68,22 @@ export const initUI = (handlers) => {
             });
         });
     }
+
+    // NEU: Einheiten-Modus
+    const unitModeChangeHandler = () => {
+        // Die Labels sofort nach der Änderung aktualisieren
+        updateRuleInputLabels();
+    };
+
+    if (uiElements.unitModeMetric) {
+        uiElements.unitModeMetric.addEventListener('change', unitModeChangeHandler);
+    }
+    if (uiElements.unitModeAviation) {
+        uiElements.unitModeAviation.addEventListener('change', unitModeChangeHandler);
+    }
+
+    // Beim Start die Labels einmal korrekt setzen (Standard ist "metric")
+    updateRuleInputLabels();
 
     // Auto-Check
     if (uiElements.runAutoCheckButton) {
@@ -174,6 +200,8 @@ export const initUI = (handlers) => {
             showGraphTab.classList.add('active');
         });
     }
+
+    initMapStatusPlaceholder();
 };
 
 
@@ -199,7 +227,7 @@ export function initResizeHandle() { // WICHTIG: Exportieren
         handle.style.borderTopColor = 'red';
         pageContainer.style.cursor = 'ns-resize';
         document.body.style.userSelect = 'none';
-        e.preventDefault(); 
+        e.preventDefault();
     });
 
     // 2. Drag-Bewegung
@@ -208,7 +236,7 @@ export function initResizeHandle() { // WICHTIG: Exportieren
 
         const viewportHeight = window.innerHeight;
         const mouseY = e.clientY;
-        
+
         let newFooterHeight = viewportHeight - mouseY;
 
         const maxFooterHeight = viewportHeight * maxFooterHeightFactor;
@@ -221,9 +249,9 @@ export function initResizeHandle() { // WICHTIG: Exportieren
 
         // CSS Variable setzen
         pageContainer.style.setProperty('--footer-height', `${newFooterHeight}px`);
-        
+
         // Chart.js muss manuell benachrichtigt werden
-        window.dispatchEvent(new Event('resize')); 
+        window.dispatchEvent(new Event('resize'));
     });
 
     // 3. Drag-Ende
@@ -278,6 +306,17 @@ export const displayAutoWarnings = (alarmResults) => {
         html += `</div>`;
     });
     monitor.innerHTML = html;
+};
+
+/**
+ * NEU: Initialisiert den Karten-Status-Platzhalter.
+ */
+export const initMapStatusPlaceholder = () => {
+    // Setzt den Standard-Zustand beim Laden oder Reset
+    uiElements.mapStatusContainer.style.borderColor = 'var(--border-color-strong)';
+    uiElements.mapStatusContainer.style.backgroundColor = 'transparent';
+    uiElements.mapStatusText.innerHTML = '⚠️ **3. Area zeichnen:** Bitte zuerst eine Area auf der Karte definieren.';
+    uiElements.saveButton.disabled = true;
 };
 
 /**
@@ -476,18 +515,27 @@ export const applyTemplateToInputs = (template) => {
     } else {
         uiElements.unitModeMetric.checked = true;
     }
-};
 
+    // WICHTIG: Nach dem Setzen des Radio-Buttons die Labels aktualisieren
+    updateRuleInputLabels();
+};
 
 // --- 4. Interne Hilfsfunktionen ---
 
 export const setDashboardMessage = (html) => { uiElements.autoWarnDashboard.innerHTML = html; };
 export const setManualMonitorMessage = (html) => { uiElements.manualWarningMonitor.innerHTML = html; };
-export const enableSaveButton = () => { uiElements.saveButton.disabled = false; };
+
+export const enableSaveButton = () => {
+    uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
+    uiElements.mapStatusContainer.style.backgroundColor = '#d4edda'; // Helles Grün
+    uiElements.mapStatusText.innerHTML = '✅ **3. Area gezeichnet:** Shape ist bereit zum Speichern.';
+    uiElements.saveButton.disabled = false;
+};
 
 export const resetProfileInputs = () => {
     uiElements.profileNameInput.value = '';
-    uiElements.saveButton.disabled = true;
+    // Wichtig: Beim Reset muss der Karten-Status auch zurückgesetzt werden.
+    initMapStatusPlaceholder();
 };
 
 /**
@@ -548,4 +596,31 @@ function setProfileButtonsDisabled(disabled) {
         button.disabled = disabled;
         button.textContent = disabled ? 'Prüfe...' : 'Prüfen & Laden';
     });
+}
+
+/**
+ * NEU: Aktualisiert die Labels (km/h, kts, m, ft) neben den Input-Feldern.
+ */
+function updateRuleInputLabels() {
+    // 1. Aktuellen Modus bestimmen
+    const mode = uiElements.unitModeAviation.checked ? 'aviation' : 'metric';
+    const unitConfig = UNITS[mode];
+
+    // 2. Labels im DOM aktualisieren
+    if (uiElements.unitSpans.maxWind) {
+        uiElements.unitSpans.maxWind.textContent = unitConfig.speed;
+    }
+    if (uiElements.unitSpans.minTemp) {
+        uiElements.unitSpans.minTemp.textContent = unitConfig.temp;
+    }
+    if (uiElements.unitSpans.minVis) {
+        uiElements.unitSpans.minVis.textContent = unitConfig.altitude;
+    }
+    if (uiElements.unitSpans.minCloud) {
+        uiElements.unitSpans.minCloud.textContent = unitConfig.altitude;
+    }
+    // Niederschlag ist immer Prozent
+    if (uiElements.unitSpans.maxPrecipProb) {
+        uiElements.unitSpans.maxPrecipProb.textContent = '%';
+    }
 }

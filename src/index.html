@@ -55,21 +55,17 @@
 
         <div id="sidebar">
 
-            <button class="accordion-header active">Automatischer Monitor</button>
-            <div class="accordion-panel" style="max-height: 200px;"> <button id="runAutoCheckButton">Voll-Check jetzt
+            <button class="accordion-header active">🚨 Automatischer Alarm-Monitor</button>
+            <div class="accordion-panel open" style="max-height: 200px;"> <button id="runAutoCheckButton">Voll-Check
+                    jetzt
                     starten</button>
                 <div id="autoWarnDashboard">
                     <p>Starte automatische Prüfung...</p>
                 </div>
             </div>
 
-            <button class="accordion-header">Profile & Vorlagen</button>
+            <button class="accordion-header">✍️ Profil erstellen / Regeln definieren</button>
             <div class="accordion-panel">
-                <h4>Gespeicherte Profile:</h4>
-                <ul id="profileList"></ul>
-                <hr>
-
-                <h4>Neues Profil erstellen:</h4>
 
                 <div class="setting-group" style="padding-bottom: 10px;">
                     <strong>Einheiten-Modus:</strong>
@@ -82,39 +78,52 @@
                         <input type="radio" name="unitMode" value="aviation"> Aviation (ft, kts, °C)
                     </label>
                 </div>
-                <input type="text" id="profileName" placeholder="Profil-Name (z.B. Heli A)">
+                <input type="text" id="profileName" placeholder="1. Profil-Name (z.B. Heli A)">
 
-                <div class="rule-input-container">
-                    
-                    <div class="rule-input-group">
-                        <label for="maxWind">Max. Windböe (km/h):</label>
-                        <input type="number" id="maxWind" value="60">
+                <details open
+                    style="margin-bottom: 10px; border-left: 3px solid var(--color-primary); padding-left: 8px;">
+                    <summary style="font-weight: bold; cursor: pointer; padding: 5px 0;">2. Schwellenwerte definieren
+                        (Klicken zum Ausklappen)</summary>
+                    <div class="rule-input-container">
+
+                        <div class="rule-input-group">
+                            <label for="maxWind">Max. Windböe:</label>
+                            <input type="number" id="maxWind" value="60">
+                            <span id="unit-maxWind">km/h</span>
+                        </div>
+
+                        <div class="rule-input-group">
+                            <label for="minTemp">Min. Temperatur:</label>
+                            <input type="number" id="minTemp" value="0">
+                            <span id="unit-minTemp">°C</span>
+                        </div>
+
+                        <div class="rule-input-group">
+                            <label for="minVis">Min. Sichtweite:</label>
+                            <input type="number" id="minVis" value="5000">
+                            <span id="unit-minVis">Meter</span>
+                        </div>
+
+                        <div class="rule-input-group">
+                            <label for="minCloud">Min. Wolkenuntergrenze:</label>
+                            <input type="number" id="minCloud" value="500">
+                            <span id="unit-minCloud">Meter</span>
+                        </div>
+
+                        <div class="rule-input-group">
+                            <label for="maxPrecipProb">Max. Niederschl.-Chance:</label>
+                            <input type="number" id="maxPrecipProb" value="30">
+                            <span id="unit-maxPrecipProb">%</span>
+                        </div>
                     </div>
-
-                    <div class="rule-input-group">
-                        <label for="minTemp">Min. Temperatur (°C):</label>
-                        <input type="number" id="minTemp" value="0">
+                    <div id="mapStatusContainer"
+                        style="margin-top: 10px; padding: 10px; border: 1px dashed var(--border-color-strong); border-radius: var(--border-radius);">
+                        <div id="mapStatusText">
+                            ⚠️ **3. Area zeichnen:** Bitte zuerst eine Area auf der Karte definieren.
+                        </div>
                     </div>
-
-                    <div class="rule-input-group">
-                        <label for="minVis">Min. Sichtweite (Meter):</label>
-                        <input type="number" id="minVis" value="5000">
-                    </div>
-
-                    <div class="rule-input-group">
-                        <label for="minCloud">Min. Wolkenuntergrenze (Meter):</label>
-                        <input type="number" id="minCloud" value="500">
-                    </div>
-                    
-                    <div class="rule-input-group">
-                        <label for="maxPrecipProb">Max. Niederschl.-Chance (%):</label>
-                        <input type="number" id="maxPrecipProb" value="30">
-                    </div>
-
-                </div>
-                <hr>
-
-                <button id="saveButton" disabled>Aktuelles Shape speichern</button>
+                </details>
+                <button id="saveButton" disabled>4. Aktuelles Shape speichern</button>
 
                 <div style="background: #eee; padding: 5px; margin-top: 10px; border-radius: 5px;">
                     <label for="templateName">Name für Regeln:</label>
@@ -128,7 +137,20 @@
                 </div>
             </div>
 
-            <button class="accordion-header">Daten-Backup</button>
+            <button class="accordion-header">📂 Gespeicherte Profile & Vorlagen laden</button>
+            <div class="accordion-panel">
+                <h4>Profile verwalten:</h4>
+                <ul id="profileList"></ul>
+                <hr>
+
+                <h4>Regel-Vorlage anwenden:</h4>
+                <label for="templateSelect">Vorlage wählen:</label>
+                <select id="templateSelect">
+                    <option value="">-- Vorlage wählen --</option>
+                </select>
+            </div>
+
+            <button class="accordion-header">☁️ Daten-Export / Import</button>
             <div class="accordion-panel">
                 <button id="exportButton">Alle Profile exportieren</button>
                 <br><br>
