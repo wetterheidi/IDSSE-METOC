@@ -101,14 +101,24 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
 
     // 5. Sequenzielle Schleife (löst das Rate-Limit-Problem)
     for (const chunk of pointChunks) {
-        const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(2)).join(',');
-        const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(2)).join(',');
+        const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
+        const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
         let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
 
-        if (modelInfo && modelInfo.apiName && modelInfo.runTimeISO) {
-            apiUrl += `&models=${modelInfo.apiName}&forecast_run=${modelInfo.runTimeISO}`;
+        if (modelInfo && modelInfo.apiName) {
+            
+            // Füge immer das Modell hinzu (z.B. &models=auto oder &models=icon_d2)
+            apiUrl += `&models=${modelInfo.apiName}`;
+
+            // Füge forecast_run NUR hinzu, wenn es KEIN 'auto'-Modell ist.
+            // Die Tiling-API bricht bei models=auto&forecast_run=... ab.
+            if (modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
+                 apiUrl += `&forecast_run=${modelInfo.runTimeISO}`;
+            }
+
         } else {
+            // Fallback auf den alten 'auto'-Modus, falls modelInfo fehlt
             apiUrl += `&models=auto`;
         }
 

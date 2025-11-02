@@ -266,12 +266,13 @@ async function handleImport(profiles) {
     }
 }
 
-
 // --- ANWENDUNG STARTEN ---
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. Karte initialisieren
     const leafletMap = map.initMap();
     map.initGeoman(leafletMap);
+
+    ui.initResizeHandle();
 
     // 2. UI initialisieren und mit Handlern "füttern"
     ui.initUI({

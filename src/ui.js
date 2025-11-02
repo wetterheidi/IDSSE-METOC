@@ -179,6 +179,62 @@ export const initUI = (handlers) => {
 
 // --- 3. UI-Update-Funktionen (von main.js aufgerufen) ---
 
+// --- NEU: Footer-Resize-Logik ---
+export function initResizeHandle() { // WICHTIG: Exportieren
+    const handle = document.getElementById('footer-resize-handle');
+    const pageContainer = document.querySelector('.page-container');
+    const minFooterHeight = 100;
+    const maxFooterHeightFactor = 0.7;
+
+    if (!handle || !pageContainer) {
+        console.error("Resize-Handle oder Page-Container nicht gefunden. Resize-Funktion deaktiviert.");
+        return;
+    }
+
+    let isResizing = false;
+
+    // 1. Drag-Start
+    handle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        handle.style.borderTopColor = 'red';
+        pageContainer.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault(); 
+    });
+
+    // 2. Drag-Bewegung
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+
+        const viewportHeight = window.innerHeight;
+        const mouseY = e.clientY;
+        
+        let newFooterHeight = viewportHeight - mouseY;
+
+        const maxFooterHeight = viewportHeight * maxFooterHeightFactor;
+
+        if (newFooterHeight < minFooterHeight) {
+            newFooterHeight = minFooterHeight;
+        } else if (newFooterHeight > maxFooterHeight) {
+            newFooterHeight = maxFooterHeight;
+        }
+
+        // CSS Variable setzen
+        pageContainer.style.setProperty('--footer-height', `${newFooterHeight}px`);
+        
+        // Chart.js muss manuell benachrichtigt werden
+        window.dispatchEvent(new Event('resize')); 
+    });
+
+    // 3. Drag-Ende
+    document.addEventListener('mouseup', () => {
+        isResizing = false;
+        handle.style.borderTopColor = 'var(--color-primary)';
+        pageContainer.style.cursor = 'default';
+        document.body.style.userSelect = 'auto';
+    });
+}
+
 /**
  * Zeigt die Alarme im oberen "Auto-Monitor" an.
  */

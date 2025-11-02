@@ -26,6 +26,8 @@
     --border-color-strong: #adb5bd;
     --border-radius: .25rem;
     --shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
+
+    --footer-height: 350px;
 }
 
 /* --- GRUNDGERÜST (Version 2.0: Mit Footer) --- */
@@ -40,7 +42,7 @@ body {
 .page-container {
     display: grid;
     /* Zeilen: 80px (Header), 1fr (Rest), 250px (Footer) */
-    grid-template-rows: 80px 1fr 350px;
+    grid-template-rows: 80px 1fr var(--footer-height);
     /* Maximalhöhe auf 80px gesetzt */
     /* Spalten: 350px (Sidebar), 1fr (Rest) */
     grid-template-columns: 350px 1fr;
@@ -81,8 +83,9 @@ body {
     display: flex;
     flex-direction: column;
     /* WICHTIG: Die falsche calc() Höhe entfernen und das Grid übernehmen lassen! */
-    height: 100%; /* */
-    overflow: hidden; 
+    height: 100%;
+    /* */
+    overflow: hidden;
 }
 
 #map {
@@ -97,12 +100,26 @@ body {
     grid-row: 3;
     grid-column: 1 / span 2;
     /* NEU: Der Footer wird zum Grid, das die 2 Spalten der Seite nachbildet */
+    position: relative;
     display: grid;
     grid-template-columns: 350px 1fr;
-    /* Spaltenstruktur der Seite kopieren */
-    /* NEU: Höhe ist nun 100% der zugewiesenen 400px */
     height: 100%;
-    /* ... weitere Styles ... */
+}
+
+#footer-resize-handle {
+    position: absolute;
+    /* Geht 5px über die obere Kante des Footers (Trennlinie) */
+    top: -5px;
+    left: 0;
+    right: 0;
+    height: 10px;
+    /* Zieh-Bereich */
+    cursor: ns-resize;
+    /* Zeigt, dass vertikal gezogen werden kann */
+    z-index: 20;
+    border-top: 2px solid var(--color-primary);
+    /* Macht den Handle sichtbar */
+    background: transparent;
 }
 
 /* Der Monitor-Container selbst */
@@ -113,9 +130,12 @@ body {
 
 #chartContainer {
     grid-column: 2;
-    height: 100%; /* Füllt die 400px Höhe aus */
-    padding-left: 10px; /* Optional: Etwas Abstand zur linken Spalte */
+    height: 100%;
+    /* Füllt die 400px Höhe aus */
+    padding-left: 10px;
+    /* Optional: Etwas Abstand zur linken Spalte */
 }
+
 /* --- AKKORDEON (Flexbox-Version) --- */
 .accordion-header {
     background-color: #ddd;
@@ -284,6 +304,7 @@ button:hover {
     /* Abstand zum Slider reduziert */
     font-size: 0.9em;
     /* Schriftgröße leicht reduziert */
+    position: relative;
 }
 
 .slider-wrapper {
@@ -296,7 +317,7 @@ button:hover {
 
 #slider-labels {
     position: absolute;
-    top: 15px;
+    top: 25px;
     /* Unter dem Slider */
     left: 0;
     right: 0;
@@ -356,6 +377,23 @@ button:hover {
     /* Wichtig, damit Highlight durchscheint */
 }
 
+/* NEU: Erzeugt den 100% grauen Basis-Balken unter dem Highlight */
+#timeSlider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    /* Zentriert das Element vertikal auf der Höhe des Slider-Tracks */
+    transform: translateY(-50%);
+    width: 100%;
+    height: 6px;
+    background: var(--background-interactive);
+    /* Dies ist die gewünschte graue Basisfarbe */
+    border-radius: 3px;
+    /* Der z-index von 0 stellt sicher, dass es hinter dem Highlight (z-index: 1) liegt */
+    z-index: 0;
+}
+
 #timeSlider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -364,6 +402,8 @@ button:hover {
     background: var(--color-primary);
     border-radius: 50%;
     cursor: pointer;
+    position: relative;
+    z-index: 3;
 }
 
 #timeSlider::-moz-range-thumb {
@@ -373,6 +413,8 @@ button:hover {
     border-radius: 50%;
     cursor: pointer;
     border: none;
+    position: relative;
+    z-index: 3;
 }
 
 #slider-track-highlight {
@@ -416,8 +458,8 @@ button:hover {
 .info-popup {
     display: none;
     position: absolute;
-    bottom: 100%;
-    /* Zeigt es über dem Button */
+    top: 100%;
+    margin-top: 5px;
     left: 50%;
     transform: translateX(-50%);
     width: 200px;
@@ -503,9 +545,13 @@ button:hover {
 /* Wichtig: Sorgt dafür, dass der Graph nicht überläuft */
 #graphContainer {
     position: relative;
-    /* Höhe = 100% des Footers - Tabs - Padding */
-    height: calc(350px - 45px - 20px);
+    height: 97%;
     width: 97%;
+}
+
+#weatherChartCanvas {
+    height: 100%;
+    width: 100%;
 }
 
 /* NEU: Kompakte linke Seite für Titel und Demo-Modus */
