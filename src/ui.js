@@ -159,7 +159,7 @@ export const initUI = (handlers) => {
     const graphContent = document.getElementById('graphContainer');
 
     if (showMatrixTab && showGraphTab && matrixContent && graphContent) {
-        
+
         showMatrixTab.addEventListener('click', () => {
             matrixContent.classList.add('active');
             graphContent.classList.remove('active');
@@ -255,10 +255,7 @@ export const displayManualWarning = (profile, summary) => {
         hasWarnings = true;
         const { value, unit } = formatter.formatSpeed(summary.wind.max, profile);
         const { value: limit, unit: limitUnit } = formatter.formatSpeed(rules.maxWind, profile);
-        html += `<div style="color: red; border: 1px solid red; padding: 5px; margin-bottom: 5px;">
-                    <strong>WIND-ALARM</strong><br>
-                    Max. Böe: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
-                 </div>`;
+        console.log(`WIND-ALARM: Max. Böe: ${value} ${unit} (Limit: ${limit} ${limitUnit})`);
     }
 
     // Temperatur
@@ -266,10 +263,7 @@ export const displayManualWarning = (profile, summary) => {
         hasWarnings = true;
         const { value, unit } = formatter.formatTemp(summary.temp.min, profile);
         const { value: limit, unit: limitUnit } = formatter.formatTemp(rules.minTemp, profile);
-        html += `<div style="color: blue; border: 1px solid blue; padding: 5px; margin-bottom: 5px;">
-                    <strong>FROST-ALARM</strong><br>
-                    Min. Temp: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
-                 </div>`;
+        console.log(`FROST-ALARM: Min. Temp:${value} ${unit} (Limit: ${limit} ${limitUnit})`);
     }
 
     // Sichtweite
@@ -277,10 +271,7 @@ export const displayManualWarning = (profile, summary) => {
         hasWarnings = true;
         const { value, unit } = formatter.formatAltitude(summary.vis.min, profile);
         const { value: limit, unit: limitUnit } = formatter.formatAltitude(rules.minVis, profile);
-        html += `<div style="color: #8B4513; border: 1px solid #8B4513; padding: 5px; margin-bottom: 5px;">
-                    <strong>SICHT-ALARM (IFR)</strong><br>
-                    Min. Sicht: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
-                 </div>`;
+        console.log(`SICHT-ALARM: Min. Sicht: ${value} ${unit} (Limit: ${limit} ${limitUnit})`);
     }
 
     // Wolkenuntergrenze
@@ -288,10 +279,7 @@ export const displayManualWarning = (profile, summary) => {
         hasWarnings = true;
         const { value, unit } = formatter.formatAltitude(summary.cloud.min, profile);
         const { value: limit, unit: limitUnit } = formatter.formatAltitude(rules.minCloud, profile);
-        html += `<div style="color: #555; border: 1px solid #555; padding: 5px; margin-bottom: 5px;">
-                    <strong>WOLKEN-ALARM</strong><br>
-                    Min. Untergrenze: <strong>${value} ${unit}</strong> (Limit: ${limit} ${limitUnit})
-                 </div>`;
+        console.log(`WOLKEN-ALARM: Min. UG: ${value} ${unit} (Limit: ${limit} ${limitUnit})`);
     }
 
     // Niederschlag
@@ -299,10 +287,7 @@ export const displayManualWarning = (profile, summary) => {
         hasWarnings = true;
         const { value, unit } = formatter.formatPercent(summary.precip.max, profile);
         const { value: limit, unit: limitUnit } = formatter.formatPercent(rules.maxPrecipProb, profile);
-        html += `<div style="color: #000080; border: 1px solid #000080; padding: 5px; margin-bottom: 5px;">
-                    <strong>NIEDERSCHLAGS-ALARM</strong><br>
-                    Max. Chance: <strong>${value}${unit}</strong> (Limit: ${limit}${limitUnit})
-                 </div>`;
+        console.log(`NIEDERSCHLAGS-ALARM: Max. Chance: ${value}${unit} (Limit: ${limit}${limitUnit})`);
     }
 
     // --- 3. "Alle OK"-Text ---

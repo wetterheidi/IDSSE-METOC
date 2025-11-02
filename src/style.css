@@ -10,11 +10,13 @@
     /* Hintergrund-Farben */
     --background-main: #f8f9fa;
     --background-surface: #ffffff;
-    --background-interactive: #e9ecef; /* Wichtig für den Slider! */
+    --background-interactive: #e9ecef;
+    /* Wichtig für den Slider! */
     --background-dark: #343a40;
 
     /* Text-Farben */
-    --text-primary: #212529; /* Wichtig für die Schrift! */
+    --text-primary: #212529;
+    /* Wichtig für die Schrift! */
     --text-secondary: #6c757d;
     --text-on-dark: #ffffff;
     --text-on-primary: #ffffff;
@@ -23,7 +25,7 @@
     --border-color: #dee2e6;
     --border-color-strong: #adb5bd;
     --border-radius: .25rem;
-    --shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+    --shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
 }
 
 /* --- GRUNDGERÜST (Version 2.0: Mit Footer) --- */
@@ -31,14 +33,15 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
     padding: 0;
-    overflow: hidden; 
+    overflow: hidden;
 }
 
 /* Das NEUE Haupt-Layout (CSS Grid) */
 .page-container {
     display: grid;
     /* Zeilen: 80px (Header), 1fr (Rest), 250px (Footer) */
-    grid-template-rows: 80px 1fr 250px; /* Maximalhöhe auf 80px gesetzt */
+    grid-template-rows: 80px 1fr 350px;
+    /* Maximalhöhe auf 80px gesetzt */
     /* Spalten: 350px (Sidebar), 1fr (Rest) */
     grid-template-columns: 350px 1fr;
     height: 100vh;
@@ -46,20 +49,21 @@ body {
 
 .page-header {
     grid-row: 1;
-    grid-column: 1 / span 2; /* Volle Breite */
-    
+    grid-column: 1 / span 2;
+    /* Volle Breite */
+
     /* NEU: Helles Layout, das die Variablen nutzt */
-    background: var(--background-surface); 
+    background: var(--background-surface);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
 
     padding: 5px 15px;
     font-size: 1.2em;
-    z-index: 10; 
+    z-index: 10;
 
     /* NEU: Einhaltung der Höhe sicherstellen */
-    height: 80px; 
-    
+    height: 80px;
+
     /* NEU: Flexbox-Steuerung für die 2 (statt 3) Header-Teile */
     display: flex;
     align-items: center;
@@ -73,37 +77,45 @@ body {
     background: #f4f4f4;
     padding: 10px;
     border-right: 1px solid #ccc;
-    
+
     display: flex;
     flex-direction: column;
-    /* Höhe = 100% minus Header, Footer & Padding */
-    height: calc(100vh - 40px - 250px - 20px); 
+    /* WICHTIG: Die falsche calc() Höhe entfernen und das Grid übernehmen lassen! */
+    height: 100%; /* */
     overflow: hidden; 
 }
 
 #map {
     grid-row: 2;
     grid-column: 2;
-    height: 100%; 
+    height: 100%;
     width: 100%;
 }
 
 /* --- DER NEUE FOOTER --- */
 .page-footer {
     grid-row: 3;
-    grid-column: 1 / span 2; /* Volle Breite */
-    
-    background: #fdfdfd;
-    border-top: 2px solid #ccc;
-    overflow-y: auto; /* NUR der Footer scrollt */
-    padding: 10px;
+    grid-column: 1 / span 2;
+    /* NEU: Der Footer wird zum Grid, das die 2 Spalten der Seite nachbildet */
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    /* Spaltenstruktur der Seite kopieren */
+    /* NEU: Höhe ist nun 100% der zugewiesenen 400px */
+    height: 100%;
+    /* ... weitere Styles ... */
 }
 
 /* Der Monitor-Container selbst */
 #manualWarningMonitor {
+    grid-column: 1;
     width: 100%;
 }
 
+#chartContainer {
+    grid-column: 2;
+    height: 100%; /* Füllt die 400px Höhe aus */
+    padding-left: 10px; /* Optional: Etwas Abstand zur linken Spalte */
+}
 /* --- AKKORDEON (Flexbox-Version) --- */
 .accordion-header {
     background-color: #ddd;
@@ -117,24 +129,28 @@ body {
     font-weight: bold;
     margin-top: 5px;
     border-radius: 3px;
-    flex-shrink: 0; 
+    flex-shrink: 0;
 }
-.accordion-header:hover, .accordion-header.active {
+
+.accordion-header:hover,
+.accordion-header.active {
     background-color: #ccc;
 }
+
 .accordion-panel {
     padding: 10px 15px;
     background-color: white;
     border: 1px solid #ddd;
     border-top: none;
     border-radius: 0 0 3px 3px;
-    display: none; 
-    overflow-y: auto; 
-    flex-grow: 1; 
-    min-height: 0; 
+    display: none;
+    overflow-y: auto;
+    flex-grow: 1;
+    min-height: 0;
 }
+
 .accordion-panel.open {
-    display: block; 
+    display: block;
 }
 
 /* --- STYLING DER INHALTE (Buttons, Inputs etc.) --- */
@@ -143,10 +159,11 @@ body {
     border: 1px solid #ccc;
     padding: 5px;
     min-height: 100px;
-    max-height: 250px; 
+    max-height: 250px;
     overflow-y: auto;
     margin-top: 10px;
 }
+
 #profileList {
     padding-left: 15px;
     max-height: 200px;
@@ -155,12 +172,16 @@ body {
     padding-top: 5px;
     padding-bottom: 5px;
 }
-input[type="text"], input[type="number"], select, button {
-    width: calc(100% - 10px); 
+
+input[type="text"],
+input[type="number"],
+select,
+button {
+    width: calc(100% - 10px);
     padding: 5px;
     margin-top: 5px;
     margin-bottom: 5px;
-    box-sizing: border-box; 
+    box-sizing: border-box;
 }
 
 button {
@@ -170,16 +191,20 @@ button {
     padding: 8px;
     cursor: pointer;
 }
+
 button:hover {
     background: #0056b3;
 }
+
 #saveButton:disabled {
     background: #eee;
     color: #999;
 }
+
 #runAutoCheckButton {
     background: #28a745;
 }
+
 #runAutoCheckButton:hover {
     background: #218838;
 }
@@ -189,21 +214,33 @@ button:hover {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;
-    table-layout: fixed; 
+    table-layout: fixed;
 }
-.ampel-table th, .ampel-table td {
+
+.ampel-table th,
+.ampel-table td {
     border: 1px solid #ccc;
     padding: 4px;
     text-align: center;
     font-size: 0.9em;
 }
+
 .ampel-table th:first-child {
     text-align: left;
-    width: 150px; 
+    width: 150px;
 }
-.status-ok { background-color: #c8e6c9; }
-.status-warn { background-color: #fff9c4; }
-.status-alarm { background-color: #ffcdd2; }
+
+.status-ok {
+    background-color: #c8e6c9;
+}
+
+.status-warn {
+    background-color: #fff9c4;
+}
+
+.status-alarm {
+    background-color: #ffcdd2;
+}
 
 /* "Gesamt-Status" Zeile */
 .ampel-table tr.summary-row td {
@@ -211,13 +248,15 @@ button:hover {
     border-bottom: 2px solid #333;
     font-weight: bold;
 }
+
 .ampel-table tr.summary-row strong {
     color: #000;
 }
 
 
 #slider-container {
-    flex-grow: 1; /* Slider nimmt den mittleren Platz ein */
+    flex-grow: 1;
+    /* Slider nimmt den mittleren Platz ein */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -239,21 +278,26 @@ button:hover {
     justify-content: center;
     align-items: center;
     width: 100%;
-    gap: 10px; /* Abstand reduziert */
-    margin-bottom: 5px; /* Abstand zum Slider reduziert */
-    font-size: 0.9em; /* Schriftgröße leicht reduziert */
+    gap: 10px;
+    /* Abstand reduziert */
+    margin-bottom: 5px;
+    /* Abstand zum Slider reduziert */
+    font-size: 0.9em;
+    /* Schriftgröße leicht reduziert */
 }
 
 .slider-wrapper {
     position: relative;
     width: 100%;
     margin-bottom: 30px;
-    margin-top: 5px; /* Platz für Labels oben (wie im letzten Schritt) */
+    margin-top: 5px;
+    /* Platz für Labels oben (wie im letzten Schritt) */
 }
 
 #slider-labels {
     position: absolute;
-    top: 15px; /* Unter dem Slider */
+    top: 15px;
+    /* Unter dem Slider */
     left: 0;
     right: 0;
     height: 20px;
@@ -273,7 +317,8 @@ button:hover {
     font-size: 14px;
     color: var(--text-primary);
     white-space: nowrap;
-    font-weight: bold; /* Macht die Zeit besser lesbar */
+    font-weight: bold;
+    /* Macht die Zeit besser lesbar */
 }
 
 #modelLabel {
@@ -283,7 +328,8 @@ button:hover {
 }
 
 #autoupdateToggle label {
-    font-size: 20px; /* Von 24px reduziert */
+    font-size: 20px;
+    /* Von 24px reduziert */
     color: var(--color-primary);
     font-weight: bold;
     cursor: pointer;
@@ -291,7 +337,8 @@ button:hover {
 }
 
 #autoupdateCheckbox {
-    display: none; /* Wir verstecken die Box, nur das Label ist sichtbar */
+    display: none;
+    /* Wir verstecken die Box, nur das Label ist sichtbar */
 }
 
 #timeSlider {
@@ -305,7 +352,8 @@ button:hover {
     transition: opacity 0.2s ease;
     position: relative;
     z-index: 2;
-    background: transparent; /* Wichtig, damit Highlight durchscheint */
+    background: transparent;
+    /* Wichtig, damit Highlight durchscheint */
 }
 
 #timeSlider::-webkit-slider-thumb {
@@ -317,6 +365,7 @@ button:hover {
     border-radius: 50%;
     cursor: pointer;
 }
+
 #timeSlider::-moz-range-thumb {
     width: 18px;
     height: 18px;
@@ -346,7 +395,7 @@ button:hover {
     border: 1px solid var(--border-color);
     background: var(--background-surface);
     /* NEU: Erzwinge eine feste, kompakte Breite (z.B. 180px) */
-    width: 180px; 
+    width: 180px;
     max-width: 180px;
 }
 
@@ -363,10 +412,12 @@ button:hover {
     padding: 0;
     min-width: 0;
 }
+
 .info-popup {
     display: none;
     position: absolute;
-    bottom: 100%; /* Zeigt es über dem Button */
+    bottom: 100%;
+    /* Zeigt es über dem Button */
     left: 50%;
     transform: translateX(-50%);
     width: 200px;
@@ -387,8 +438,10 @@ button:hover {
 }
 
 .footer-tabs {
-    flex-shrink: 0; /* Verhindert, dass die Tabs schrumpfen */
-    background: #e9ecef; /* Helles Grau */
+    flex-shrink: 0;
+    /* Verhindert, dass die Tabs schrumpfen */
+    background: #e9ecef;
+    /* Helles Grau */
     border-bottom: 1px solid var(--border-color);
     padding-left: 10px;
 }
@@ -407,53 +460,66 @@ button:hover {
     cursor: pointer;
     border-radius: 0;
 }
+
 .footer-tab:hover {
     background: #fff;
     color: var(--text-primary);
 }
+
 .footer-tab.active {
-    background: var(--background-surface); /* Weiß */
-    color: var(--color-primary); /* Blau */
+    background: var(--background-surface);
+    /* Weiß */
+    color: var(--color-primary);
+    /* Blau */
     border-bottom: 3px solid var(--color-primary);
 }
 
 .footer-content {
-    flex-grow: 1; /* Füllt den Rest des Footers */
-    position: relative; /* Wichtig für Umschaltung */
-    overflow: auto; /* HIER wird gescrollt */
+    flex-grow: 1;
+    /* Füllt den Rest des Footers */
+    position: relative;
+    /* Wichtig für Umschaltung */
+    overflow: auto;
+    /* HIER wird gescrollt */
 }
 
 .footer-tab-content {
-    display: none; /* Alle Inhalte standardmäßig versteckt */
+    display: none;
+    /* Alle Inhalte standardmäßig versteckt */
     padding: 10px;
 }
+
 .footer-tab-content.active {
-    display: block; /* Nur der aktive Inhalt wird gezeigt */
+    display: block;
+    /* Nur der aktive Inhalt wird gezeigt */
 }
 
 /* Anpassung für den Monitor, da er jetzt ein Tab ist */
 #manualWarningMonitor {
     /* Das Padding kommt jetzt vom Eltern-Container */
-    padding: 0; 
+    padding: 0;
 }
 
 /* Wichtig: Sorgt dafür, dass der Graph nicht überläuft */
 #graphContainer {
     position: relative;
     /* Höhe = 100% des Footers - Tabs - Padding */
-    height: calc(250px - 45px - 20px); 
-    width: 100%;
+    height: calc(350px - 45px - 20px);
+    width: 97%;
 }
 
 /* NEU: Kompakte linke Seite für Titel und Demo-Modus */
 .header-left-compact {
     display: flex;
-    flex-direction: column; /* Stapelt Titel und Demo untereinander */
+    flex-direction: column;
+    /* Stapelt Titel und Demo untereinander */
     align-items: flex-start;
 }
 
 #demoModeCompact {
-    font-size: 0.8em; /* Kleinere Schrift */
-    margin-top: 5px; /* Abstand zum Titel */
+    font-size: 0.8em;
+    /* Kleinere Schrift */
+    margin-top: 5px;
+    /* Abstand zum Titel */
     line-height: 1;
 }
