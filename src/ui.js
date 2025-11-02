@@ -279,30 +279,44 @@ export const displayAutoWarnings = (alarmResults) => {
     alarmResults.forEach(result => {
         const p = result.profile;
         const s = result.summary;
+        const r = p.rules; // Abkürzung für Regeln
 
-        html += `<div class="alarm-item" ...>
+        html += `<div class="alarm-item" data-profile-id="${p.id}" style="border-bottom: 1px solid #ccc; padding: 5px; margin-bottom: 5px; cursor: pointer;">
                     <strong>Profil: ${p.name}</strong><br>`;
 
+        // --- NEUE ANZEIGE MIT ZEITSPANNE (DAUER) ---
         if (s.wind && s.wind.triggered) {
             const { value, unit } = formatter.formatSpeed(s.wind.max, p);
-            html += `<span style="color: red;">&#9658; Wind: ${value} ${unit}</span><br>`;
+            const { value: limit } = formatter.formatSpeed(r.maxWind, p);
+            const range = getAlarmTimeRange(s.wind.hourlyStatus); // <-- Jetzt die Zeitspanne
+            html += `<span style="color: red;">&#9658; Wind (Limit: ${limit}${unit}):  ${range}</span><br>`;
         }
         if (s.temp && s.temp.triggered) {
             const { value, unit } = formatter.formatTemp(s.temp.min, p);
-            html += `<span style="color: blue;">&#9658; Temp: ${value} ${unit}</span><br>`;
+            const { value: limit } = formatter.formatTemp(r.minTemp, p);
+            const range = getAlarmTimeRange(s.temp.hourlyStatus);
+            html += `<span style="color: blue;">&#9658; Temp (Limit: ${limit}${unit}): ${range}</span><br>`;
         }
         if (s.vis && s.vis.triggered) {
             const { value, unit } = formatter.formatAltitude(s.vis.min, p);
-            html += `<span style="color: #8B4513;">&#9658; Sicht: ${value} ${unit}</span><br>`;
+            const { value: limit } = formatter.formatAltitude(r.minVis, p);
+            const range = getAlarmTimeRange(s.vis.hourlyStatus);
+            html += `<span style="color: #8B4513;">&#9658; Sicht (Limit: ${limit}${unit}):  ${range}</span><br>`;
         }
         if (s.cloud && s.cloud.triggered) {
             const { value, unit } = formatter.formatAltitude(s.cloud.min, p);
-            html += `<span style="color: #555;">&#9658; Wolken: ${value} ${unit}</span><br>`;
+            const { value: limit } = formatter.formatAltitude(r.minCloud, p);
+            const range = getAlarmTimeRange(s.cloud.hourlyStatus);
+            html += `<span style="color: #555;">&#9658; Wolken (Limit: ${limit}${unit}):  ${range}</span><br>`;
         }
         if (s.precip && s.precip.triggered) {
             const { value, unit } = formatter.formatPercent(s.precip.max, p);
-            html += `<span style="color: #000080;">&#9658; Niederschl.: ${value}${unit}</span><br>`;
-        } if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
+            const { value: limit } = formatter.formatPercent(r.maxPrecipProb, p);
+            const range = getAlarmTimeRange(s.precip.hourlyStatus);
+            html += `<span style="color: #000080;">&#9658; Niederschl. (Limit: ${limit}${unit}):  ${range}</span><br>`;
+        }
+        
+        if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
         html += `</div>`;
     });
     monitor.innerHTML = html;
@@ -623,4 +637,61 @@ function updateRuleInputLabels() {
     if (uiElements.unitSpans.maxPrecipProb) {
         uiElements.unitSpans.maxPrecipProb.textContent = '%';
     }
+}
+
+/**
+ * NEU: Berechnet die konsolidierte Zeitspanne, in der ein Alarm aktiv ist.
+ * Die Funktion findet zusammenhängende Blöcke mit dem Status 'alarm'.
+ * @param {Object<string, 'ok'|'warn'|'alarm'>} hourlyStatus - Status für jede Stunde (0-23).
+ * @returns {string} Eine Zeichenkette der Form "07Z - 12Z" oder "05Z, 14Z - 16Z".
+ */
+function getAlarmTimeRange(hourlyStatus) {
+    if (!hourlyStatus) return 'N/A';
+
+    const hours = Object.keys(hourlyStatus)
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .map(h => parseInt(h));
+
+    const alarmHours = hours.filter(h => hourlyStatus[h] === 'alarm');
+
+    if (alarmHours.length === 0) {
+        return 'N/A';
+    }
+
+    let resultRanges = [];
+    let startHour = null;
+    let endHour = null;
+
+    for (let i = 0; i < alarmHours.length; i++) {
+        const currentHour = alarmHours[i];
+
+        if (startHour === null) {
+            // Starte einen neuen Block
+            startHour = currentHour;
+            endHour = currentHour;
+        } else if (currentHour === endHour + 1) {
+            // Block fortsetzen
+            endHour = currentHour;
+        } else {
+            // Block beenden und speichern, neuen Block starten
+            if (startHour === endHour) {
+                resultRanges.push(`${startHour}Z`);
+            } else {
+                resultRanges.push(`${startHour}Z - ${endHour}Z`);
+            }
+            startHour = currentHour;
+            endHour = currentHour;
+        }
+    }
+
+    // Speichere den letzten Block
+    if (startHour !== null) {
+        if (startHour === endHour) {
+            resultRanges.push(`${startHour}Z`);
+        } else {
+            resultRanges.push(`${startHour}Z - ${endHour}Z`);
+        }
+    }
+
+    return resultRanges.join(', ');
 }

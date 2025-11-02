@@ -93,24 +93,44 @@ function updateSliderLabels(maxHours) {
  * Aktualisiert die Zeitanzeige (z.B. "14:00")
  */
 function updateSelectedTime(hour) {
-    // 1. Fallback, falls noch keine API-Daten da sind
-    if (!currentRunTimeISO || currentRunTimeISO === 'latest') {
-        dom.selectedTime.textContent = `Ausgewählte Zeit: ${hour.toString().padStart(2, '0')}:00`;
-        return;
+    
+    let startDate;
+
+    // 1. Hole den ISO-String (z.B. '2025-11-02T09:00:00.000Z') oder 'latest'.
+    const referenceISO = currentRunTimeISO;
+
+    // --- NEUE KERN-LOGIK: Der Forecast startet immer bei 00:00Z ---
+    if (referenceISO && referenceISO !== 'latest') {
+        // Bei einem festen Modell-Lauf (z.B. 09:00Z): 
+        // Wir nehmen das Datum des Laufs, da der 24h-Forecast (00Z-23Z) in der API
+        // immer auf diesen Tag referenziert. Die Zeit des Laufs (09:00Z) wird ignoriert.
+        const runDate = new Date(referenceISO);
+        
+        // Erstellt ein neues Date-Objekt mit dem Datum des Laufs, aber Zeit 00:00:00.000 UTC
+        startDate = new Date(Date.UTC(
+            runDate.getUTCFullYear(), 
+            runDate.getUTCMonth(), 
+            runDate.getUTCDate(), 
+            0, 0, 0 // <-- WICHTIG: Setze auf 00Z (Index 0)
+        ));
+        
+    } else {
+        // Fallback für den Initialzustand oder 'auto' / 'latest'.
+        // Der sicherste Startpunkt für den Forecast ist heute 00:00Z.
+        startDate = new Date();
+        startDate.setUTCHours(0, 0, 0, 0); 
     }
-
-    // 2. Die Startzeit (Stunde 0) als Date-Objekt holen
-    const startDate = new Date(currentRunTimeISO);
-
-    // 3. Die Stunde hinzufügen (UTC-basiert)
+    
+    // 2. Die Stunde hinzufügen (UTC-basiert)
+    // Wir klonen das Datum und addieren die Stunden.
     const selectedDate = new Date(startDate.getTime());
     selectedDate.setUTCHours(selectedDate.getUTCHours() + hour);
 
-    // 4. Formatierung
-    const dateStr = formatDate(selectedDate);
-    const timeStr = formatTime(selectedDate);
+    // 3. Formatierung
+    const dateStr = formatDate(selectedDate); // YYYY-MM-DD
+    const timeStr = formatTime(selectedDate); // HH:MM
 
-    // NEU: Anzeige von Datum und Zeit mit "Z" für UTC
+    // Anzeige von Datum und Zeit mit "Z" für UTC
     dom.selectedTime.textContent = `Ausgewählte Zeit: ${dateStr} ${timeStr}Z`;
 }
 
