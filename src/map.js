@@ -2,7 +2,7 @@
 
 // Modul-interne Variablen für die Karten-Objekte
 let map;
-let warningMarkersLayer;
+let warningAreasLayer;
 let samplePointsLayer;
 
 /**
@@ -15,7 +15,7 @@ export const initMap = () => {
     }).addTo(map);
 
     // Layer-Gruppen initialisieren
-    warningMarkersLayer = L.layerGroup().addTo(map);
+    warningAreasLayer = L.layerGroup().addTo(map); // NEU
     samplePointsLayer = L.layerGroup().addTo(map);
     
     return map; // Gibt die Instanz an main.js zurück
@@ -56,53 +56,112 @@ export const onMapCreate = (callback) => {
  * (Version 3.0: "Stunden-bewusst")
  */
 export const visualizeWarnings = (summary, hour) => {
-    warningMarkersLayer.clearLayers();
+    warningAreasLayer.clearLayers(); // Alte Flächen löschen
 
     // Wenn kein Summary da ist (z.B. vor der ersten Prüfung), tu nichts.
     if (!summary) return;
 
-    // Helfer (unverändert)
-    const drawMarkers = (pointSet, color, fillOpacity, tooltip) => {
-        pointSet.forEach(locationString => {
-            const coords = locationString.split(',');
-            const latLng = [parseFloat(coords[0]), parseFloat(coords[1])];
-            L.circleMarker(latLng, {
-                radius: 6,
-                color: color,
-                fillColor: color,
-                fillOpacity: fillOpacity || 0.7
-            }).bindTooltip(tooltip)
-              .addTo(warningMarkersLayer);
+    // Helfer, um GeoJSON-Punkte aus dem Set zu erstellen (Turf braucht [lon, lat])
+    const getPointFeatures = (alarmSet) => {
+        const points = [];
+        if (!alarmSet) return turf.featureCollection(points);
+        alarmSet.forEach(locationString => {
+            const coords = locationString.split(','); // "lat,lon"
+            // Turf braucht [lon, lat]
+            points.push(turf.point([parseFloat(coords[1]), parseFloat(coords[0])])); 
         });
+        return turf.featureCollection(points);
+    };
+
+    // Helfer, um die Fläche zu zeichnen
+    const drawWarningArea = (pointFeatures, color, tooltipText) => {
+        if (pointFeatures.features.length < 3) {
+            // Wenn es nur 1 oder 2 Punkte sind, zeichnen wir einen Kreis (Fallback)
+            if (pointFeatures.features.length >= 1) {
+                 pointFeatures.features.forEach(feature => {
+                    const coords = feature.geometry.coordinates; // [lon, lat]
+                    L.circleMarker([coords[1], coords[0]], { 
+                        radius: 8, // Etwas größerer Punkt
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.8 
+                    }).bindTooltip(tooltipText).addTo(warningAreasLayer);
+                 });
+            }
+            return; // Keine Fläche möglich
+        }
+
+        try {
+            // 1. Konvexe Hülle (Die kleinste konvexe Fläche, die alle Punkte umschließt)
+            const hull = turf.convex(pointFeatures);
+
+            if (hull) {
+                // 2. Zeichne das GeoJSON-Polygon mit Stil
+                L.geoJSON(hull, {
+                    style: {
+                        color: color,
+                        weight: 2,
+                        opacity: 0.8,
+                        fillColor: color,
+                        fillOpacity: 0.2
+                    }
+                }).bindTooltip(tooltipText, {sticky: true}).addTo(warningAreasLayer);
+            }
+        } catch(e) {
+            console.error("Turf.js Fehler beim Erstellen der konvexen Hülle:", e);
+             // Fallback: Wenn convex fehlschlägt, zeichne Punkte als Marker
+            if (pointFeatures.features.length >= 1) {
+                 pointFeatures.features.forEach(feature => {
+                    const coords = feature.geometry.coordinates; // [lon, lat]
+                    L.circleMarker([coords[1], coords[0]], { 
+                        radius: 8,
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.8 
+                    }).bindTooltip(`FEHLER: Nur Punkte (${tooltipText})`).addTo(warningAreasLayer);
+                 });
+            }
+        }
     };
     
-    // --- NEUE LOGIK ---
-    // Wir holen die Alarm-Sets für die EINE Stunde, die der Slider anzeigt.
-
-    // Wind
+    // Wind (Rot)
     const windAlarms = summary.wind.hourlyAlarms[hour];
+    const windPoints = getPointFeatures(windAlarms);
     if (windAlarms && windAlarms.size > 0) {
-        drawMarkers(windAlarms, 'red', 0.7, `Wind (${hour}h): ${summary.wind.max.toFixed(1)} km/h`);
+        const tooltip = `Wind (${hour}h): ${summary.wind.max.toFixed(1)} km/h`;
+        drawWarningArea(windPoints, '#dc3545', tooltip); // Rot
     }
-    // Temp
+    
+    // Temp (Blau)
     const tempAlarms = summary.temp.hourlyAlarms[hour];
+    const tempPoints = getPointFeatures(tempAlarms);
     if (tempAlarms && tempAlarms.size > 0) {
-        drawMarkers(tempAlarms, 'blue', 0.7, `Temp (${hour}h): ${summary.temp.min.toFixed(1)} °C`);
+        const tooltip = `Temp (${hour}h): ${summary.temp.min.toFixed(1)} °C`;
+        drawWarningArea(tempPoints, '#007bff', tooltip); // Blau
     }
-    // Sicht
+    
+    // Sicht (Orange/Braun)
     const visAlarms = summary.vis.hourlyAlarms[hour];
+    const visPoints = getPointFeatures(visAlarms);
     if (visAlarms && visAlarms.size > 0) {
-        drawMarkers(visAlarms, '#8B4513', 0.7, `Sicht (${hour}h): ${summary.vis.min.toFixed(0)} m`);
+        const tooltip = `Sicht (${hour}h): ${summary.vis.min.toFixed(0)} m`;
+        drawWarningArea(visPoints, '#ffc107', tooltip); // Orange (Warnfarbe)
     }
-    // Wolken
+
+    // Wolken (Grau)
     const cloudAlarms = summary.cloud.hourlyAlarms[hour];
+    const cloudPoints = getPointFeatures(cloudAlarms);
     if (cloudAlarms && cloudAlarms.size > 0) {
-        drawMarkers(cloudAlarms, '#555', 0.7, `Wolken (${hour}h): ${summary.cloud.min.toFixed(0)} m`);
+        const tooltip = `Wolken (${hour}h): ${summary.cloud.min.toFixed(0)} m`;
+        drawWarningArea(cloudPoints, '#6c757d', tooltip); // Grau
     }
-    // Niederschlag
+
+    // Niederschlag (Dunkelblau)
     const precipAlarms = summary.precip.hourlyAlarms[hour];
+    const precipPoints = getPointFeatures(precipAlarms);
     if (precipAlarms && precipAlarms.size > 0) {
-        drawMarkers(precipAlarms, '#000080', 0.7, `Niederschlag (${hour}h): ${summary.precip.max.toFixed(0)}%`);
+        const tooltip = `Niederschlag (${hour}h): ${summary.precip.max.toFixed(0)}%`;
+        drawWarningArea(precipPoints, '#000080', tooltip); // Dunkelblau
     }
 };
 
@@ -138,7 +197,7 @@ export const drawSamplePoints = (gridPoints, geojson) => {
  * Leert alle temporären Karten-Layer
  */
 export const clearMapLayers = () => {
-    warningMarkersLayer.clearLayers();
+    warningAreasLayer.clearLayers();
     samplePointsLayer.clearLayers();
 };
 

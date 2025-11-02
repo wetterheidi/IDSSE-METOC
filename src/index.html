@@ -84,20 +84,34 @@
                 </div>
                 <input type="text" id="profileName" placeholder="Profil-Name (z.B. Heli A)">
 
-                <label for="maxWind">Max. Windböe (km/h):</label>
-                <input type="number" id="maxWind" value="60">
-                <br>
-                <label for="minTemp">Min. Temperatur (°C):</label>
-                <input type="number" id="minTemp" value="0">
-                <br>
-                <label for="minVis">Min. Sichtweite (Meter):</label>
-                <input type="number" id="minVis" value="5000">
-                <br>
-                <label for="minCloud">Min. Wolkenuntergrenze (Meter):</label>
-                <input type="number" id="minCloud" value="500">
-                <br>
-                <label for="maxPrecipProb">Max. Niederschl.-Chance (%):</label>
-                <input type="number" id="maxPrecipProb" value="30">
+                <div class="rule-input-container">
+                    
+                    <div class="rule-input-group">
+                        <label for="maxWind">Max. Windböe (km/h):</label>
+                        <input type="number" id="maxWind" value="60">
+                    </div>
+
+                    <div class="rule-input-group">
+                        <label for="minTemp">Min. Temperatur (°C):</label>
+                        <input type="number" id="minTemp" value="0">
+                    </div>
+
+                    <div class="rule-input-group">
+                        <label for="minVis">Min. Sichtweite (Meter):</label>
+                        <input type="number" id="minVis" value="5000">
+                    </div>
+
+                    <div class="rule-input-group">
+                        <label for="minCloud">Min. Wolkenuntergrenze (Meter):</label>
+                        <input type="number" id="minCloud" value="500">
+                    </div>
+                    
+                    <div class="rule-input-group">
+                        <label for="maxPrecipProb">Max. Niederschl.-Chance (%):</label>
+                        <input type="number" id="maxPrecipProb" value="30">
+                    </div>
+
+                </div>
                 <hr>
 
                 <button id="saveButton" disabled>Aktuelles Shape speichern</button>
