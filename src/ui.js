@@ -295,7 +295,7 @@ export const displayManualWarning = (profile, summary) => {
         return;
     }
 
-    let html = `<h4>Prüfbericht für: ${profile.name}</h4>`;
+    let html = `<srong>Prüfbericht für: ${profile.name}<strong>`;
     let hasWarnings = false;
     const rules = profile.rules;
 

@@ -142,6 +142,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
 
     // 6. Daten zusammennähen
     console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
+    console.log("%cRAW API DATA (Aggregated from Tiling):", "color: blue; font-weight: bold;", allApiResponses);
     const finalSummary = checkThresholds_Sampling(profile, allApiResponses);
 
     // 7. Ergebnis im Cache speichern
