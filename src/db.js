@@ -57,3 +57,33 @@ export const setCache = (key, summary) => {
         console.error("Cache-Schreibfehler:", e);
     }
 };
+
+// --- NEU: App State Funktionen ---
+
+/**
+ * Speichert einen allgemeinen Zustandswert (z.B. manuelle Overrides).
+ */
+export const setAppState = (key, value) => {
+    try {
+        return db.weatherCache.put({
+            id: key,
+            data: value, // Speichere den eigentlichen Wert unter 'data'
+            timestamp: Date.now()
+        });
+    } catch (e) {
+        console.error("AppState-Schreibfehler:", e);
+    }
+};
+
+/**
+ * Lädt einen allgemeinen Zustandswert.
+ */
+export const getAppState = async (key) => {
+    try {
+        const entry = await db.weatherCache.get(key);
+        return entry ? entry.data : null;
+    } catch (e) {
+        console.error("AppState-Lesefehler:", e);
+        return null;
+    }
+};

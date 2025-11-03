@@ -2,8 +2,11 @@
 import * as db from './db.js'; // Wird für Callbacks benötigt
 import * as formatter from './formatter.js'; // <-- NEU
 import { UNITS } from './config.js';
+import { updateManualOverride, getManualOverrides } from './main.js';
 
 export const uiElements = {};
+
+const STATUS_CYCLE = ['ok', 'warn', 'alarm', null];
 
 // --- 2. Initialisierungs-Funktion ---
 
@@ -285,35 +288,50 @@ export const displayAutoWarnings = (alarmResults) => {
                     <strong>Profil: ${p.name}</strong><br>`;
 
         // --- NEUE ANZEIGE MIT ZEITSPANNE (DAUER) ---
-        if (s.wind && s.wind.triggered) {
-            const { value, unit } = formatter.formatSpeed(s.wind.max, p);
-            const { value: limit } = formatter.formatSpeed(r.maxWind, p);
-            const range = getAlarmTimeRange(s.wind.hourlyStatus); // <-- Jetzt die Zeitspanne
-            html += `<span style="color: red;">&#9658; Wind (Limit: ${limit}${unit}):  ${range}</span><br>`;
+        if (r.maxWind) {
+            const blendedStatus = createBlendedStatus(s, 'wind');
+            if (Object.values(blendedStatus).some(status => status !== 'ok')) {
+                const { value, unit } = formatter.formatSpeed(s.wind.max, p);
+                const { value: limit } = formatter.formatSpeed(r.maxWind, p);
+                const range = getAlarmTimeRange(s.wind.hourlyStatus); // <-- Jetzt die Zeitspanne
+                html += `<span style="color: red;">&#9658; Wind (Limit: ${limit}${unit}):  ${range}</span><br>`;
+            }
         }
-        if (s.temp && s.temp.triggered) {
-            const { value, unit } = formatter.formatTemp(s.temp.min, p);
-            const { value: limit } = formatter.formatTemp(r.minTemp, p);
-            const range = getAlarmTimeRange(s.temp.hourlyStatus);
-            html += `<span style="color: blue;">&#9658; Temp (Limit: ${limit}${unit}): ${range}</span><br>`;
+        if (r.minTemp) {
+            const blendedStatus = createBlendedStatus(s, 'temp');
+            if (Object.values(blendedStatus).some(status => status !== 'ok')) {
+                const { value, unit } = formatter.formatTemp(s.temp.min, p);
+                const { value: limit } = formatter.formatTemp(r.minTemp, p);
+                const range = getAlarmTimeRange(s.temp.hourlyStatus);
+                html += `<span style="color: blue;">&#9658; Temp (Limit: ${limit}${unit}): ${range}</span><br>`;
+            }
         }
-        if (s.vis && s.vis.triggered) {
-            const { value, unit } = formatter.formatAltitude(s.vis.min, p);
-            const { value: limit } = formatter.formatAltitude(r.minVis, p);
-            const range = getAlarmTimeRange(s.vis.hourlyStatus);
-            html += `<span style="color: #8B4513;">&#9658; Sicht (Limit: ${limit}${unit}):  ${range}</span><br>`;
+        if (r.minVis) {
+            const blendedStatus = createBlendedStatus(s, 'vis');
+            if (Object.values(blendedStatus).some(status => status !== 'ok')) {
+                const { value, unit } = formatter.formatAltitude(s.vis.min, p);
+                const { value: limit } = formatter.formatAltitude(r.minVis, p);
+                const range = getAlarmTimeRange(s.vis.hourlyStatus);
+                html += `<span style="color: #8B4513;">&#9658; Sicht (Limit: ${limit}${unit}):  ${range}</span><br>`;
+            }
         }
-        if (s.cloud && s.cloud.triggered) {
-            const { value, unit } = formatter.formatPercent(s.cloud.max, p); // max statt min, formatPercent
-            const { value: limit } = formatter.formatPercent(r.maxCloudCover, p);
-            const range = getAlarmTimeRange(s.cloud.hourlyStatus);
-            html += `<span style="color: #555;">&#9658; Wolken (Limit: ${limit}${unit}):  ${range}</span><br>`;
+        if (r.maxCloudCover) {
+            const blendedStatus = createBlendedStatus(s, 'cloud');
+            if (Object.values(blendedStatus).some(status => status !== 'ok')) {
+                const { value, unit } = formatter.formatPercent(s.cloud.max, p); // max statt min, formatPercent
+                const { value: limit } = formatter.formatPercent(r.maxCloudCover, p);
+                const range = getAlarmTimeRange(s.cloud.hourlyStatus);
+                html += `<span style="color: #555;">&#9658; Wolken (Limit: ${limit}${unit}):  ${range}</span><br>`;
+            }
         }
-        if (s.precip && s.precip.triggered) {
-            const { value, unit } = formatter.formatPercent(s.precip.max, p);
-            const { value: limit } = formatter.formatPercent(r.maxPrecipProb, p);
-            const range = getAlarmTimeRange(s.precip.hourlyStatus);
-            html += `<span style="color: #000080;">&#9658; Niederschl. (Limit: ${limit}${unit}):  ${range}</span><br>`;
+        if (r.maxPrecipProb) {
+            const blendedStatus = createBlendedStatus(s, 'precip');
+            if (Object.values(blendedStatus).some(status => status !== 'ok')) {
+                const { value, unit } = formatter.formatPercent(s.precip.max, p);
+                const { value: limit } = formatter.formatPercent(r.maxPrecipProb, p);
+                const range = getAlarmTimeRange(s.precip.hourlyStatus);
+                html += `<span style="color: #000080;">&#9658; Niederschl. (Limit: ${limit}${unit}):  ${range}</span><br>`;
+            }
         }
 
         if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
@@ -408,42 +426,35 @@ export const displayManualWarning = (profile, summary) => {
 
     let tableHtml = ""; // Starte mit einer leeren Tabelle
 
-    const buildRow = (paramName, statusObject, hoursArray, cssClass = '') => {
-        let rowHtml = `<tr class="${cssClass}"><td><strong>${paramName.replace(/\*\*/g, '')}</strong></td>`;
-        hoursArray.forEach(hour => {
-            const status = statusObject[hour] || 'ok';
-            rowHtml += `<td class="status-${status}"></td>`;
-        });
-        rowHtml += `</tr>`;
-        return rowHtml;
-    };
-
     const hours = (summary.wind && summary.wind.hourlyStatus)
         ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
         : [];
 
     if (hours.length > 0) {
-        tableHtml = `<table class="ampel-table"><thead><tr><th>Parameter</th>`;
+        tableHtml = `<table class="ampel-table" id="trafficLightMatrix"><thead><tr><th>Parameter</th>`;
         hours.forEach(hour => tableHtml += `<th>${hour}h</th>`);
         tableHtml += `</tr></thead><tbody>`;
 
         // Kombi-Zeile
         if (summary.combined) {
-            tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'summary-row');
+            // Wichtig: Ruft jetzt die Override-fähige, externe Funktion auf (Line 713)
+            tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'combined', true); 
         }
 
         // Einzel-Parameter
-        if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours);
-        if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours);
-        if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus, hours);
-        if (rules.maxCloudCover) tableHtml += buildRow('Wolken (Tief)', summary.cloud.hourlyStatus, hours); // Label und Regel angepasst
-        if (rules.maxPrecipProb !== null) tableHtml += buildRow('Niederschl.', summary.precip.hourlyStatus, hours);
+        if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours, 'wind');
+        if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours, 'temp');
+        if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus, hours, 'vis');
+        if (rules.maxCloudCover) tableHtml += buildRow('Wolken (Tief)', summary.cloud.hourlyStatus, hours, 'cloud');
+        if (rules.maxPrecipProb !== null) tableHtml += buildRow('Niederschl.', summary.precip.hourlyStatus, hours, 'precip');
 
         tableHtml += `</tbody></table>`;
     }
 
     // --- 5. Alles rendern ---
     monitor.innerHTML = html + tableHtml;
+
+    addManualOverrideListener();
 };
 
 /**
@@ -694,4 +705,116 @@ function getAlarmTimeRange(hourlyStatus) {
     }
 
     return resultRanges.join(', ');
+}
+
+/**
+ * NEU: Baut eine einzelne Tabellen-Zelle mit Overrides und Klick-Handler.
+ */
+function buildCell(finalStatus, ruleKey, hour, isCombinedRow) {
+    // Der Tooltip soll zeigen, ob es ein manueller Override ist.
+    const overrides = getManualOverrides();
+    const isOverridden = overrides[ruleKey] && overrides[ruleKey][hour];
+
+    const statusClass = `status-${finalStatus || 'ok'}`;
+    let tooltip = isOverridden
+        ? `Manuell: ${finalStatus.toUpperCase()} (Klick zum Ändern/Reset)`
+        : `Automatisch: ${finalStatus.toUpperCase()} (Klick zum Ändern)`;
+
+    // Wenn es die Kombi-Zeile ist, ist sie nicht klickbar
+    if (isCombinedRow) {
+        return `<td class="${statusClass}" title="${tooltip}"></td>`;
+    }
+
+    // Datenattribute für Interaktion
+    const dataAttributes = `data-rule-key="${ruleKey}" data-hour="${hour}"`;
+
+    return `<td class="${statusClass} manual-override-cell" ${dataAttributes} title="${tooltip}"></td>`;
+}
+
+/**
+ * NEU: Baut eine komplette Tabellen-Zeile mit Blending-Logik.
+ */
+const buildRow = (paramName, statusObject, hours, ruleKey, isCombinedRow = false) => {
+    let rowHtml = `<tr class="${isCombinedRow ? 'summary-row' : ''}"><td><strong>${paramName.replace(/\*\*/g, '')}</strong></td>`;
+
+    const manualOverrides = getManualOverrides()[ruleKey] || {};
+
+    hours.forEach(hour => {
+        // 1. Automatischer Status
+        const autoStatus = statusObject[hour] || 'ok';
+
+        // 2. Finaler Status (Manual überschreibt Auto)
+        const finalStatus = isCombinedRow ? autoStatus : (manualOverrides[hour] || autoStatus);
+
+        rowHtml += buildCell(finalStatus, ruleKey, hour, isCombinedRow);
+    });
+
+    rowHtml += `</tr>`;
+    return rowHtml;
+};
+
+/**
+ * NEU: Registriert den Klick-Handler für die Ampel-Matrix.
+ */
+function addManualOverrideListener() {
+    // Delegation auf den Monitor-Container (Eltern-Element)
+    const matrix = document.getElementById('manualWarningMonitor'); 
+    if (!matrix) {
+        console.error("Manual Warning Monitor (Eltern-Element der Matrix) nicht gefunden!");
+        return;
+    }
+    
+    // Event Delegation: Wir hören auf Klicks im Hauptcontainer
+    // Wichtig: removeEventListener, um Duplikate bei Re-Render zu vermeiden
+    matrix.removeEventListener('click', handleManualOverrideClick);
+    matrix.addEventListener('click', handleManualOverrideClick);
+}
+
+/**
+ * NEU: Der eigentliche Klick-Handler für die Ampel-Zellen.
+ */
+function handleManualOverrideClick(event) {
+    const target = event.target.closest('.manual-override-cell');
+    if (!target) return;
+
+    const ruleKey = target.dataset.ruleKey;
+    const hour = target.dataset.hour;
+
+    if (!ruleKey || !hour) return;
+
+    const overrides = getManualOverrides();
+    // Der aktuelle Status ist, was im Override-Objekt gespeichert ist (oder null)
+    const currentOverrideStatus = overrides[ruleKey] ? overrides[ruleKey][hour] : null;
+
+    // Finde den Index des aktuellen Status im Zyklus
+    let currentIndex = STATUS_CYCLE.indexOf(currentOverrideStatus);
+
+    // Nächster Status im Zyklus (null -> ok -> warn -> alarm -> null)
+    let nextIndex = (currentIndex + 1) % STATUS_CYCLE.length;
+    const nextStatus = STATUS_CYCLE[nextIndex];
+
+    // Speichern der Änderung (löst Neuladen in main.js aus)
+    updateManualOverride(ruleKey, hour, nextStatus);
+}
+
+
+// --- Blending-Logik für das Dashboard (displayAutoWarnings) ---
+
+/**
+ * NEU: Erstellt den geblendeten hourlyStatus für die Zeitbereich-Funktion (displayAutoWarnings).
+ */
+function createBlendedStatus(summary, ruleKey) {
+    const blended = {};
+    const autoStatus = (summary[ruleKey] && summary[ruleKey].hourlyStatus) || {};
+    const overrides = getManualOverrides()[ruleKey] || {};
+
+    const hours = Object.keys(autoStatus).sort((a, b) => parseInt(a) - parseInt(b));
+
+    hours.forEach(hour => {
+        const auto = autoStatus[hour] || 'ok';
+        const manual = overrides[hour];
+        // Blending-Logik: Override überschreibt Auto
+        blended[hour] = manual || auto;
+    });
+    return blended;
 }

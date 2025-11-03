@@ -16,6 +16,7 @@ let currentManualProfile = null; // NEU: Merkt sich, welches Profil im Footer ge
 let currentManualSummary = null; // NEU: Merkt sich das *Ergebnis* der letzten Prüfung
 let currentSliderHour = 0;       // NEU: Merkt sich die Stunde (0-23)
 let currentWeatherModel = null;  // NEU: Merkt sich { apiName, runTimeISO }
+export let manualOverrides = {};
 
 /**
  * Die Weiche: Entscheidet, ob wir die echte API oder den Fake benutzen.
@@ -34,8 +35,6 @@ function getWeatherModule() {
     // Standard-Verhalten
     return weather_LIVE;
 }
-
-// main.js
 
 /**
  * HANDLER: Wird von timeSlider.js aufgerufen, wenn der Slider bewegt wird.
@@ -266,8 +265,49 @@ async function handleImport(profiles) {
     }
 }
 
+/**
+ * NEU: Aktualisiert den manuellen Status für eine Regel und Stunde.
+ * Wird von ui.js aufgerufen.
+ * @param {string} ruleKey - z.B. 'vis', 'wind', 'cloud'
+ * @param {string} hour - z.B. '07'
+ * @param {string|null} newStatus - 'ok', 'warn', 'alarm', oder null (für 'zurück zum Automatischen')
+ */
+export async function updateManualOverride(ruleKey, hour, newStatus) {
+    if (!manualOverrides[ruleKey]) {
+        manualOverrides[ruleKey] = {};
+    }
+    
+    if (newStatus === null) {
+        delete manualOverrides[ruleKey][hour];
+    } else {
+        manualOverrides[ruleKey][hour] = newStatus;
+    }
+    
+    await db.setAppState('manualOverrides', manualOverrides); 
+
+    // 2. UI neu rendern, falls gerade ein Profil geladen ist
+    if (currentManualProfile && currentManualSummary) {
+        ui.displayManualWarning(currentManualProfile, currentManualSummary); 
+        charts.updateWeatherChart(currentManualProfile, currentManualSummary);
+        map.visualizeWarnings(currentManualSummary, currentSliderHour);
+        // NEU: Auto-Check Dashboard neu laden, da sich der Status eines Profils geändert haben könnte
+        runAndUpdateDashboard();
+    }
+}
+
+export const getManualOverrides = () => manualOverrides;
+export const getCurrentManualSummary = () => currentManualSummary; 
+
+
 // --- ANWENDUNG STARTEN ---
 document.addEventListener('DOMContentLoaded', async () => {
+    // 0. Zustand laden
+    const loadedOverrides = await db.getAppState('manualOverrides');
+    if (loadedOverrides) {
+        manualOverrides = loadedOverrides;
+        console.log("Manuelle Overrides geladen.");
+    }
+
     // 1. Karte initialisieren
     const leafletMap = map.initMap();
     map.initGeoman(leafletMap);
