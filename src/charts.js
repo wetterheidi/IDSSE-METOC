@@ -31,7 +31,7 @@ export function updateWeatherChart(profile, summary) {
             title: { display: true, text: 'Uhrzeit (UTC)' }
         }
     };
-    
+
     // Helfer für Limit-Linien
     const createLimitLine = (value, color, yAxisID) => ({
         type: 'line',
@@ -55,7 +55,7 @@ export function updateWeatherChart(profile, summary) {
     if (rules.maxWind) {
         const { unit } = formatter.formatSpeed(1, profile); // 'kts' oder 'km/h'
         const data = summary.wind.hourlyData.map(val => formatter.formatSpeed(val, profile).value);
-        
+
         datasets.push({
             label: `Böe (${unit})`,
             data: data,
@@ -72,7 +72,7 @@ export function updateWeatherChart(profile, summary) {
         };
         annotationLimits.push(createLimitLine(formatter.formatSpeed(rules.maxWind, profile).value, '#dc3545', 'yWind'));
     }
-    
+
     // Gemeinsame Achse für Höhe/Sicht
     if (rules.minVis || rules.minCloud) {
         const { unit } = formatter.formatAltitude(1, profile); // 'm' oder 'ft'
@@ -83,7 +83,7 @@ export function updateWeatherChart(profile, summary) {
             title: { display: true, text: `Sicht/Wolken (${unit})` },
             grid: { drawOnChartArea: false }, // Nur eine Achse zeichnet Gitterlinien
         };
-        
+
         if (rules.minVis) {
             const data = summary.vis.hourlyData.map(val => formatter.formatAltitude(val, profile).value);
             datasets.push({
@@ -96,20 +96,8 @@ export function updateWeatherChart(profile, summary) {
             });
             annotationLimits.push(createLimitLine(formatter.formatAltitude(rules.minVis, profile).value, '#8B4513', 'yAltitude'));
         }
-        if (rules.minCloud) {
-            const data = summary.cloud.hourlyData.map(val => formatter.formatAltitude(val, profile).value);
-            datasets.push({
-                label: `Wolken-UG (${unit})`,
-                data: data,
-                borderColor: '#6c757d', // Grau
-                backgroundColor: 'rgba(108, 117, 125, 0.1)',
-                fill: true, // Fläche füllen
-                yAxisID: 'yAltitude',
-            });
-            annotationLimits.push(createLimitLine(formatter.formatAltitude(rules.minCloud, profile).value, '#6c757d', 'yAltitude'));
-        }
     }
-    
+
     // Niederschlags-Achse
     if (rules.maxPrecipProb !== null) {
         const data = summary.precip.hourlyData.map(val => formatter.formatPercent(val, profile).value);
@@ -130,6 +118,19 @@ export function updateWeatherChart(profile, summary) {
             max: 100
         };
         annotationLimits.push(createLimitLine(formatter.formatPercent(rules.maxPrecipProb, profile).value, '#000080', 'yPrecip'));
+        if (rules.maxCloudCover !== null) {
+            const data = summary.cloud.hourlyData.map(val => formatter.formatPercent(val, profile).value);
+            datasets.push({
+                label: 'Wolkenbedeck. (Tief %)', // <-- NEUES LABEL
+                data: data,
+                type: 'line',
+                borderColor: '#6c757d', // Grau
+                backgroundColor: 'rgba(108, 117, 125, 0.1)',
+                fill: true,
+                yAxisID: 'yPrecip',
+            });
+            annotationLimits.push(createLimitLine(formatter.formatPercent(rules.maxCloudCover, profile).value, '#6c757d', 'yPrecip'));
+        }
     }
 
 
@@ -137,7 +138,7 @@ export function updateWeatherChart(profile, summary) {
     weatherChart = new Chart(ctx, {
         type: 'line', // Standard-Typ
         data: {
-            labels: hours, 
+            labels: hours,
             datasets: datasets
         },
         options: {

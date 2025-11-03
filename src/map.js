@@ -37,7 +37,9 @@ export const initGeoman = (leafletMap) => {
         editMode: true,
         dragMode: true,
         cutPolygon: true,
-        removalMode: true
+        removalMode: true,
+        rotateMode: false,
+        lassoMode: true
     });
     leafletMap.pm.setLang('de');
 };
@@ -152,7 +154,7 @@ export const visualizeWarnings = (summary, hour) => {
     const cloudAlarms = summary.cloud.hourlyAlarms[hour];
     const cloudPoints = getPointFeatures(cloudAlarms);
     if (cloudAlarms && cloudAlarms.size > 0) {
-        const tooltip = `Wolken (${hour}h): ${summary.cloud.min.toFixed(0)} m`;
+        const tooltip = `Wolken (${hour}h): ${summary.cloud.max.toFixed(0)} %`; // <-- max statt min, % statt m
         drawWarningArea(cloudPoints, '#6c757d', tooltip); // Grau
     }
 

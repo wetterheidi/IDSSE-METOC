@@ -27,7 +27,7 @@ export const initUI = (handlers) => {
         maxWind: document.getElementById('maxWind'),
         minTemp: document.getElementById('minTemp'),
         minVis: document.getElementById('minVis'),
-        minCloud: document.getElementById('minCloud'),
+        maxCloudCover: document.getElementById('maxCloudCover'), // <-- NEU
         maxPrecipProb: document.getElementById('maxPrecipProb')
     };
     uiElements.templateNameInput = document.getElementById('templateName');
@@ -45,7 +45,7 @@ export const initUI = (handlers) => {
         maxWind: document.getElementById('unit-maxWind'),
         minTemp: document.getElementById('unit-minTemp'),
         minVis: document.getElementById('unit-minVis'),
-        minCloud: document.getElementById('unit-minCloud'),
+        maxCloudCover: document.getElementById('unit-maxCloudCover'), // <-- NEU
         maxPrecipProb: document.getElementById('unit-maxPrecipProb'),
     };
 
@@ -304,8 +304,8 @@ export const displayAutoWarnings = (alarmResults) => {
             html += `<span style="color: #8B4513;">&#9658; Sicht (Limit: ${limit}${unit}):  ${range}</span><br>`;
         }
         if (s.cloud && s.cloud.triggered) {
-            const { value, unit } = formatter.formatAltitude(s.cloud.min, p);
-            const { value: limit } = formatter.formatAltitude(r.minCloud, p);
+            const { value, unit } = formatter.formatPercent(s.cloud.max, p); // max statt min, formatPercent
+            const { value: limit } = formatter.formatPercent(r.maxCloudCover, p);
             const range = getAlarmTimeRange(s.cloud.hourlyStatus);
             html += `<span style="color: #555;">&#9658; Wolken (Limit: ${limit}${unit}):  ${range}</span><br>`;
         }
@@ -315,7 +315,7 @@ export const displayAutoWarnings = (alarmResults) => {
             const range = getAlarmTimeRange(s.precip.hourlyStatus);
             html += `<span style="color: #000080;">&#9658; Niederschl. (Limit: ${limit}${unit}):  ${range}</span><br>`;
         }
-        
+
         if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
         html += `</div>`;
     });
@@ -386,9 +386,9 @@ export const displayManualWarning = (profile, summary) => {
     // Wolkenuntergrenze
     if (summary.cloud && summary.cloud.triggered) {
         hasWarnings = true;
-        const { value, unit } = formatter.formatAltitude(summary.cloud.min, profile);
-        const { value: limit, unit: limitUnit } = formatter.formatAltitude(rules.minCloud, profile);
-        console.log(`WOLKEN-ALARM: Min. UG: ${value} ${unit} (Limit: ${limit} ${limitUnit})`);
+        const { value, unit } = formatter.formatPercent(summary.cloud.max, profile); // max statt min, formatPercent
+        const { value: limit, unit: limitUnit } = formatter.formatPercent(rules.maxCloudCover, profile);
+        console.log(`WOLKEN-ALARM: Max. Bedeckung: ${value}${unit} (Limit: ${limit}${limitUnit})`);
     }
 
     // Niederschlag
@@ -436,7 +436,7 @@ export const displayManualWarning = (profile, summary) => {
         if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours);
         if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours);
         if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus, hours);
-        if (rules.minCloud) tableHtml += buildRow('Wolken (UG)', summary.cloud.hourlyStatus, hours);
+        if (rules.maxCloudCover) tableHtml += buildRow('Wolken (Tief)', summary.cloud.hourlyStatus, hours); // Label und Regel angepasst
         if (rules.maxPrecipProb !== null) tableHtml += buildRow('Niederschl.', summary.precip.hourlyStatus, hours);
 
         tableHtml += `</tbody></table>`;
@@ -564,7 +564,7 @@ const getRulesFromInputs = () => {
         maxWind: parseFloat(uiElements.ruleInputs.maxWind.value) || null,
         minTemp: parseFloat(uiElements.ruleInputs.minTemp.value),
         minVis: parseFloat(uiElements.ruleInputs.minVis.value) || null,
-        minCloud: parseFloat(uiElements.ruleInputs.minCloud.value) || null,
+        maxCloudCover: parseFloat(uiElements.ruleInputs.maxCloudCover.value) || null, // <-- NEU
         maxPrecipProb: parseFloat(uiElements.ruleInputs.maxPrecipProb.value) || null
     };
 };
@@ -630,8 +630,8 @@ function updateRuleInputLabels() {
     if (uiElements.unitSpans.minVis) {
         uiElements.unitSpans.minVis.textContent = unitConfig.altitude;
     }
-    if (uiElements.unitSpans.minCloud) {
-        uiElements.unitSpans.minCloud.textContent = unitConfig.altitude;
+    if (uiElements.unitSpans.maxCloudCover) {
+        uiElements.unitSpans.maxCloudCover.textContent = '%';
     }
     // Niederschlag ist immer Prozent
     if (uiElements.unitSpans.maxPrecipProb) {

@@ -6,7 +6,7 @@ export const WARN_FACTORS = {
     wind: 0.9,      // Gelb bei 90% des Limits
     temp: 2,        // Gelb 2°C *über* dem Min-Limit
     vis: 1.2,       // Gelb 20% *über* dem Min-Limit
-    cloud: 1.2,     // Gelb 20% *über* dem Min-Limit
+    cloud: 0.9,     // Gelb 20% *über* dem Min-Limit
     precip: 0.9     // Gelb bei 90% des Max-Limits
 };
 

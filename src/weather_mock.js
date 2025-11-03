@@ -41,7 +41,7 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
     summary.wind.hourlyData =   [10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 95, 90, 85, (rules.maxWind || 60) + 10, 80, 70, 60, 50, 40, 30, 25, 20, 15]; // Peak um 15 Uhr
     summary.temp.hourlyData =   [ 5,  4,  3,  2,  1,  0, (rules.minTemp || 0) - 1, -1,  0,  2,  4,  6,  8, 10, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1]; // Frost am Morgen
     summary.vis.hourlyData =    [9999, 9000, 8000, 7000, 6000, 5000, 4000, 3000, 2000, 1500, (rules.minVis || 5000) - 500, 5000, 8000, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999]; // Nebel am Vormittag
-    summary.cloud.hourlyData =  [9999, 9999, 8000, 7000, 6000, 5000, 4000, 3000, 2000, 1000, 600, 400, (rules.minCloud || 500) - 50, 400, 600, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9999]; // Tiefe Wolken zur Mittagszeit
+    summary.cloud.hourlyData =  [ 0,  0,  0,  0,  0, 10, 20, 30, 40, 50, 60, 70, (rules.maxCloudCover || 30) + 10, 50, 40, 30, 20, 10,  0,  0,  0,  0,  0,  0]; // Prozentwerte (0-100)
     summary.precip.hourlyData = [ 0,  0,  0,  0,  0,  5, 10, 15, 20, 25, 30, 35, (rules.maxPrecipProb || 30) + 10, 40, 35, 30, 25, 20, 10,  5,  0,  0,  0,  0]; // Regen am Mittag
 
     // 3. Alarme & Status basierend auf den Fake-Daten und ECHTEN Regeln setzen
@@ -98,18 +98,18 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
         }
         
         // Wolken
-        if (rules.minCloud) {
+        if (rules.maxCloudCover) { // <-- rules.maxCloudCover
             const cloud = summary.cloud.hourlyData[h];
-            if (cloud !== null && cloud < rules.minCloud) {
+            if (cloud !== null && cloud > rules.maxCloudCover) { // <-- > statt <
                 summary.cloud.hourlyStatus[h] = 'alarm';
                 summary.cloud.triggered = true;
-                if (cloud < summary.cloud.min) summary.cloud.min = cloud;
+                if (cloud > summary.cloud.max) summary.cloud.max = cloud; // <-- max statt min
                 if (!summary.cloud.hourlyAlarms[h]) summary.cloud.hourlyAlarms[h] = new Set();
                 summary.cloud.hourlyAlarms[h].add(fakeLocationId);
-            } else if (cloud !== null && cloud < rules.minCloud * WARN_FACTORS.cloud) {
+            } else if (cloud !== null && cloud > rules.maxCloudCover * WARN_FACTORS.cloudCover) { // <-- > statt <, WARN_FACTORS.cloudCover
                 summary.cloud.hourlyStatus[h] = 'warn';
             }
-            if (rules.minCloud) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[h]);
+            if (rules.maxCloudCover) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[h]); // <-- rules.maxCloudCover
         }
         
         // Niederschlag

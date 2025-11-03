@@ -24,7 +24,7 @@ export function getEmptySummary() {
         wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
         temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
         vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
-        cloud: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
+        cloud: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] }, // <-- MAX statt MIN
         precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
         combined: { triggered: false, hourlyStatus: {} },
         error: null
@@ -95,7 +95,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
 
     let allApiResponses = [];
-    const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_base,precipitation_probability';
+    const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_cover_low,precipitation_probability'; // <-- cloud_base -> cloud_cover_low
 
     console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln à ${CHUNK_SIZE}.`);
 
@@ -107,14 +107,14 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
         let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
 
         if (modelInfo && modelInfo.apiName) {
-            
+
             // Füge immer das Modell hinzu (z.B. &models=auto oder &models=icon_d2)
             apiUrl += `&models=${modelInfo.apiName}`;
 
             // Füge forecast_run NUR hinzu, wenn es KEIN 'auto'-Modell ist.
             // Die Tiling-API bricht bei models=auto&forecast_run=... ab.
             if (modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
-                 apiUrl += `&forecast_run=${modelInfo.runTimeISO}`;
+                apiUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
 
         } else {
@@ -180,7 +180,7 @@ function checkThresholds_Sampling(profile, locationsData) {
                 summary.wind.hourlyData[h] = -Infinity;
                 summary.temp.hourlyData[h] = +Infinity;
                 summary.vis.hourlyData[h] = +Infinity;
-                summary.cloud.hourlyData[h] = +Infinity;
+                summary.cloud.hourlyData[h] = -Infinity;
                 summary.precip.hourlyData[h] = -Infinity;
             }
         });
@@ -198,7 +198,7 @@ function checkThresholds_Sampling(profile, locationsData) {
 
         const hourly = locationData.hourly;
         const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
-        
+
         // Iteriere durch die Stunden (0-23)
         hourly.time.forEach((time, h) => {
             if (h >= timeStamps.length) return; // Sicherheitscheck
@@ -208,13 +208,13 @@ function checkThresholds_Sampling(profile, locationsData) {
             const wind = hourly.windgusts_10m[h];
             const temp = hourly.temperature_2m[h];
             const vis = hourly.visibility[h];
-            const cloud = hourly.cloud_base[h];
+            const cloud = hourly.cloud_cover_low[h];
             const precip = hourly.precipitation_probability[h];
 
             if (wind !== null && wind > summary.wind.hourlyData[h]) summary.wind.hourlyData[h] = wind;
             if (temp !== null && temp < summary.temp.hourlyData[h]) summary.temp.hourlyData[h] = temp;
             if (vis !== null && vis < summary.vis.hourlyData[h]) summary.vis.hourlyData[h] = vis;
-            if (cloud !== null && cloud < summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud;
+            if (cloud !== null && cloud > summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud; // <-- MAX-Aggregation
             if (precip !== null && precip > summary.precip.hourlyData[h]) summary.precip.hourlyData[h] = precip;
 
             // --- Regel-Checks (Vollständig) ---
@@ -260,14 +260,15 @@ function checkThresholds_Sampling(profile, locationsData) {
                 }
                 summary.vis.hourlyStatus[hour] = getWorseStatus(summary.vis.hourlyStatus[hour], currentStatus);
             }
-            if (rules.minCloud) {
-                if (cloud !== null && cloud < rules.minCloud) {
+            if (rules.maxCloudCover) { // <-- rules.maxCloudCover
+                const maxCloudCover = rules.maxCloudCover;
+                if (cloud !== null && cloud > maxCloudCover) { // <-- > statt <
                     currentStatus = 'alarm';
                     summary.cloud.triggered = true;
-                    if (cloud < summary.cloud.min) summary.cloud.min = cloud;
+                    if (cloud > summary.cloud.max) summary.cloud.max = cloud; // <-- max statt min
                     if (!summary.cloud.hourlyAlarms[hour]) summary.cloud.hourlyAlarms[hour] = new Set();
                     summary.cloud.hourlyAlarms[hour].add(locationId);
-                } else if (cloud !== null && cloud < rules.minCloud * WARN_FACTORS.cloud) {
+                } else if (cloud !== null && cloud > maxCloudCover * WARN_FACTORS.cloudCover) { // <-- > statt <, WARN_FACTORS.cloudCover
                     currentStatus = 'warn';
                 } else {
                     currentStatus = 'ok';
@@ -297,7 +298,7 @@ function checkThresholds_Sampling(profile, locationsData) {
         if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[h]);
         if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[h]);
         if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[h]);
-        if (rules.minCloud) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[h]);
+        if (rules.maxCloudCover) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[h]); // <-- rules.maxCloudCover
         if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[h]);
 
         summary.combined.hourlyStatus[h] = combinedStatus;
