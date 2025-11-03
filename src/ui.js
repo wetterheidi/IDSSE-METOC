@@ -282,7 +282,7 @@ export const displayAutoWarnings = (alarmResults) => {
     alarmResults.forEach(result => {
         const p = result.profile;
         const s = result.summary;
-        const r = p.rules; // Abkürzung für Regeln
+        const r = p.rules;
 
         html += `<div class="alarm-item" data-profile-id="${p.id}" style="border-bottom: 1px solid #ccc; padding: 5px; margin-bottom: 5px; cursor: pointer;">
                     <strong>Profil: ${p.name}</strong><br>`;
@@ -293,7 +293,7 @@ export const displayAutoWarnings = (alarmResults) => {
             if (Object.values(blendedStatus).some(status => status !== 'ok')) {
                 const { value, unit } = formatter.formatSpeed(s.wind.max, p);
                 const { value: limit } = formatter.formatSpeed(r.maxWind, p);
-                const range = getAlarmTimeRange(s.wind.hourlyStatus); // <-- Jetzt die Zeitspanne
+                const range = getAlarmTimeRange(blendedStatus); // <-- FIX: Nutzt blendedStatus
                 html += `<span style="color: red;">&#9658; Wind (Limit: ${limit}${unit}):  ${range}</span><br>`;
             }
         }
@@ -302,7 +302,7 @@ export const displayAutoWarnings = (alarmResults) => {
             if (Object.values(blendedStatus).some(status => status !== 'ok')) {
                 const { value, unit } = formatter.formatTemp(s.temp.min, p);
                 const { value: limit } = formatter.formatTemp(r.minTemp, p);
-                const range = getAlarmTimeRange(s.temp.hourlyStatus);
+                const range = getAlarmTimeRange(blendedStatus); // <-- FIX: Nutzt blendedStatus
                 html += `<span style="color: blue;">&#9658; Temp (Limit: ${limit}${unit}): ${range}</span><br>`;
             }
         }
@@ -311,16 +311,16 @@ export const displayAutoWarnings = (alarmResults) => {
             if (Object.values(blendedStatus).some(status => status !== 'ok')) {
                 const { value, unit } = formatter.formatAltitude(s.vis.min, p);
                 const { value: limit } = formatter.formatAltitude(r.minVis, p);
-                const range = getAlarmTimeRange(s.vis.hourlyStatus);
+                const range = getAlarmTimeRange(blendedStatus); // <-- FIX: Nutzt blendedStatus
                 html += `<span style="color: #8B4513;">&#9658; Sicht (Limit: ${limit}${unit}):  ${range}</span><br>`;
             }
         }
         if (r.maxCloudCover) {
             const blendedStatus = createBlendedStatus(s, 'cloud');
             if (Object.values(blendedStatus).some(status => status !== 'ok')) {
-                const { value, unit } = formatter.formatPercent(s.cloud.max, p); // max statt min, formatPercent
+                const { value, unit } = formatter.formatPercent(s.cloud.max, p);
                 const { value: limit } = formatter.formatPercent(r.maxCloudCover, p);
-                const range = getAlarmTimeRange(s.cloud.hourlyStatus);
+                const range = getAlarmTimeRange(blendedStatus); // <-- FIX: Nutzt blendedStatus
                 html += `<span style="color: #555;">&#9658; Wolken (Limit: ${limit}${unit}):  ${range}</span><br>`;
             }
         }
@@ -329,7 +329,7 @@ export const displayAutoWarnings = (alarmResults) => {
             if (Object.values(blendedStatus).some(status => status !== 'ok')) {
                 const { value, unit } = formatter.formatPercent(s.precip.max, p);
                 const { value: limit } = formatter.formatPercent(r.maxPrecipProb, p);
-                const range = getAlarmTimeRange(s.precip.hourlyStatus);
+                const range = getAlarmTimeRange(blendedStatus); // <-- FIX: Nutzt blendedStatus
                 html += `<span style="color: #000080;">&#9658; Niederschl. (Limit: ${limit}${unit}):  ${range}</span><br>`;
             }
         }
@@ -423,8 +423,11 @@ export const displayManualWarning = (profile, summary) => {
     }
 
     // --- 4. Ampel-Matrix ---
-
-    let tableHtml = ""; // Starte mit einer leeren Tabelle
+    // --- 4. Ampel-Matrix ---
+    let tableHtml = ""; 
+    
+    // NEU: Berechne den geblendeten Gesamt-Status
+    const blendedCombinedStatus = getBlendedCombinedStatus(profile, summary);
 
     const hours = (summary.wind && summary.wind.hourlyStatus)
         ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
@@ -437,11 +440,11 @@ export const displayManualWarning = (profile, summary) => {
 
         // Kombi-Zeile
         if (summary.combined) {
-            // Wichtig: Ruft jetzt die Override-fähige, externe Funktion auf (Line 713)
-            tableHtml += buildRow('**Gesamt-Status**', summary.combined.hourlyStatus, hours, 'combined', true); 
+            // WICHTIG: Nutze den neu berechneten Blended Combined Status
+            tableHtml += buildRow('**Gesamt-Status**', blendedCombinedStatus, hours, 'combined', true); 
         }
 
-        // Einzel-Parameter
+        // Einzel-Parameter (nutzt die globale, override-fähige buildRow)
         if (rules.maxWind) tableHtml += buildRow('Wind (Böe)', summary.wind.hourlyStatus, hours, 'wind');
         if (rules.minTemp !== null) tableHtml += buildRow('Temp (2m)', summary.temp.hourlyStatus, hours, 'temp');
         if (rules.minVis) tableHtml += buildRow('Sicht', summary.vis.hourlyStatus, hours, 'vis');
@@ -758,12 +761,12 @@ const buildRow = (paramName, statusObject, hours, ruleKey, isCombinedRow = false
  */
 function addManualOverrideListener() {
     // Delegation auf den Monitor-Container (Eltern-Element)
-    const matrix = document.getElementById('manualWarningMonitor'); 
+    const matrix = document.getElementById('manualWarningMonitor');
     if (!matrix) {
         console.error("Manual Warning Monitor (Eltern-Element der Matrix) nicht gefunden!");
         return;
     }
-    
+
     // Event Delegation: Wir hören auf Klicks im Hauptcontainer
     // Wichtig: removeEventListener, um Duplikate bei Re-Render zu vermeiden
     matrix.removeEventListener('click', handleManualOverrideClick);
@@ -817,4 +820,68 @@ function createBlendedStatus(summary, ruleKey) {
         blended[hour] = manual || auto;
     });
     return blended;
+}
+
+/**
+ * Hilfsfunktion zum Finden des schlechtesten Status
+ */
+function getWorseStatus(s1, s2) {
+    if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
+    if (s1 === 'warn' || s2 === 'warn') return 'warn';
+    return 'ok';
+}
+
+// Helper: Gibt den Regelnamen anhand des Status-Keys zurück
+function getRuleKeyName(statusKey) {
+    const map = {
+        'wind': 'maxWind',
+        'temp': 'minTemp',
+        'vis': 'minVis',
+        'cloud': 'maxCloudCover',
+        'precip': 'maxPrecipProb'
+    };
+    return map[statusKey] || statusKey;
+}
+
+/**
+ * Gibt den geblendeten Status für eine einzelne Regel und Stunde zurück.
+ */
+function getBlendedStatus(summary, ruleKey, hour) {
+    const overrides = getManualOverrides();
+    // Automatischer Status
+    const autoStatus = (summary[ruleKey] && summary[ruleKey].hourlyStatus[hour]) || 'ok';
+    // Manueller Override
+    const manual = overrides[ruleKey] ? overrides[ruleKey][hour] : null;
+    return manual || autoStatus; // Manual überschreibt Auto
+}
+
+
+/**
+ * NEU: Berechnet den finalen, kombinierten Status (Auto + Overrides) für jede Stunde.
+ */
+function getBlendedCombinedStatus(profile, summary) {
+    const rules = profile.rules;
+    const ruleKeys = ['wind', 'temp', 'vis', 'cloud', 'precip'];
+    const combinedStatus = {};
+
+    const hours = (summary.wind && summary.wind.hourlyStatus)
+        ? Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
+        : [];
+
+    hours.forEach(hour => {
+        let worstStatus = 'ok';
+
+        ruleKeys.forEach(ruleKey => {
+            const ruleProfileKey = getRuleKeyName(ruleKey);
+            // Prüfen, ob die Regel im Profil aktiv ist (nicht null)
+            if (rules[ruleProfileKey] !== null && rules[ruleProfileKey] !== undefined && summary[ruleKey]) {
+                const blendedRuleStatus = getBlendedStatus(summary, ruleKey, hour);
+                worstStatus = getWorseStatus(worstStatus, blendedRuleStatus);
+            }
+        });
+
+        combinedStatus[hour] = worstStatus;
+    });
+
+    return combinedStatus;
 }
