@@ -1,12 +1,13 @@
-// weather_mock.js - Der "Fälscher" (Version 4.0: "Feature-Komplett")
+// weather_mock.js - Der "Fälscher" (Version 5.0: "Config-Driven")
 
-import { getEmptySummary } from './weather.js'; // Holt die "Master"-Struktur
-import { WARN_FACTORS } from './config.js'; // Holt die "Gelb"-Schwellen
+import { getEmptySummary } from './weather.js'; // Holt die "Master"-Struktur (die jetzt dynamisch ist)
+import { METRICS_CONFIG, getWarnFactor } from './metricsConfig.js'; // Holt das NEUE "Gehirn"
 
 export { getEmptySummary }; // Exportiert die Master-Struktur
 
 /**
  * Simuliert das Holen von Grid-Punkten.
+ * (Unverändert)
  */
 export async function getGridPoints(geojson) {
     console.warn("%cDEMO-MODUS: Gefälschte Grid-Punkte.", "color: magenta;");
@@ -16,33 +17,61 @@ export async function getGridPoints(geojson) {
 
 /**
  * Gibt SOFORT ein gefälschtes, alarmierendes Wetter-Summary zurück.
- * Fälscht jetzt auch die 24h-Datenreihen für den Graphen.
+ * NEU: Generiert Daten und Alarme dynamisch basierend auf METRICS_CONFIG.
  */
 export async function fetchAndCheckProfile(profile, modelInfo) {
     console.warn(`%cDEMO-MODUS: Gefälschte Daten für "${profile.name}" geladen.`, "color: magenta; font-weight: bold;");
     
     const summary = getEmptySummary(); 
-    const statusParams = ['wind', 'temp', 'vis', 'cloud', 'precip'];
     const rules = profile.rules; 
     if (!rules) { 
         console.error("Mock-Fehler: Profil hat keine 'rules'.");
         return summary;
     }
 
-    // 1. Alle 24 Stunden initialisieren
+    const metrics = Object.values(METRICS_CONFIG); // Alle konfigurierten Metriken
+
+    // 1. Alle 24 Stunden initialisieren (dynamisch)
     for (let h = 0; h < 24; h++) {
-        statusParams.forEach(param => {
-            if (summary[param]) summary[param].hourlyStatus[h] = 'ok';
+        metrics.forEach(metric => {
+            const key = metric.summaryKey;
+            summary[key].hourlyStatus[h] = 'ok';
         });
         summary.combined.hourlyStatus[h] = 'ok';
     }
 
     // 2. Realistische "Fake"-Zeitreihen für den Graphen erstellen
-    summary.wind.hourlyData =   [10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 95, 90, 85, (rules.maxWind || 60) + 10, 80, 70, 60, 50, 40, 30, 25, 20, 15]; // Peak um 15 Uhr
-    summary.temp.hourlyData =   [ 5,  4,  3,  2,  1,  0, (rules.minTemp || 0) - 1, -1,  0,  2,  4,  6,  8, 10, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1]; // Frost am Morgen
-    summary.vis.hourlyData =    [9999, 9000, 8000, 7000, 6000, 5000, 4000, 3000, 2000, 1500, (rules.minVis || 5000) - 500, 5000, 8000, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999]; // Nebel am Vormittag
-    summary.cloud.hourlyData =  [ 0,  0,  0,  0,  0, 10, 20, 30, 40, 50, 60, 70, (rules.maxCloudCover || 30) + 10, 50, 40, 30, 20, 10,  0,  0,  0,  0,  0,  0]; // Prozentwerte (0-100)
-    summary.precip.hourlyData = [ 0,  0,  0,  0,  0,  5, 10, 15, 20, 25, 30, 35, (rules.maxPrecipProb || 30) + 10, 40, 35, 30, 25, 20, 10,  5,  0,  0,  0,  0]; // Regen am Mittag
+    // Wir erstellen Basis-Arrays und wenden sie auf die Metriken an
+    const fakeDataTemplates = {
+        // Peak am Nachmittag (für Wind, Niederschlag, Wolken)
+        peakAfternoon: [10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 95, 90, 85, 90, 80, 70, 60, 50, 40, 30, 25, 20, 15],
+        // Minimum am Morgen (für Temperatur)
+        lowMorning: [ 5,  4,  3,  2,  1,  0, -1, -1,  0,  2,  4,  6,  8, 10, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1],
+        // Minimum am Vormittag (für Sicht)
+        lowForenoon: [9999, 9000, 8000, 7000, 6000, 5000, 4000, 3000, 2000, 1500, 1000, 1500, 5000, 8000, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999]
+    };
+    
+    // Fake-Daten dynamisch zuweisen
+    metrics.forEach(metric => {
+        const key = metric.summaryKey;
+        const ruleName = metric.ruleName;
+        const limit = rules[ruleName];
+        
+        if (metric.checkType === 'min') {
+            if (key === 'temp') {
+                summary.temp.hourlyData = [...fakeDataTemplates.lowMorning];
+                // Alarm auslösen, falls Regel gesetzt
+                if (limit !== null) summary.temp.hourlyData[6] = limit - 1; 
+            } else if (key === 'vis') {
+                summary.vis.hourlyData = [...fakeDataTemplates.lowForenoon];
+                if (limit) summary.vis.hourlyData[10] = limit - 500;
+            }
+        } else { // 'max'
+             summary[key].hourlyData = [...fakeDataTemplates.peakAfternoon];
+             if (limit) summary[key].hourlyData[14] = limit + 10; // Alarm um 14h
+        }
+    });
+
 
     // 3. Alarme & Status basierend auf den Fake-Daten und ECHTEN Regeln setzen
     const [lon, lat] = profile.geojson.geometry.coordinates[0][0];
@@ -52,85 +81,69 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
     for (let h = 0; h < 24; h++) {
         let combinedStatus = 'ok';
         
-        // Wind
-        if (rules.maxWind) {
-            const wind = summary.wind.hourlyData[h];
-            if (wind > rules.maxWind) {
-                summary.wind.hourlyStatus[h] = 'alarm';
-                summary.wind.triggered = true;
-                if (wind > summary.wind.max) summary.wind.max = wind;
-                if (!summary.wind.hourlyAlarms[h]) summary.wind.hourlyAlarms[h] = new Set();
-                summary.wind.hourlyAlarms[h].add(fakeLocationId);
-            } else if (wind > rules.maxWind * WARN_FACTORS.wind) {
-                summary.wind.hourlyStatus[h] = 'warn';
+        // --- DYNAMISCHE SCHLEIFE statt hard-coding ---
+        metrics.forEach(metric => {
+            const ruleName = metric.ruleName;
+            const limit = rules[ruleName];
+            const summaryKey = metric.summaryKey;
+            
+            // Regel im Profil nicht aktiv? -> Überspringen
+            if (limit === null || limit === undefined) {
+                 if (ruleName !== 'minTemp' && ruleName !== 'maxPrecipProb') { // Sonderfälle, wo 0 ein Limit sein kann
+                    return; 
+                 }
             }
-            if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[h]);
-        }
-        
-        // Temperatur
-        if (rules.minTemp !== null) {
-            const temp = summary.temp.hourlyData[h];
-            if (temp < rules.minTemp) {
-                summary.temp.hourlyStatus[h] = 'alarm';
-                summary.temp.triggered = true;
-                if (temp < summary.temp.min) summary.temp.min = temp;
-                if (!summary.temp.hourlyAlarms[h]) summary.temp.hourlyAlarms[h] = new Set();
-                summary.temp.hourlyAlarms[h].add(fakeLocationId);
-            } else if (temp < rules.minTemp + WARN_FACTORS.temp) {
-                summary.temp.hourlyStatus[h] = 'warn';
-            }
-            if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[h]);
-        }
 
-        // Sicht
-        if (rules.minVis) {
-            const vis = summary.vis.hourlyData[h];
-            if (vis < rules.minVis) {
-                summary.vis.hourlyStatus[h] = 'alarm';
-                summary.vis.triggered = true;
-                if (vis < summary.vis.min) summary.vis.min = vis;
-                if (!summary.vis.hourlyAlarms[h]) summary.vis.hourlyAlarms[h] = new Set();
-                summary.vis.hourlyAlarms[h].add(fakeLocationId);
-            } else if (vis < rules.minVis * WARN_FACTORS.vis) {
-                summary.vis.hourlyStatus[h] = 'warn';
+            const value = summary[summaryKey].hourlyData[h];
+            if (value === null || value === undefined) return;
+
+            const warnFactor = getWarnFactor(metric);
+            let currentStatus = 'ok';
+
+            if (metric.checkType === 'min') {
+                // MIN-Check (temp, vis)
+                if (value < limit) {
+                    currentStatus = 'alarm';
+                    summary[summaryKey].triggered = true;
+                    if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                    if (!summary[summaryKey].hourlyAlarms[h]) summary[summaryKey].hourlyAlarms[h] = new Set();
+                    summary[summaryKey].hourlyAlarms[h].add(fakeLocationId);
+                } else if (ruleName === 'minTemp' && value < (limit + warnFactor)) {
+                    currentStatus = 'warn';
+                } else if (ruleName === 'minVis' && value < (limit * warnFactor)) {
+                    currentStatus = 'warn';
+                }
+            } else {
+                // MAX-Check (wind, cloud, precip)
+                if (value > limit) {
+                    currentStatus = 'alarm';
+                    summary[summaryKey].triggered = true;
+                    if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                    if (!summary[summaryKey].hourlyAlarms[h]) summary[summaryKey].hourlyAlarms[h] = new Set();
+                    summary[summaryKey].hourlyAlarms[h].add(fakeLocationId);
+                } else if (value > (limit * warnFactor)) {
+                    currentStatus = 'warn';
+                }
             }
-            if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[h]);
-        }
-        
-        // Wolken
-        if (rules.maxCloudCover) { // <-- rules.maxCloudCover
-            const cloud = summary.cloud.hourlyData[h];
-            if (cloud !== null && cloud > rules.maxCloudCover) { // <-- > statt <
-                summary.cloud.hourlyStatus[h] = 'alarm';
-                summary.cloud.triggered = true;
-                if (cloud > summary.cloud.max) summary.cloud.max = cloud; // <-- max statt min
-                if (!summary.cloud.hourlyAlarms[h]) summary.cloud.hourlyAlarms[h] = new Set();
-                summary.cloud.hourlyAlarms[h].add(fakeLocationId);
-            } else if (cloud !== null && cloud > rules.maxCloudCover * WARN_FACTORS.cloudCover) { // <-- > statt <, WARN_FACTORS.cloudCover
-                summary.cloud.hourlyStatus[h] = 'warn';
-            }
-            if (rules.maxCloudCover) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[h]); // <-- rules.maxCloudCover
-        }
-        
-        // Niederschlag
-        if (rules.maxPrecipProb !== null) {
-            const precip = summary.precip.hourlyData[h];
-            if (precip > rules.maxPrecipProb) {
-                summary.precip.hourlyStatus[h] = 'alarm';
-                summary.precip.triggered = true;
-                if (precip > summary.precip.max) summary.precip.max = precip;
-                if (!summary.precip.hourlyAlarms[h]) summary.precip.hourlyAlarms[h] = new Set();
-                summary.precip.hourlyAlarms[h].add(fakeLocationId);
-            } else if (precip > rules.maxPrecipProb * WARN_FACTORS.precip) {
-                summary.precip.hourlyStatus[h] = 'warn';
-            }
-            if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[h]);
-        }
+            
+            summary[summaryKey].hourlyStatus[h] = currentStatus;
+            combinedStatus = getWorseStatus(combinedStatus, currentStatus);
+        });
+        // --- ENDE DYNAMISCHE SCHLEIFE ---
 
         // Kombi-Zeile
         summary.combined.hourlyStatus[h] = combinedStatus;
         if (combinedStatus !== 'ok') summary.combined.triggered = true;
     }
     
+    // Abwärtskompatibilität für .min / .max
+     Object.values(METRICS_CONFIG).forEach(metric => {
+        if (metric.checkType === 'min') {
+            summary[metric.summaryKey].min = summary[metric.summaryKey].value;
+        } else {
+            summary[metric.summaryKey].max = summary[metric.summaryKey].value;
+        }
+    });
+
     return Promise.resolve(summary);
 }

@@ -1,5 +1,7 @@
-// map.js
-import { getManualOverrides } from './main.js'; // NEU: Importiere Overrides
+// map.js (Version 2.0 - Config-Driven)
+import { getManualOverrides } from './main.js';
+// NEU: Importiere das "Gehirn"
+import { METRICS_CONFIG } from './metricsConfig.js';
 
 // Modul-interne Variablen für die Karten-Objekte
 let map;
@@ -8,22 +10,21 @@ let samplePointsLayer;
 
 /**
  * Initialisiert die Leaflet-Karte und die Layer-Gruppen.
+ * (Unverändert)
  */
 export const initMap = () => {
-    map = L.map('map').setView([52.52, 13.405], 6); // Start-Zoom weiter raus
+    map = L.map('map').setView([52.52, 13.405], 6); 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
-
-    // Layer-Gruppen initialisieren
-    warningAreasLayer = L.layerGroup().addTo(map); // NEU
+    warningAreasLayer = L.layerGroup().addTo(map);
     samplePointsLayer = L.layerGroup().addTo(map);
-
-    return map; // Gibt die Instanz an main.js zurück
+    return map;
 };
 
 /**
  * Initialisiert Leaflet-Geoman.
+ * (Unverändert)
  */
 export const initGeoman = (leafletMap) => {
     leafletMap.pm.addControls({
@@ -47,6 +48,7 @@ export const initGeoman = (leafletMap) => {
 
 /**
  * Setzt den Event-Listener für 'pm:create'
+ * (Unverändert)
  */
 export const onMapCreate = (callback) => {
     map.on('pm:create', (e) => {
@@ -56,158 +58,118 @@ export const onMapCreate = (callback) => {
 
 /**
  * Zeichnet die Alarm-Punkte für EINE BESTIMMTE STUNDE.
- * (Version 3.0: "Stunden-bewusst")
+ * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
+ * NEU: Signatur geändert -> benötigt jetzt 'profile'.
  */
-export const visualizeWarnings = (summary, hour) => {
-    warningAreasLayer.clearLayers(); // Alte Flächen löschen
+export const visualizeWarnings = (profile, summary, hour) => {
+    warningAreasLayer.clearLayers(); 
 
-    // Wenn kein Summary da ist (z.B. vor der ersten Prüfung), tu nichts.
-    if (!summary) return;
+    // Wenn kein Summary oder Profil da ist, tu nichts.
+    if (!profile || !summary) return;
 
-    // Den hour-Parameter zu einer Zahl konvertieren
     const hourInt = parseInt(hour, 10);
     const hourString = hourInt.toString(); 
 
-    // Stundenliste (0, 1, ..., 23)
-    const hours = Object.keys(summary.wind.hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b));
+    // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
+    const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
+    if (!summary[firstMetricKey] || !summary[firstMetricKey].hourlyStatus) return;
+    const hours = Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b));
 
-    // Helferfunktion, um die Alarm-Standorte zu finden (mit Fallback)
-    const getAlarmLocations = (ruleKey, currentHourString, autoAlarms) => {
-        const blendedStatus = getBlendedStatus(summary, ruleKey, currentHourString);
+    // --- Helfer: getAlarmLocations (Angepasst) ---
+    // (Findet Alarm-Standorte, auch für manuelle Overrides ohne autom. Alarm)
+    const getAlarmLocations = (summaryKey, currentHourString, autoAlarms) => {
+        const blendedStatus = getBlendedStatus(summary, summaryKey, currentHourString);
         
-        // 1. Wenn der automatische Status alarm/warn ist, verwende die automatischen Standorte.
         if (autoAlarms && autoAlarms.size > 0) {
             return autoAlarms;
         }
 
-        // 2. Wenn der manuelle Status alarm/warn ist, aber Auto NICHT (d.h. Override)
         if (blendedStatus === 'alarm' || blendedStatus === 'warn') {
-            // Finde die Standorte des LETZTEN automatischen Alarms, um eine Fläche zu zeichnen.
             const reversedHours = hours.slice(0, hours.indexOf(currentHourString)).reverse();
             for (const h of reversedHours) {
-                const prevAlarms = summary[ruleKey].hourlyAlarms[h];
+                const prevAlarms = summary[summaryKey].hourlyAlarms[h];
                 if (prevAlarms && prevAlarms.size > 0) {
                     return prevAlarms;
                 }
             }
         }
-        
         return null;
     };
 
-    // Helfer, um GeoJSON-Punkte aus dem Set zu erstellen (Turf braucht [lon, lat])
+    // --- Helfer: getPointFeatures (Unverändert) ---
     const getPointFeatures = (alarmSet) => {
         const points = [];
         if (!alarmSet) return turf.featureCollection(points);
         alarmSet.forEach(locationString => {
             const coords = locationString.split(','); // "lat,lon"
-            // Turf braucht [lon, lat]
-            points.push(turf.point([parseFloat(coords[1]), parseFloat(coords[0])]));
+            points.push(turf.point([parseFloat(coords[1]), parseFloat(coords[0])])); // Turf: [lon, lat]
         });
         return turf.featureCollection(points);
     };
 
-    // Helfer, um die Fläche zu zeichnen
+    // --- Helfer: drawWarningArea (Unverändert) ---
     const drawWarningArea = (pointFeatures, color, tooltipText) => {
         if (pointFeatures.features.length < 3) {
-            // Fallback: Zeichne Punkte als Marker
             if (pointFeatures.features.length >= 1) {
                 pointFeatures.features.forEach(feature => {
                     const coords = feature.geometry.coordinates; // [lon, lat]
-                    L.circleMarker([coords[1], coords[0]], {
-                        radius: 8,
-                        color: color,
-                        fillColor: color,
-                        fillOpacity: 0.8
+                    L.circleMarker([coords[1], coords[0]], { // Leaflet: [lat, lon]
+                        radius: 8, color: color, fillColor: color, fillOpacity: 0.8
                     }).bindTooltip(tooltipText).addTo(warningAreasLayer);
                 });
             }
-            return; // Keine Fläche möglich
+            return;
         }
-
         try {
             const hull = turf.convex(pointFeatures);
-
             if (hull) {
                 L.geoJSON(hull, {
-                    style: {
-                        color: color,
-                        weight: 2,
-                        opacity: 0.8,
-                        fillColor: color,
-                        fillOpacity: 0.2
-                    }
+                    style: { color: color, weight: 2, opacity: 0.8, fillColor: color, fillOpacity: 0.2 }
                 }).bindTooltip(tooltipText, { sticky: true }).addTo(warningAreasLayer);
             }
         } catch (e) {
             console.error("Turf.js Fehler beim Erstellen der konvexen Hülle:", e);
         }
     };
-
-    // --- Wind (Rot) ---
-    const windAlarms = getAlarmLocations('wind', hourString, summary.wind.hourlyAlarms[hourString]);
-    if (windAlarms && windAlarms.size > 0) {
-        const blendedStatus = getBlendedStatus(summary, 'wind', hourString);
-        const displayValue = getDisplayValue(summary.wind.max, 1, 'km/h');
-        const tooltip = `Wind (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${displayValue})`;
-        drawWarningArea(getPointFeatures(windAlarms), '#dc3545', tooltip); 
-    }
     
-    // --- Temp (Blau) ---
-    const tempAlarms = getAlarmLocations('temp', hourString, summary.temp.hourlyAlarms[hourString]);
-    if (tempAlarms && tempAlarms.size > 0) {
-        const blendedStatus = getBlendedStatus(summary, 'temp', hourString);
-        const displayValue = getDisplayValue(summary.temp.min, 1, '°C');
-        const tooltip = `Temp (${hourString}h): ${blendedStatus.toUpperCase()} (Min: ${displayValue})`;
-        drawWarningArea(getPointFeatures(tempAlarms), '#007bff', tooltip);
-    }
-    
-    // --- Sicht (Orange/Braun) ---
-    const visAlarms = getAlarmLocations('vis', hourString, summary.vis.hourlyAlarms[hourString]);
-    if (visAlarms && visAlarms.size > 0) {
-        const blendedStatus = getBlendedStatus(summary, 'vis', hourString);
-        const displayValue = getDisplayValue(summary.vis.min, 0, 'm');
-        const tooltip = `Sicht (${hourString}h): ${blendedStatus.toUpperCase()} (Min: ${displayValue})`;
-        drawWarningArea(getPointFeatures(visAlarms), '#ffc107', tooltip); 
-    }
+    // --- DYNAMISCHE SCHLEIFE statt 5 harter Blöcke ---
+    for (const metric of Object.values(METRICS_CONFIG)) {
+        const { summaryKey, ruleName, displayName, chartColor, formatter } = metric;
+        
+        // Überspringen, wenn die Regel im Profil nicht aktiv ist
+        if (profile.rules[ruleName] === null || profile.rules[ruleName] === undefined) {
+            continue;
+        }
 
-    // --- Wolken (Grau) --- (NEU: Max Cloud Cover %)
-    const cloudAlarms = getAlarmLocations('cloud', hourString, summary.cloud.hourlyAlarms[hourString]);
-    if (cloudAlarms && cloudAlarms.size > 0) {
-        const blendedStatus = getBlendedStatus(summary, 'cloud', hourString);
-        const displayValue = getDisplayValue(summary.cloud.max, 0, '%');
-        const tooltip = `Wolken (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${displayValue})`;
-        drawWarningArea(getPointFeatures(cloudAlarms), '#6c757d', tooltip); 
+        // Finde die Alarme für diese Metrik
+        const alarms = getAlarmLocations(summaryKey, hourString, summary[summaryKey].hourlyAlarms[hourString]);
+        
+        if (alarms && alarms.size > 0) {
+            const blendedStatus = getBlendedStatus(summary, summaryKey, hourString);
+            
+            // NEU: Nutze den Formatter aus der Config für den Tooltip
+            // .value ist der aggregierte Min/Max-Wert aus weather.js
+            const { value, unit } = formatter(summary[summaryKey].value, profile); 
+            
+            const tooltip = `${displayName} (${hourString}h): ${blendedStatus.toUpperCase()} (Wert: ${value} ${unit})`;
+            drawWarningArea(getPointFeatures(alarms), chartColor, tooltip); 
+        }
     }
-
-    // --- Niederschlag (Dunkelblau) ---
-    const precipAlarms = getAlarmLocations('precip', hourString, summary.precip.hourlyAlarms[hourString]);
-    if (precipAlarms && precipAlarms.size > 0) {
-        const blendedStatus = getBlendedStatus(summary, 'precip', hourString);
-        const displayValue = getDisplayValue(summary.precip.max, 0, '%');
-        const tooltip = `Niederschlag (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${displayValue})`;
-        drawWarningArea(getPointFeatures(precipAlarms), '#000080', tooltip); 
-    }
+    // --- ENDE DYNAMISCHE SCHLEIFE ---
 };
 
 /**
  * Zeichnet die Sampling-Punkte (grau)
- * (Version 2.0: Filtert nicht mehr selbst, zeichnet nur 'gridPoints')
+ * (Unverändert)
  */
 export const drawSamplePoints = (gridPoints, geojson) => {
     samplePointsLayer.clearLayers();
-
-    // KUGELSICHERER CHECK:
     if (!gridPoints || !gridPoints.features) {
         console.warn("drawSamplePoints: 'gridPoints' ist ungültig, nichts zu zeichnen.");
         return;
     }
-
-    // Wir filtern nicht mehr (das macht getGridPoints), wir zeichnen einfach
     gridPoints.features.forEach(pointFeature => {
-        // KUGELSICHERER CHECK für GeoJSON-Punkt
         if (!pointFeature || !pointFeature.geometry || !pointFeature.geometry.coordinates) return;
-
         const coords = pointFeature.geometry.coordinates;
         const latLng = [coords[1], coords[0]]; // Leaflet braucht [Lat, Lon]
         L.circleMarker(latLng, {
@@ -220,6 +182,7 @@ export const drawSamplePoints = (gridPoints, geojson) => {
 
 /**
  * Leert alle temporären Karten-Layer
+ * (Unverändert)
  */
 export const clearMapLayers = () => {
     warningAreasLayer.clearLayers();
@@ -228,6 +191,7 @@ export const clearMapLayers = () => {
 
 /**
  * Zoomt die Karte auf ein GeoJSON-Objekt
+ * (Unverändert)
  */
 export const zoomToGeoJSON = (geojson) => {
     try {
@@ -239,19 +203,16 @@ export const zoomToGeoJSON = (geojson) => {
 
 /**
  * Hilfsfunktion zum Blenden des Status (Modell + Override)
+ * (Unverändert, nutzt summaryKey)
  */
-function getBlendedStatus(summary, ruleKey, hour) {
+function getBlendedStatus(summary, summaryKey, hour) {
     const overrides = getManualOverrides();
-    // Der hour-Parameter von visualizeWarnings ist ein String (z.B. '7')
     const hourString = hour.toString();
-    const autoStatus = summary[ruleKey] ? summary[ruleKey].hourlyStatus[hourString] : 'ok';
-    const manualStatus = overrides[ruleKey] ? overrides[ruleKey][hourString] : null;
+    const autoStatus = summary[summaryKey] ? summary[summaryKey].hourlyStatus[hourString] : 'no-data';
+    const manualStatus = overrides[summaryKey] ? overrides[summaryKey][hourString] : null;
 
-    return manualStatus || autoStatus;
+    return manualStatus || autoStatus || 'no-data';
 }
 
-const getDisplayValue = (value, decimals, unit) => {
-    // KORREKTUR: Prüft auf null oder undefined
-    return (value === null || value === undefined) ? 'N/A' : `${value.toFixed(decimals)} ${unit}`;
-};
-
+// HINWEIS: Die alte Hilfsfunktion `getDisplayValue` wird entfernt, 
+// da wir jetzt die zentralen `formatter` aus der Config nutzen.

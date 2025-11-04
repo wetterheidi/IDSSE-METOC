@@ -45,7 +45,7 @@ function handleSliderChange(hour) {
 
     // --- NEU: Karte neu zeichnen, wenn der Slider bewegt wird ---
     // (Zeichnet nur was, wenn ein 'currentManualSummary' geladen ist)
-    map.visualizeWarnings(currentManualSummary, currentSliderHour);
+    map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
 }
 
 /**
@@ -151,7 +151,7 @@ async function handleManualCheck(profileData) {
     currentManualSummary = summary;
     ui.displayManualWarning(profileData, summary); // <-- Aktualisiert die Matrix
     charts.updateWeatherChart(profileData, summary); // <-- HIER IST DIE REPARATUR
-    map.visualizeWarnings(currentManualSummary, currentSliderHour);
+    map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
 }
 
 /**
@@ -276,27 +276,26 @@ export async function updateManualOverride(ruleKey, hour, newStatus) {
     if (!manualOverrides[ruleKey]) {
         manualOverrides[ruleKey] = {};
     }
-    
+
     if (newStatus === null) {
         delete manualOverrides[ruleKey][hour];
     } else {
         manualOverrides[ruleKey][hour] = newStatus;
     }
-    
-    await db.setAppState('manualOverrides', manualOverrides); 
+
+    await db.setAppState('manualOverrides', manualOverrides);
 
     // 2. UI neu rendern, falls gerade ein Profil geladen ist
     if (currentManualProfile && currentManualSummary) {
-        ui.displayManualWarning(currentManualProfile, currentManualSummary); 
+        ui.displayManualWarning(currentManualProfile, currentManualSummary);
         charts.updateWeatherChart(currentManualProfile, currentManualSummary);
-        map.visualizeWarnings(currentManualSummary, currentSliderHour);
-        // NEU: Auto-Check Dashboard neu laden, da sich der Status eines Profils geändert haben könnte
+        map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);        // NEU: Auto-Check Dashboard neu laden, da sich der Status eines Profils geändert haben könnte
         runAndUpdateDashboard();
     }
 }
 
 export const getManualOverrides = () => manualOverrides;
-export const getCurrentManualSummary = () => currentManualSummary; 
+export const getCurrentManualSummary = () => currentManualSummary;
 
 
 // --- ANWENDUNG STARTEN ---

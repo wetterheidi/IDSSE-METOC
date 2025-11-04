@@ -84,37 +84,7 @@
                     style="margin-bottom: 10px; border-left: 3px solid var(--color-primary); padding-left: 8px;">
                     <summary style="font-weight: bold; cursor: pointer; padding: 5px 0;">2. Schwellenwerte definieren
                         (Klicken zum Ausklappen)</summary>
-                    <div class="rule-input-container">
-
-                        <div class="rule-input-group">
-                            <label for="maxWind">Max. Windböe:</label>
-                            <input type="number" id="maxWind" value="60">
-                            <span id="unit-maxWind">km/h</span>
-                        </div>
-
-                        <div class="rule-input-group">
-                            <label for="minTemp">Min. Temperatur:</label>
-                            <input type="number" id="minTemp" value="0">
-                            <span id="unit-minTemp">°C</span>
-                        </div>
-
-                        <div class="rule-input-group">
-                            <label for="minVis">Min. Sichtweite:</label>
-                            <input type="number" id="minVis" value="5000">
-                            <span id="unit-minVis">Meter</span>
-                        </div>
-
-                        <div class="rule-input-group">
-                            <label for="maxCloudCover">Max. Wolkenbedeckung (Tief):</label>
-                            <input type="number" id="maxCloudCover" value="50">
-                            <span id="unit-maxCloudCover">%</span>
-                        </div>
-
-                        <div class="rule-input-group">
-                            <label for="maxPrecipProb">Max. Niederschl.-Chance:</label>
-                            <input type="number" id="maxPrecipProb" value="30">
-                            <span id="unit-maxPrecipProb">%</span>
-                        </div>
+                    <div class="rule-input-container" id="dynamic-rules-container">
                     </div>
                     <div id="mapStatusContainer"
                         style="margin-top: 10px; padding: 10px; border: 1px dashed var(--border-color-strong); border-radius: var(--border-radius);">

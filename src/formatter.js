@@ -13,9 +13,9 @@ function getUnitMode(profile) {
  */
 export function formatSpeed(value_kmh, profile) {
     const mode = getUnitMode(profile);
-    const unit = UNITS[mode].speed;
+    // NEU: Holt Einheit aus UNITS basierend auf dem Modus
+    const unit = (mode === 'aviation') ? UNITS.aviation.speed : UNITS.metric.speed;
 
-    // PRÜFUNG HINZUFÜGEN
     if (value_kmh === null || !isFinite(value_kmh)) {
         return { value: 'N/A', unit: unit };
     }
@@ -32,9 +32,8 @@ export function formatSpeed(value_kmh, profile) {
  */
 export function formatAltitude(value_m, profile) {
     const mode = getUnitMode(profile);
-    const unit = UNITS[mode].altitude;
+    const unit = (mode === 'aviation') ? UNITS.aviation.altitude : UNITS.metric.altitude;
 
-    // PRÜFUNG HINZUFÜGEN
     if (value_m === null || !isFinite(value_m)) {
         return { value: 'N/A', unit: unit };
     }
@@ -42,6 +41,7 @@ export function formatAltitude(value_m, profile) {
     let value = value_m;
     if (mode === 'aviation') {
         value = value_m * CONVERSIONS.METER_TO_FEET;
+        // Runden auf die nächsten 100 Fuß (Standard in der Luftfahrt)
         value = Math.round(value / 100) * 100; 
     }
     return { value: value.toFixed(0), unit: unit };
@@ -52,9 +52,9 @@ export function formatAltitude(value_m, profile) {
  */
 export function formatTemp(value_c, profile) {
     const mode = getUnitMode(profile);
+    // Temperatur-Einheit ist in beiden Modi '°C'
     const unit = UNITS[mode].temp;
 
-    // PRÜFUNG HINZUFÜGEN
     if (value_c === null || !isFinite(value_c)) {
         return { value: 'N/A', unit: unit };
     }
@@ -63,12 +63,23 @@ export function formatTemp(value_c, profile) {
 }
 
 /**
- * Formatiert %-Werte (Niederschlag)
+ * Formatiert %-Werte (Niederschlagswahrscheinlichkeit, Wolken)
  */
 export function formatPercent(value_perc, profile) {
-    // Fängt null, undefined, -Infinity, +Infinity ab
     if (value_perc === null || !isFinite(value_perc)) {
-        return { value: 'N/A', unit: '%' }; // Zeige "N/A" statt Absturz
+        return { value: 'N/A', unit: '%' };
     }
      return { value: value_perc.toFixed(0), unit: '%' };
+}
+
+/**
+ * NEU: Formatiert mm-Werte (Niederschlagsmenge)
+ * (Wir fügen dies jetzt hinzu, damit es für den finalen Umbau bereit ist)
+ */
+export function formatPrecipMM(value_mm, profile) {
+    if (value_mm === null || !isFinite(value_mm)) {
+        return { value: 'N/A', unit: 'mm' };
+    }
+    // Zeigt eine Dezimalstelle an (z.B. 0.5 mm)
+    return { value: value_mm.toFixed(1), unit: 'mm' };
 }

@@ -1,12 +1,11 @@
-// weather.js
-import { WARN_FACTORS } from './config.js';
+// weather.js (Version 2.0 - Config-Driven)
 import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
+// Importiere das NEUE "Gehirn"
+import { METRICS_CONFIG, getApiParams, getWarnFactor } from './metricsConfig.js'; 
 
 /**
  * Teilt ein Array in kleinere Stapel (Chunks) auf.
- * @param {Array} array - Das Quell-Array
- * @param {number} size - Die maximale Größe eines Chunks
- * @returns {Array[]} Ein Array von Arrays (die Chunks)
+ * (Unverändert)
  */
 function chunkArray(array, size) {
     const chunks = [];
@@ -18,22 +17,54 @@ function chunkArray(array, size) {
 
 /**
  * Erstellt ein leeres Summary-Objekt (Feature-komplett)
+ * NEU: Wird dynamisch aus METRICS_CONFIG generiert.
  */
 export function getEmptySummary() {
-    return {
-        wind: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
-        temp: { triggered: false, min: 999, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
-        vis: { triggered: false, min: 99999, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
-        cloud: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] }, // <-- MAX statt MIN
-        precip: { triggered: false, max: 0, hourlyStatus: {}, hourlyAlarms: {}, hourlyData: [] },
+    const summary = {
         combined: { triggered: false, hourlyStatus: {} },
         error: null
     };
+
+    // Iteriere über die Config und erstelle für jeden Eintrag ein leeres Objekt
+    for (const metric of Object.values(METRICS_CONFIG)) {
+        const key = metric.summaryKey;
+        if (!summary[key]) {
+            summary[key] = {
+                triggered: false,
+                // 'max' (wind, cloud, precip) startet bei 0 (oder -Infinity)
+                // 'min' (temp, vis) startet bei 999 (oder +Infinity)
+                value: (metric.checkType === 'min') ? Infinity : -Infinity, 
+                hourlyStatus: {},
+                hourlyAlarms: {},
+                hourlyData: []
+            };
+            // Korrigiere die Startwerte für die Anzeige (damit nicht "Infinity" angezeigt wird)
+            if (metric.checkType === 'min') {
+                if (key === 'temp') summary[key].value = 999;
+                if (key === 'vis') summary[key].value = 99999;
+            } else {
+                 summary[key].value = 0;
+            }
+        }
+    }
+    
+    // Überschreibe 'value' mit 'min'/'max' für Abwärtskompatibilität (falls ui.js/map.js es noch nutzt)
+    // HINWEIS: Wir sollten später auf .value umstellen.
+    Object.values(METRICS_CONFIG).forEach(metric => {
+        if (metric.checkType === 'min') {
+            summary[metric.summaryKey].min = summary[metric.summaryKey].value;
+        } else {
+            summary[metric.summaryKey].max = summary[metric.summaryKey].value;
+        }
+    });
+
+    return summary;
 }
+
 
 /**
  * Berechnet die Sampling-Punkte (graue Punkte) für ein GeoJSON.
- * Macht KEINEN API-Anruf.
+ * (Unverändert)
  */
 export function getGridPoints(geojson) {
     // KUGELSICHERER CHECK (behebt den 'type'/'geometry' TypeError)
@@ -42,16 +73,10 @@ export function getGridPoints(geojson) {
     }
     try {
         const bbox = turf.bbox(geojson); // [minLon, minLat, maxLon, maxLat]
-        // TODO: Später die 'cellSide' dynamisch an das Modell (z.B. ICON-D2) anpassen
         const cellSide = 10; // km
         const options = { units: 'kilometers' };
         const pointGrid = turf.pointGrid(bbox, cellSide, options);
-        // WICHTIG: Wir geben ALLE Punkte im Raster zurück, NICHT die gefilterten.
-        // Das Filtern (pointsWithinPolygon) ist langsam und redundant,
-        // da 'checkThresholds_Sampling' das sowieso pro Punkt prüft.
-        // ABER: Dein 'map.js' braucht das... wir ändern 'map.js'
-
-        // Kompromiss: Wir benutzen die 'pointsInside' Logik von `weather_mock`
+        
         const pointsInside = turf.pointsWithinPolygon(pointGrid, geojson);
 
         return { gridPoints: pointsInside }; // Gibt die GeoJSON-Punkte zurück
@@ -66,12 +91,12 @@ export function getGridPoints(geojson) {
 
 export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
 
-    // 1. Eindeutigen Cache-Schlüssel erstellen
+    // 1. Cache-Schlüssel (Unverändert)
     const modelApiName = modelInfo ? modelInfo.apiName : 'auto';
     const modelRunISO = modelInfo ? modelInfo.runTimeISO : 'latest';
     const cacheKey = `${profile.id}_${modelApiName}_${modelRunISO}`;
 
-    // 2. Im Cache nachsehen
+    // 2. Cache-Prüfung (Unverändert)
     try {
         const cachedData = await getCache(cacheKey);
         const THIRTY_MINUTES = 30 * 60 * 1000;
@@ -83,49 +108,45 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
         console.warn("Cache-Lesefehler:", e);
     }
 
-    // 3. Cache "kalt" -> Tiling-Logik (Kacheln)
+    // 3. Cache "kalt" (Unverändert)
     console.warn(`%cCACHE KALT. FÜHRE LIVE-FETCH AUS: ${cacheKey}`, "color: orange;");
 
     if (!gridPoints || !gridPoints.features || gridPoints.features.length === 0) {
         return { error: "Keine Sampling-Punkte zum Abfragen.", ...getEmptySummary() };
     }
 
-    // 4. Punkte in 50er-Stapel "zerhacken" (löst das URL-Längen-Problem)
+    // 4. Punkte stapeln (Unverändert)
     const CHUNK_SIZE = 50;
     const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
 
     let allApiResponses = [];
-    const hourlyParams = 'temperature_2m,wind_gusts_10m,visibility,cloud_cover_low,precipitation_probability'; // <-- cloud_base -> cloud_cover_low
+    
+    // NEU: API-Parameter dynamisch aus der Config holen
+    const hourlyParams = getApiParams(); // <-- DYNAMISCH
+    
+    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln. Parameter: ${hourlyParams}`);
 
-    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln à ${CHUNK_SIZE}.`);
-
-    // 5. Sequenzielle Schleife (löst das Rate-Limit-Problem)
+    // 5. Sequenzielle Schleife (API-URL-Bau)
     for (const chunk of pointChunks) {
         const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
         const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
+        // NEU: Nutzt die dynamischen hourlyParams
         let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
 
+        // Modell-Logik (Unverändert)
         if (modelInfo && modelInfo.apiName) {
-
-            // Füge immer das Modell hinzu (z.B. &models=auto oder &models=icon_d2)
             apiUrl += `&models=${modelInfo.apiName}`;
-
-            // Füge forecast_run NUR hinzu, wenn es KEIN 'auto'-Modell ist.
-            // Die Tiling-API bricht bei models=auto&forecast_run=... ab.
             if (modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
                 apiUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-
         } else {
-            // Fallback auf den alten 'auto'-Modus, falls modelInfo fehlt
             apiUrl += `&models=auto`;
         }
 
         try {
             const response = await fetch(apiUrl);
             if (!response.ok) {
-                // Behebt den 400 Bad Request, indem es die URL loggt
                 console.error("API-Fehler bei Chunk:", response.statusText, apiUrl);
                 throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
             }
@@ -140,31 +161,31 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
         }
     } // Ende der Tiling-Schleife
 
-    // 6. Daten zusammennähen
+    // 6. Daten zusammennähen (Unverändert)
     console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
     console.log("%cRAW API DATA (Aggregated from Tiling):", "color: blue; font-weight: bold;", allApiResponses);
     const finalSummary = checkThresholds_Sampling(profile, allApiResponses);
 
-    // 7. Ergebnis im Cache speichern
+    // 7. Cache speichern (Unverändert)
     try {
         await setCache(cacheKey, finalSummary);
     } catch (e) {
         console.warn("Cache-Schreibfehler:", e);
     }
 
-    // 8. Fertig
+    // 8. Fertig (Unverändert)
     return finalSummary;
 }
 
 
 /**
  * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
- * (Vollständige Master-Version mit CloudCover, No-Data und Stunden-Key-Fix)
+ * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
  */
 function checkThresholds_Sampling(profile, locationsData) {
     const rules = profile.rules;
     const summary = getEmptySummary();
-    const statusParams = ['wind', 'temp', 'vis', 'cloud', 'precip'];
+    const metrics = Object.values(METRICS_CONFIG); // Alle Metriken, die wir prüfen
 
     if (!locationsData || locationsData.length === 0 || !locationsData[0] || !locationsData[0].hourly || !locationsData[0].hourly.time) {
         console.error("API-Antwort ist ungültig, 'hourly.time' fehlt.", locationsData);
@@ -172,44 +193,39 @@ function checkThresholds_Sampling(profile, locationsData) {
     }
 
     // 1. Stunden-Header initialisieren
-    // KORREKTUR: Verwende getUTCHours() als Schlüssel (z.B. 12, 13, ...)
     const timeStamps = locationsData[0].hourly.time.map(t => new Date(t).getUTCHours());
     
     timeStamps.forEach((hour, h) => {
-        statusParams.forEach(param => {
-            if (summary[param]) {
-                // FIX: Initialisiere mit 'no-data'. Nur Temperatur startet auf 'ok'.
-                const initialStatus = (param === 'temp') ? 'ok' : 'no-data'; 
-                summary[param].hourlyStatus[hour] = initialStatus; 
-                summary[param].hourlyAlarms[hour] = new Set(); 
+        metrics.forEach(metric => {
+            const key = metric.summaryKey;
+            
+            // 'temp' (min) ist die einzige Regel, die ohne Daten 'ok' ist.
+            // Alle 'max'-Regeln (wind, cloud, precip) und 'min'-Regeln (vis) sind 'no-data'.
+            const initialStatus = (metric.ruleName === 'minTemp') ? 'ok' : 'no-data'; 
+            
+            summary[key].hourlyStatus[hour] = initialStatus; 
+            summary[key].hourlyAlarms[hour] = new Set(); 
 
-                // hourlyData (für den Graphen) verwendet den Array-Index 'h'
-                summary.wind.hourlyData[h] = -Infinity;
-                summary.temp.hourlyData[h] = +Infinity;
-                summary.vis.hourlyData[h] = +Infinity;
-                summary.cloud.hourlyData[h] = -Infinity; // CloudCover ist max-Aggregation
-                summary.precip.hourlyData[h] = -Infinity;
-            }
+            // hourlyData (für den Graphen) initialisieren
+            // 'min'-Checks (temp, vis) suchen den kleinsten Wert (+Infinity)
+            // 'max'-Checks (wind, cloud, precip) suchen den größten Wert (-Infinity)
+            summary[key].hourlyData[h] = (metric.checkType === 'min') ? Infinity : -Infinity;
         });
         summary.combined.hourlyStatus[hour] = 'no-data';
     });
 
+    // Status-Aggregator-Funktion
     const getWorseStatus = (s1, s2) => {
         if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
         if (s1 === 'warn' || s2 === 'warn') return 'warn';
-        
-        // FIX: 'ok' gewinnt über 'no-data'
         if (s1 === 'ok' || s2 === 'ok') return 'ok'; 
-        
-        // Wenn keine besseren Status gefunden wurden, ist das Ergebnis 'no-data'.
         return 'no-data'; 
     };
 
     // 2. Durch alle Standorte (Punkte) iterieren
     locationsData.forEach(locationData => {
-        // KUGELSICHERER CHECK (ERWEITERT):
         if (!locationData || !locationData.hourly || locationData.latitude === null || locationData.longitude === null) {
-            return; // Überspringe diesen fehlerhaften Datenpunkt
+            return; // Überspringe fehlerhafte Datenpunkte
         }
 
         const hourly = locationData.hourly;
@@ -219,134 +235,116 @@ function checkThresholds_Sampling(profile, locationsData) {
         hourly.time.forEach((time, h) => {
             if (h >= timeStamps.length) return; 
             const hour = timeStamps[h]; 
-            let currentStatus;
-
-            // WICHTIG: Prüfen, ob die Datenfelder im hourly Objekt existieren, da sie fehlen können
-            const hasWind = hourly.wind_gusts_10m !== undefined && hourly.wind_gusts_10m !== null;
-            const hasVis = hourly.visibility !== undefined && hourly.visibility !== null;
-            const hasCloud = hourly.cloud_cover_low !== undefined && hourly.cloud_cover_low !== null;
-            const hasPrecip = hourly.precipitation_probability !== undefined && hourly.precipitation_probability !== null;
             
-            // Werte extrahieren (null, wenn Feld oder Wert fehlt)
-            const wind = hasWind ? hourly.wind_gusts_10m[h] : null;
-            const temp = hourly.temperature_2m[h]; 
-            const vis = hasVis ? hourly.visibility[h] : null;
-            const cloud = hasCloud ? hourly.cloud_cover_low[h] : null; 
-            const precip = hasPrecip ? hourly.precipitation_probability[h] : null;
+            // --- NEUE DYNAMISCHE SCHLEIFE ---
+            // Iteriere durch alle konfigurierten Metriken
+            metrics.forEach(metric => {
+                const ruleName = metric.ruleName;
+                const limit = rules[ruleName];
+                
+                // Springe zur nächsten Metrik, wenn diese Regel im Profil nicht gesetzt ist
+                // (Prüfung auf null/undefined, außer bei 'minTemp' und 'maxPrecipProb', wo 0 ein gültiger Wert sein könnte)
+                if (limit === null || limit === undefined) {
+                    if (ruleName !== 'minTemp' && ruleName !== 'maxPrecipProb') {
+                         return; 
+                    }
+                }
 
-            // Aggregation für den Graphen
-            if (wind !== null && wind > summary.wind.hourlyData[h]) summary.wind.hourlyData[h] = wind;
-            if (temp !== null && temp < summary.temp.hourlyData[h]) summary.temp.hourlyData[h] = temp;
-            if (vis !== null && vis < summary.vis.hourlyData[h]) summary.vis.hourlyData[h] = vis;
-            if (cloud !== null && cloud > summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud; 
-            if (precip !== null && precip > summary.precip.hourlyData[h]) summary.precip.hourlyData[h] = precip;
+                const apiName = metric.apiName;
+                const summaryKey = metric.summaryKey;
+                
+                // Prüfen, ob die API diesen Wert überhaupt geliefert hat
+                const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
+                const value = hasData ? hourly[apiName][h] : null;
 
-            // --- Regel-Checks (Vollständig) ---
-            
-            // Regel 1: Wind
-            if (rules.maxWind) {
-                if (wind === null || wind === undefined) {
-                    currentStatus = 'no-data';
-                } else if (wind > rules.maxWind) {
-                    currentStatus = 'alarm';
-                    summary.wind.triggered = true;
-                    if (wind > summary.wind.max) summary.wind.max = wind;
-                    if (!summary.wind.hourlyAlarms[hour]) summary.wind.hourlyAlarms[hour] = new Set();
-                    summary.wind.hourlyAlarms[hour].add(locationId);
-                } else if (wind > rules.maxWind * WARN_FACTORS.wind) {
-                    currentStatus = 'warn';
-                } else {
-                    currentStatus = 'ok';
+                // Graph-Aggregation (Aggregiere nur gültige Zahlen)
+                if (value !== null && isFinite(value)) {
+                    if (metric.checkType === 'min') {
+                        if (value < summary[summaryKey].hourlyData[h]) summary[summaryKey].hourlyData[h] = value;
+                    } else { // 'max'
+                        if (value > summary[summaryKey].hourlyData[h]) summary[summaryKey].hourlyData[h] = value;
+                    }
                 }
-                summary.wind.hourlyStatus[hour] = getWorseStatus(summary.wind.hourlyStatus[hour], currentStatus);
-            }
-            
-            // Regel 2: Temperatur
-            if (rules.minTemp !== null) {
-                if (temp === null || temp === undefined) {
-                    currentStatus = 'no-data';
-                } else if (temp < rules.minTemp) {
-                    currentStatus = 'alarm';
-                    summary.temp.triggered = true;
-                    if (temp < summary.temp.min) summary.temp.min = temp;
-                    if (!summary.temp.hourlyAlarms[hour]) summary.temp.hourlyAlarms[hour] = new Set();
-                    summary.temp.hourlyAlarms[hour].add(locationId);
-                } else if (temp < rules.minTemp + WARN_FACTORS.temp) {
-                    currentStatus = 'warn';
-                } else {
-                    currentStatus = 'ok';
-                }
-                summary.temp.hourlyStatus[hour] = getWorseStatus(summary.temp.hourlyStatus[hour], currentStatus);
-            }
 
-            // Regel 3: Sichtweite
-            if (rules.minVis) {
-                if (vis === null || vis === undefined) {
-                    currentStatus = 'no-data';
-                } else if (vis < rules.minVis) {
-                    currentStatus = 'alarm';
-                    summary.vis.triggered = true;
-                    if (vis < summary.vis.min) summary.vis.min = vis;
-                    if (!summary.vis.hourlyAlarms[hour]) summary.vis.hourlyAlarms[hour] = new Set();
-                    summary.vis.hourlyAlarms[hour].add(locationId);
-                } else if (vis < rules.minVis * WARN_FACTORS.vis) {
-                    currentStatus = 'warn';
+                // --- Regel-Check ---
+                let currentStatus = 'no-data';
+                
+                if (value === null || value === undefined) {
+                    // 'minTemp' ist 'ok', wenn keine Daten da sind (konservativ)
+                    currentStatus = (ruleName === 'minTemp') ? 'ok' : 'no-data';
                 } else {
-                    currentStatus = 'ok';
+                    // Wir haben einen gültigen Wert
+                    const warnFactor = getWarnFactor(metric);
+                    
+                    if (metric.checkType === 'min') {
+                        // MIN-Check (z.B. Temperatur, Sicht)
+                        if (value < limit) {
+                            currentStatus = 'alarm';
+                            summary[summaryKey].triggered = true;
+                            if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                            summary[summaryKey].hourlyAlarms[hour].add(locationId);
+                        } else if (metric.ruleName === 'minTemp' && value < (limit + warnFactor)) { // temp: limit + 2
+                            currentStatus = 'warn';
+                        } else if (metric.ruleName === 'minVis' && value < (limit * warnFactor)) { // vis: limit * 1.2
+                            currentStatus = 'warn';
+                        } else {
+                            currentStatus = 'ok';
+                        }
+                    } else {
+                        // MAX-Check (z.B. Wind, Wolken, Niederschlag)
+                        if (value > limit) {
+                            currentStatus = 'alarm';
+                            summary[summaryKey].triggered = true;
+                            if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                            summary[summaryKey].hourlyAlarms[hour].add(locationId);
+                        } else if (value > (limit * warnFactor)) { // z.B. limit * 0.9
+                            currentStatus = 'warn';
+                        } else {
+                            currentStatus = 'ok';
+                        }
+                    }
                 }
-                summary.vis.hourlyStatus[hour] = getWorseStatus(summary.vis.hourlyStatus[hour], currentStatus);
-            }
-
-            // Regel 4: Wolken (Max Cloud Cover)
-            if (rules.maxCloudCover) {
-                if (cloud === null || cloud === undefined) {
-                    currentStatus = 'no-data';
-                } else if (cloud > rules.maxCloudCover) { 
-                    currentStatus = 'alarm';
-                    summary.cloud.triggered = true;
-                    if (cloud > summary.cloud.max) summary.cloud.max = cloud; 
-                    if (!summary.cloud.hourlyAlarms[hour]) summary.cloud.hourlyAlarms[hour] = new Set();
-                    summary.cloud.hourlyAlarms[hour].add(locationId);
-                } else if (cloud > rules.maxCloudCover * WARN_FACTORS.cloudCover) { 
-                    currentStatus = 'warn';
-                } else {
-                    currentStatus = 'ok';
-                }
-                summary.cloud.hourlyStatus[hour] = getWorseStatus(summary.cloud.hourlyStatus[hour], currentStatus);
-            }
-            
-            // Regel 5: Niederschlag
-            if (rules.maxPrecipProb !== null) {
-                 if (precip === null || precip === undefined) {
-                    currentStatus = 'no-data';
-                } else if (precip > rules.maxPrecipProb) {
-                    currentStatus = 'alarm';
-                    summary.precip.triggered = true;
-                    if (precip > summary.precip.max) summary.precip.max = precip;
-                    if (!summary.precip.hourlyAlarms[hour]) summary.precip.hourlyAlarms[hour] = new Set();
-                    summary.precip.hourlyAlarms[hour].add(locationId);
-                } else if (precip > rules.maxPrecipProb * WARN_FACTORS.precip) {
-                    currentStatus = 'warn';
-                } else {
-                    currentStatus = 'ok';
-                }
-                summary.precip.hourlyStatus[hour] = getWorseStatus(summary.precip.hourlyStatus[hour], currentStatus);
-            }
+                
+                // Schlechtesten Status für diese Stunde setzen
+                summary[summaryKey].hourlyStatus[hour] = getWorseStatus(summary[summaryKey].hourlyStatus[hour], currentStatus);
+            });
+            // --- ENDE DYNAMISCHE SCHLEIFE ---
         });
     });
 
     // --- Kombi-Zeile berechnen (Vollständig) ---
     timeStamps.forEach((hour, h) => {
-        let combinedStatus = 'no-data'; // Startet mit 'no-data'
+        let combinedStatus = 'no-data'; 
 
-        if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[hour]);
-        if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[hour]);
-        if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[hour]);
-        if (rules.maxCloudCover) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[hour]);
-        if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[hour]);
+        metrics.forEach(metric => {
+            const ruleName = metric.ruleName;
+            const limit = rules[ruleName];
+            
+            // Berücksichtige nur, wenn die Regel im Profil aktiv ist
+            if (limit !== null && limit !== undefined) {
+                 combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+            }
+             // Sonderfall: minTemp (wo 0 gültig ist)
+            else if (ruleName === 'minTemp' && limit !== null) {
+                 combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+            }
+             // Sonderfall: maxPrecipProb (wo 0 gültig ist)
+            else if (ruleName === 'maxPrecipProb' && limit !== null) {
+                 combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+            }
+        });
 
         summary.combined.hourlyStatus[hour] = combinedStatus;
         if (combinedStatus !== 'ok' && combinedStatus !== 'no-data') summary.combined.triggered = true;
+    });
+
+    // Abwärtskompatibilität für .min / .max
+     Object.values(METRICS_CONFIG).forEach(metric => {
+        if (metric.checkType === 'min') {
+            summary[metric.summaryKey].min = summary[metric.summaryKey].value;
+        } else {
+            summary[metric.summaryKey].max = summary[metric.summaryKey].value;
+        }
     });
 
     return summary;
