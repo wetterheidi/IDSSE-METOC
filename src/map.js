@@ -64,7 +64,8 @@ export const visualizeWarnings = (summary, hour) => {
     // Wenn kein Summary da ist (z.B. vor der ersten Prüfung), tu nichts.
     if (!summary) return;
 
-        const hourInt = parseInt(hour, 10);
+    // Den hour-Parameter zu einer Zahl konvertieren
+    const hourInt = parseInt(hour, 10);
     const hourString = hourInt.toString(); 
 
     // Stundenliste (0, 1, ..., 23)
@@ -86,7 +87,6 @@ export const visualizeWarnings = (summary, hour) => {
             for (const h of reversedHours) {
                 const prevAlarms = summary[ruleKey].hourlyAlarms[h];
                 if (prevAlarms && prevAlarms.size > 0) {
-                    console.log(`Map: Manuelle Warnung für ${ruleKey} (${currentHourString}h) nutzt Standorte von ${h}h.`);
                     return prevAlarms;
                 }
             }
@@ -148,7 +148,8 @@ export const visualizeWarnings = (summary, hour) => {
     const windAlarms = getAlarmLocations('wind', hourString, summary.wind.hourlyAlarms[hourString]);
     if (windAlarms && windAlarms.size > 0) {
         const blendedStatus = getBlendedStatus(summary, 'wind', hourString);
-        const tooltip = `Wind (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${summary.wind.max.toFixed(1)} km/h)`;
+        const displayValue = getDisplayValue(summary.wind.max, 1, 'km/h');
+        const tooltip = `Wind (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${displayValue})`;
         drawWarningArea(getPointFeatures(windAlarms), '#dc3545', tooltip); 
     }
     
@@ -156,7 +157,8 @@ export const visualizeWarnings = (summary, hour) => {
     const tempAlarms = getAlarmLocations('temp', hourString, summary.temp.hourlyAlarms[hourString]);
     if (tempAlarms && tempAlarms.size > 0) {
         const blendedStatus = getBlendedStatus(summary, 'temp', hourString);
-        const tooltip = `Temp (${hourString}h): ${blendedStatus.toUpperCase()} (Min: ${summary.temp.min.toFixed(1)} °C)`;
+        const displayValue = getDisplayValue(summary.temp.min, 1, '°C');
+        const tooltip = `Temp (${hourString}h): ${blendedStatus.toUpperCase()} (Min: ${displayValue})`;
         drawWarningArea(getPointFeatures(tempAlarms), '#007bff', tooltip);
     }
     
@@ -164,15 +166,17 @@ export const visualizeWarnings = (summary, hour) => {
     const visAlarms = getAlarmLocations('vis', hourString, summary.vis.hourlyAlarms[hourString]);
     if (visAlarms && visAlarms.size > 0) {
         const blendedStatus = getBlendedStatus(summary, 'vis', hourString);
-        const tooltip = `Sicht (${hourString}h): ${blendedStatus.toUpperCase()} (Min: ${summary.vis.min.toFixed(0)} m)`;
+        const displayValue = getDisplayValue(summary.vis.min, 0, 'm');
+        const tooltip = `Sicht (${hourString}h): ${blendedStatus.toUpperCase()} (Min: ${displayValue})`;
         drawWarningArea(getPointFeatures(visAlarms), '#ffc107', tooltip); 
     }
 
-    // --- Wolken (Grau) ---
+    // --- Wolken (Grau) --- (NEU: Max Cloud Cover %)
     const cloudAlarms = getAlarmLocations('cloud', hourString, summary.cloud.hourlyAlarms[hourString]);
     if (cloudAlarms && cloudAlarms.size > 0) {
         const blendedStatus = getBlendedStatus(summary, 'cloud', hourString);
-        const tooltip = `Wolken (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${summary.cloud.max.toFixed(0)} %)`;
+        const displayValue = getDisplayValue(summary.cloud.max, 0, '%');
+        const tooltip = `Wolken (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${displayValue})`;
         drawWarningArea(getPointFeatures(cloudAlarms), '#6c757d', tooltip); 
     }
 
@@ -180,7 +184,8 @@ export const visualizeWarnings = (summary, hour) => {
     const precipAlarms = getAlarmLocations('precip', hourString, summary.precip.hourlyAlarms[hourString]);
     if (precipAlarms && precipAlarms.size > 0) {
         const blendedStatus = getBlendedStatus(summary, 'precip', hourString);
-        const tooltip = `Niederschlag (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${summary.precip.max.toFixed(0)} %)`;
+        const displayValue = getDisplayValue(summary.precip.max, 0, '%');
+        const tooltip = `Niederschlag (${hourString}h): ${blendedStatus.toUpperCase()} (Max: ${displayValue})`;
         drawWarningArea(getPointFeatures(precipAlarms), '#000080', tooltip); 
     }
 };
@@ -244,4 +249,9 @@ function getBlendedStatus(summary, ruleKey, hour) {
 
     return manualStatus || autoStatus;
 }
+
+const getDisplayValue = (value, decimals, unit) => {
+    // KORREKTUR: Prüft auf null oder undefined
+    return (value === null || value === undefined) ? 'N/A' : `${value.toFixed(decimals)} ${unit}`;
+};
 

@@ -639,3 +639,28 @@ button:hover {
     padding: 3px;
     height: auto;
 }
+
+.status-no-data {
+    background-color: #d8d8d8; /* Helles Grau */
+    cursor: default; 
+    /* Fügt eine leichte Textur hinzu, um es von 'ok' zu unterscheiden */
+    background-image: repeating-linear-gradient(
+        -45deg,
+        #f0f0f0,
+        #f0f0f0 5px,
+        #d8d8d8 5px,
+        #d8d8d8 10px
+    );
+    opacity: 0.8;
+}
+
+/* Klickbarer Bereich für Zellen, die Daten haben, aber nicht "no-data" sind */
+.manual-override-cell {
+    cursor: pointer;
+}
+.status-no-data.manual-override-cell {
+    /* Wichtig: Auch wenn die Zelle als klickbar markiert ist, 
+       soll der Cursor bei fehlenden Modelldaten neutral sein.
+       Die Klick-Logik in ui.js erlaubt das Überschreiben aber trotzdem. */
+    cursor: pointer; 
+}

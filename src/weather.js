@@ -95,7 +95,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
 
     let allApiResponses = [];
-    const hourlyParams = 'temperature_2m,windgusts_10m,visibility,cloud_cover_low,precipitation_probability'; // <-- cloud_base -> cloud_cover_low
+    const hourlyParams = 'temperature_2m,wind_gusts_10m,visibility,cloud_cover_low,precipitation_probability'; // <-- cloud_base -> cloud_cover_low
 
     console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln à ${CHUNK_SIZE}.`);
 
@@ -159,7 +159,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
 
 /**
  * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
- * (Vollständige Master-Version)
+ * (Vollständige Master-Version mit CloudCover, No-Data und Stunden-Key-Fix)
  */
 function checkThresholds_Sampling(profile, locationsData) {
     const rules = profile.rules;
@@ -171,23 +171,39 @@ function checkThresholds_Sampling(profile, locationsData) {
         return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort." });
     }
 
-    // 1. Stunden-Header initialisieren (0-23)
-    const timeStamps = locationsData[0].hourly.time.map(t => new Date(t).getHours());
+    // 1. Stunden-Header initialisieren
+    // KORREKTUR: Verwende getUTCHours() als Schlüssel (z.B. 12, 13, ...)
+    const timeStamps = locationsData[0].hourly.time.map(t => new Date(t).getUTCHours());
+    
     timeStamps.forEach((hour, h) => {
         statusParams.forEach(param => {
             if (summary[param]) {
-                summary[param].hourlyStatus[h] = 'ok';
+                // FIX: Initialisiere mit 'no-data'. Nur Temperatur startet auf 'ok'.
+                const initialStatus = (param === 'temp') ? 'ok' : 'no-data'; 
+                summary[param].hourlyStatus[hour] = initialStatus; 
+                summary[param].hourlyAlarms[hour] = new Set(); 
+
+                // hourlyData (für den Graphen) verwendet den Array-Index 'h'
                 summary.wind.hourlyData[h] = -Infinity;
                 summary.temp.hourlyData[h] = +Infinity;
                 summary.vis.hourlyData[h] = +Infinity;
-                summary.cloud.hourlyData[h] = -Infinity;
+                summary.cloud.hourlyData[h] = -Infinity; // CloudCover ist max-Aggregation
                 summary.precip.hourlyData[h] = -Infinity;
             }
         });
-        summary.combined.hourlyStatus[h] = 'ok';
+        summary.combined.hourlyStatus[hour] = 'no-data';
     });
 
-    const getWorseStatus = (s1, s2) => (s1 === 'alarm' || s2 === 'alarm') ? 'alarm' : (s1 === 'warn' || s2 === 'warn') ? 'warn' : 'ok';
+    const getWorseStatus = (s1, s2) => {
+        if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
+        if (s1 === 'warn' || s2 === 'warn') return 'warn';
+        
+        // FIX: 'ok' gewinnt über 'no-data'
+        if (s1 === 'ok' || s2 === 'ok') return 'ok'; 
+        
+        // Wenn keine besseren Status gefunden wurden, ist das Ergebnis 'no-data'.
+        return 'no-data'; 
+    };
 
     // 2. Durch alle Standorte (Punkte) iterieren
     locationsData.forEach(locationData => {
@@ -198,28 +214,40 @@ function checkThresholds_Sampling(profile, locationsData) {
 
         const hourly = locationData.hourly;
         const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
-
+        
         // Iteriere durch die Stunden (0-23)
         hourly.time.forEach((time, h) => {
-            if (h >= timeStamps.length) return; // Sicherheitscheck
-            const hour = timeStamps[h];
+            if (h >= timeStamps.length) return; 
+            const hour = timeStamps[h]; 
             let currentStatus;
 
-            const wind = hourly.windgusts_10m[h];
-            const temp = hourly.temperature_2m[h];
-            const vis = hourly.visibility[h];
-            const cloud = hourly.cloud_cover_low[h];
-            const precip = hourly.precipitation_probability[h];
+            // WICHTIG: Prüfen, ob die Datenfelder im hourly Objekt existieren, da sie fehlen können
+            const hasWind = hourly.wind_gusts_10m !== undefined && hourly.wind_gusts_10m !== null;
+            const hasVis = hourly.visibility !== undefined && hourly.visibility !== null;
+            const hasCloud = hourly.cloud_cover_low !== undefined && hourly.cloud_cover_low !== null;
+            const hasPrecip = hourly.precipitation_probability !== undefined && hourly.precipitation_probability !== null;
+            
+            // Werte extrahieren (null, wenn Feld oder Wert fehlt)
+            const wind = hasWind ? hourly.wind_gusts_10m[h] : null;
+            const temp = hourly.temperature_2m[h]; 
+            const vis = hasVis ? hourly.visibility[h] : null;
+            const cloud = hasCloud ? hourly.cloud_cover_low[h] : null; 
+            const precip = hasPrecip ? hourly.precipitation_probability[h] : null;
 
+            // Aggregation für den Graphen
             if (wind !== null && wind > summary.wind.hourlyData[h]) summary.wind.hourlyData[h] = wind;
             if (temp !== null && temp < summary.temp.hourlyData[h]) summary.temp.hourlyData[h] = temp;
             if (vis !== null && vis < summary.vis.hourlyData[h]) summary.vis.hourlyData[h] = vis;
-            if (cloud !== null && cloud > summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud; // <-- MAX-Aggregation
+            if (cloud !== null && cloud > summary.cloud.hourlyData[h]) summary.cloud.hourlyData[h] = cloud; 
             if (precip !== null && precip > summary.precip.hourlyData[h]) summary.precip.hourlyData[h] = precip;
 
             // --- Regel-Checks (Vollständig) ---
+            
+            // Regel 1: Wind
             if (rules.maxWind) {
-                if (wind > rules.maxWind) {
+                if (wind === null || wind === undefined) {
+                    currentStatus = 'no-data';
+                } else if (wind > rules.maxWind) {
                     currentStatus = 'alarm';
                     summary.wind.triggered = true;
                     if (wind > summary.wind.max) summary.wind.max = wind;
@@ -232,8 +260,12 @@ function checkThresholds_Sampling(profile, locationsData) {
                 }
                 summary.wind.hourlyStatus[hour] = getWorseStatus(summary.wind.hourlyStatus[hour], currentStatus);
             }
+            
+            // Regel 2: Temperatur
             if (rules.minTemp !== null) {
-                if (temp < rules.minTemp) {
+                if (temp === null || temp === undefined) {
+                    currentStatus = 'no-data';
+                } else if (temp < rules.minTemp) {
                     currentStatus = 'alarm';
                     summary.temp.triggered = true;
                     if (temp < summary.temp.min) summary.temp.min = temp;
@@ -246,8 +278,12 @@ function checkThresholds_Sampling(profile, locationsData) {
                 }
                 summary.temp.hourlyStatus[hour] = getWorseStatus(summary.temp.hourlyStatus[hour], currentStatus);
             }
+
+            // Regel 3: Sichtweite
             if (rules.minVis) {
-                if (vis < rules.minVis) {
+                if (vis === null || vis === undefined) {
+                    currentStatus = 'no-data';
+                } else if (vis < rules.minVis) {
                     currentStatus = 'alarm';
                     summary.vis.triggered = true;
                     if (vis < summary.vis.min) summary.vis.min = vis;
@@ -260,23 +296,30 @@ function checkThresholds_Sampling(profile, locationsData) {
                 }
                 summary.vis.hourlyStatus[hour] = getWorseStatus(summary.vis.hourlyStatus[hour], currentStatus);
             }
-            if (rules.maxCloudCover) { // <-- rules.maxCloudCover
-                const maxCloudCover = rules.maxCloudCover;
-                if (cloud !== null && cloud > maxCloudCover) { // <-- > statt <
+
+            // Regel 4: Wolken (Max Cloud Cover)
+            if (rules.maxCloudCover) {
+                if (cloud === null || cloud === undefined) {
+                    currentStatus = 'no-data';
+                } else if (cloud > rules.maxCloudCover) { 
                     currentStatus = 'alarm';
                     summary.cloud.triggered = true;
-                    if (cloud > summary.cloud.max) summary.cloud.max = cloud; // <-- max statt min
+                    if (cloud > summary.cloud.max) summary.cloud.max = cloud; 
                     if (!summary.cloud.hourlyAlarms[hour]) summary.cloud.hourlyAlarms[hour] = new Set();
                     summary.cloud.hourlyAlarms[hour].add(locationId);
-                } else if (cloud !== null && cloud > maxCloudCover * WARN_FACTORS.cloudCover) { // <-- > statt <, WARN_FACTORS.cloudCover
+                } else if (cloud > rules.maxCloudCover * WARN_FACTORS.cloudCover) { 
                     currentStatus = 'warn';
                 } else {
                     currentStatus = 'ok';
                 }
                 summary.cloud.hourlyStatus[hour] = getWorseStatus(summary.cloud.hourlyStatus[hour], currentStatus);
             }
+            
+            // Regel 5: Niederschlag
             if (rules.maxPrecipProb !== null) {
-                if (precip > rules.maxPrecipProb) {
+                 if (precip === null || precip === undefined) {
+                    currentStatus = 'no-data';
+                } else if (precip > rules.maxPrecipProb) {
                     currentStatus = 'alarm';
                     summary.precip.triggered = true;
                     if (precip > summary.precip.max) summary.precip.max = precip;
@@ -294,15 +337,16 @@ function checkThresholds_Sampling(profile, locationsData) {
 
     // --- Kombi-Zeile berechnen (Vollständig) ---
     timeStamps.forEach((hour, h) => {
-        let combinedStatus = 'ok';
-        if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[h]);
-        if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[h]);
-        if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[h]);
-        if (rules.maxCloudCover) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[h]); // <-- rules.maxCloudCover
-        if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[h]);
+        let combinedStatus = 'no-data'; // Startet mit 'no-data'
 
-        summary.combined.hourlyStatus[h] = combinedStatus;
-        if (combinedStatus !== 'ok') summary.combined.triggered = true;
+        if (rules.maxWind) combinedStatus = getWorseStatus(combinedStatus, summary.wind.hourlyStatus[hour]);
+        if (rules.minTemp !== null) combinedStatus = getWorseStatus(combinedStatus, summary.temp.hourlyStatus[hour]);
+        if (rules.minVis) combinedStatus = getWorseStatus(combinedStatus, summary.vis.hourlyStatus[hour]);
+        if (rules.maxCloudCover) combinedStatus = getWorseStatus(combinedStatus, summary.cloud.hourlyStatus[hour]);
+        if (rules.maxPrecipProb !== null) combinedStatus = getWorseStatus(combinedStatus, summary.precip.hourlyStatus[hour]);
+
+        summary.combined.hourlyStatus[hour] = combinedStatus;
+        if (combinedStatus !== 'ok' && combinedStatus !== 'no-data') summary.combined.triggered = true;
     });
 
     return summary;

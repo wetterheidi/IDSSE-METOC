@@ -424,8 +424,8 @@ export const displayManualWarning = (profile, summary) => {
 
     // --- 4. Ampel-Matrix ---
     // --- 4. Ampel-Matrix ---
-    let tableHtml = ""; 
-    
+    let tableHtml = "";
+
     // NEU: Berechne den geblendeten Gesamt-Status
     const blendedCombinedStatus = getBlendedCombinedStatus(profile, summary);
 
@@ -441,7 +441,7 @@ export const displayManualWarning = (profile, summary) => {
         // Kombi-Zeile
         if (summary.combined) {
             // WICHTIG: Nutze den neu berechneten Blended Combined Status
-            tableHtml += buildRow('**Gesamt-Status**', blendedCombinedStatus, hours, 'combined', true); 
+            tableHtml += buildRow('**Gesamt-Status**', blendedCombinedStatus, hours, 'combined', true);
         }
 
         // Einzel-Parameter (nutzt die globale, override-fähige buildRow)
@@ -712,26 +712,36 @@ function getAlarmTimeRange(hourlyStatus) {
 
 /**
  * NEU: Baut eine einzelne Tabellen-Zelle mit Overrides und Klick-Handler.
+ * Fügt die Logik für "NO DATA" hinzu und erlaubt Overrides.
  */
-function buildCell(finalStatus, ruleKey, hour, isCombinedRow) {
-    // Der Tooltip soll zeigen, ob es ein manueller Override ist.
-    const overrides = getManualOverrides();
-    const isOverridden = overrides[ruleKey] && overrides[ruleKey][hour];
+function buildCell(finalStatus, autoStatus, ruleKey, hour, isCombinedRow) {
+    // 1. Definiere die Statusklasse und den Pointer
+    // KORREKTUR: finalStatus ist garantiert ein String ('ok', 'warn', 'alarm', 'no-data')
+    let statusClass = `status-${finalStatus}`;
+    let tooltip = '';
 
-    const statusClass = `status-${finalStatus || 'ok'}`;
-    let tooltip = isOverridden
-        ? `Manuell: ${finalStatus.toUpperCase()} (Klick zum Ändern/Reset)`
-        : `Automatisch: ${finalStatus.toUpperCase()} (Klick zum Ändern)`;
+    // Kombi-Zeile ist NIE klickbar
+    const isClickable = !isCombinedRow;
 
-    // Wenn es die Kombi-Zeile ist, ist sie nicht klickbar
-    if (isCombinedRow) {
-        return `<td class="${statusClass}" title="${tooltip}"></td>`;
+    // 2. KEINE DATEN?
+    if (finalStatus === 'no-data') {
+        statusClass = 'status-no-data';
+        tooltip = 'Keine Daten vom Wettermodell verfügbar. Klick zum Setzen einer manuellen Warnung.';
+    } else {
+        // Blending-Status (ok, warn, alarm)
+        const overrides = getManualOverrides();
+        // Hier muss man prüfen, ob der finalStatus von einem manuellen Override kommt
+        const isOverridden = overrides[ruleKey] && overrides[ruleKey][hour];
+
+        tooltip = isOverridden
+            ? `Manuell: ${finalStatus.toUpperCase()} (Klick zum Ändern/Reset)`
+            : `Automatisch: ${finalStatus.toUpperCase()} (Klick zum Ändern)`;
     }
 
-    // Datenattribute für Interaktion
+    // 3. Datenattribute setzen
     const dataAttributes = `data-rule-key="${ruleKey}" data-hour="${hour}"`;
 
-    return `<td class="${statusClass} manual-override-cell" ${dataAttributes} title="${tooltip}"></td>`;
+    return `<td class="${statusClass} ${isClickable ? 'manual-override-cell' : ''}" ${dataAttributes} title="${tooltip}"></td>`;
 }
 
 /**
@@ -743,13 +753,25 @@ const buildRow = (paramName, statusObject, hours, ruleKey, isCombinedRow = false
     const manualOverrides = getManualOverrides()[ruleKey] || {};
 
     hours.forEach(hour => {
-        // 1. Automatischer Status
-        const autoStatus = statusObject[hour] || 'ok';
+        // 1. Automatischer Status (Kann 'ok', 'warn', 'alarm' oder 'no-data' sein)
+        // WICHTIG: statusObject enthält jetzt auch 'no-data' (siehe weather.js Patch)
+        const autoStatus = statusObject[hour];
 
-        // 2. Finaler Status (Manual überschreibt Auto)
-        const finalStatus = isCombinedRow ? autoStatus : (manualOverrides[hour] || autoStatus);
+        // 2. Finaler Status
+        let finalStatus;
 
-        rowHtml += buildCell(finalStatus, ruleKey, hour, isCombinedRow);
+        if (isCombinedRow) {
+            // Kombi-Zeile: Verwendet den Status, der bereits von getBlendedCombinedStatus berechnet wurde.
+            finalStatus = autoStatus;
+        } else {
+            // Einzel-Regel: Override gewinnt über alles, auch über 'no-data'
+            finalStatus = manualOverrides[hour] || autoStatus;
+        }
+
+        // Finaler Status muss immer ein String sein, niemals null oder undefined.
+        finalStatus = finalStatus || 'no-data';
+
+        rowHtml += buildCell(finalStatus, autoStatus, ruleKey, hour, isCombinedRow);
     });
 
     rowHtml += `</tr>`;
@@ -814,7 +836,7 @@ function createBlendedStatus(summary, ruleKey) {
     const hours = Object.keys(autoStatus).sort((a, b) => parseInt(a) - parseInt(b));
 
     hours.forEach(hour => {
-        const auto = autoStatus[hour] || 'ok';
+        const auto = autoStatus[hour] || 'no-data';
         const manual = overrides[hour];
         // Blending-Logik: Override überschreibt Auto
         blended[hour] = manual || auto;
