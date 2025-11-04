@@ -5,6 +5,27 @@ import { METRICS_CONFIG } from './metricsConfig.js';
 
 let weatherChart = null; // Globale Chart-Instanz
 
+/**
+ * NEU: Wandelt Hex-Farbcode in RGBA um.
+ */
+function hexToRgba(hex, alpha) {
+    if (!hex) return `rgba(0,0,0,${alpha})`; // Fallback
+    let r = 0, g = 0, b = 0;
+    // 3-stelliger Hex
+    if (hex.length === 4) {
+        r = parseInt(hex[1] + hex[1], 16);
+        g = parseInt(hex[2] + hex[2], 16);
+        b = parseInt(hex[3] + hex[3], 16);
+    }
+    // 6-stelliger Hex
+    else if (hex.length === 7) {
+        r = parseInt(hex.substring(1, 3), 16);
+        g = parseInt(hex.substring(3, 5), 16);
+        b = parseInt(hex.substring(5, 7), 16);
+    }
+    return `rgba(${r},${g},${b},${alpha || 0.1})`;
+}
+
 function clearChart() {
     if (weatherChart) {
         weatherChart.destroy();
@@ -32,7 +53,7 @@ function getBlendedStatus(summary, summaryKey, hour) {
     const hourString = hour.toString();
     const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hourString]) || 'no-data';
     const manualStatus = overrides[summaryKey] ? overrides[summaryKey][hourString] : null;
-    
+
     return manualStatus || autoStatus;
 }
 
@@ -44,7 +65,7 @@ export function updateWeatherChart(profile, summary) {
     clearChart(); // Alten Graphen löschen
 
     const ctx = document.getElementById('weatherChartCanvas').getContext('2d');
-    
+
     // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
     const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
     if (!summary || !profile || !summary[firstMetricKey].hourlyData || summary[firstMetricKey].hourlyData.length === 0) {
@@ -57,12 +78,12 @@ export function updateWeatherChart(profile, summary) {
     // --- 1. Datensätze und Achsen dynamisch erstellen ---
     const datasets = [];
     const scales = {
-        x: { 
+        x: {
             title: { display: true, text: 'Uhrzeit (UTC)' }
         }
     };
     const annotationLimits = [];
-    
+
     // Helfer für Limit-Linien
     const createLimitLine = (value, color, yAxisID) => ({
         type: 'line',
@@ -81,7 +102,7 @@ export function updateWeatherChart(profile, summary) {
 
     // --- 2. DYNAMISCHE SCHLEIFE: Metriken hinzufügen ---
     let axisGridCounter = 0; // Zähler, damit nur die erste Achse ein Gitter zeichnet
-    
+
     for (const metric of Object.values(METRICS_CONFIG)) {
         const ruleName = metric.ruleName;
         const summaryKey = metric.summaryKey;
@@ -103,7 +124,7 @@ export function updateWeatherChart(profile, summary) {
             label: label,
             data: data,
             borderColor: metric.chartColor,
-            backgroundColor: metric.chartColor.replace(')', ', 0.1)').replace('#', 'rgba('), // Mache Farbe transparent
+            backgroundColor: hexToRgba(metric.chartColor, 0.1), // <-- KORRIGIERT
             fill: opts.fill || false,
             yAxisID: opts.axisId,
             type: opts.type // 'line' or 'bar'
@@ -117,11 +138,11 @@ export function updateWeatherChart(profile, summary) {
                 position: opts.axisPosition,
                 title: { display: true, text: `${opts.axisLabel} (${unit})` },
                 // Nur die erste Achse (oder Achsen auf der 'linken' Seite) zeichnet Gitterlinien
-                grid: { 
-                    drawOnChartArea: (opts.axisPosition === 'left' || axisGridCounter === 0) 
+                grid: {
+                    drawOnChartArea: (opts.axisPosition === 'left' || axisGridCounter === 0)
                 }
             };
-            
+
             // Sonderfall: Prozent-Achse (für Wolken/Niederschlag)
             if (opts.axisId === 'yPercent') {
                 scales[opts.axisId].min = 0;
@@ -141,7 +162,7 @@ export function updateWeatherChart(profile, summary) {
     const combinedBlendedStatus = Array.from({ length: 24 }, (_, h) => {
         const hour = h.toString();
         let combinedStatus = 'no-data';
-        
+
         // DYNAMISCHE SCHLEIFE:
         for (const metric of Object.values(METRICS_CONFIG)) {
             // Berücksichtige nur, wenn Regel aktiv
@@ -167,14 +188,14 @@ export function updateWeatherChart(profile, summary) {
         }
         return null;
     }).filter(a => a !== null);
-    
+
     const finalAnnotations = annotationLimits.concat(alarmBands);
 
     // 4. Chart.js-Konfiguration
     weatherChart = new Chart(ctx, {
         type: 'line', // Standard-Typ (wird pro Dataset überschrieben)
         data: {
-            labels: hours, 
+            labels: hours,
             datasets: datasets
         },
         options: {
@@ -183,7 +204,7 @@ export function updateWeatherChart(profile, summary) {
             scales: scales, // Unsere dynamisch erstellten Achsen
             plugins: {
                 tooltip: {
-                    mode: 'index', 
+                    mode: 'index',
                     intersect: false
                 },
                 legend: {
