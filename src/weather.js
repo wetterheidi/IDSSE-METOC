@@ -1,7 +1,7 @@
 // weather.js (Version 2.0 - Config-Driven)
 import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
 // Importiere das NEUE "Gehirn"
-import { METRICS_CONFIG, getApiParams, getWarnFactor } from './metricsConfig.js'; 
+import { METRICS_CONFIG, getApiParams, getWarnFactor } from './metricsConfig.js';
 
 /**
  * Teilt ein Array in kleinere Stapel (Chunks) auf.
@@ -33,7 +33,7 @@ export function getEmptySummary() {
                 triggered: false,
                 // 'max' (wind, cloud, precip) startet bei 0 (oder -Infinity)
                 // 'min' (temp, vis) startet bei 999 (oder +Infinity)
-                value: (metric.checkType === 'min') ? Infinity : -Infinity, 
+                value: (metric.checkType === 'min') ? Infinity : -Infinity,
                 hourlyStatus: {},
                 hourlyAlarms: {},
                 hourlyData: []
@@ -43,11 +43,11 @@ export function getEmptySummary() {
                 if (key === 'temp') summary[key].value = 999;
                 if (key === 'vis') summary[key].value = 99999;
             } else {
-                 summary[key].value = 0;
+                summary[key].value = 0;
             }
         }
     }
-    
+
     // Überschreibe 'value' mit 'min'/'max' für Abwärtskompatibilität (falls ui.js/map.js es noch nutzt)
     // HINWEIS: Wir sollten später auf .value umstellen.
     Object.values(METRICS_CONFIG).forEach(metric => {
@@ -76,7 +76,7 @@ export function getGridPoints(geojson) {
         const cellSide = 10; // km
         const options = { units: 'kilometers' };
         const pointGrid = turf.pointGrid(bbox, cellSide, options);
-        
+
         const pointsInside = turf.pointsWithinPolygon(pointGrid, geojson);
 
         return { gridPoints: pointsInside }; // Gibt die GeoJSON-Punkte zurück
@@ -120,10 +120,10 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
 
     let allApiResponses = [];
-    
+
     // NEU: API-Parameter dynamisch aus der Config holen
     const hourlyParams = getApiParams(); // <-- DYNAMISCH
-    
+
     console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln. Parameter: ${hourlyParams}`);
 
     // 5. Sequenzielle Schleife (API-URL-Bau)
@@ -194,17 +194,17 @@ function checkThresholds_Sampling(profile, locationsData) {
 
     // 1. Stunden-Header initialisieren
     const timeStamps = locationsData[0].hourly.time.map(t => new Date(t).getUTCHours());
-    
+
     timeStamps.forEach((hour, h) => {
         metrics.forEach(metric => {
             const key = metric.summaryKey;
-            
+
             // 'temp' (min) ist die einzige Regel, die ohne Daten 'ok' ist.
             // Alle 'max'-Regeln (wind, cloud, precip) und 'min'-Regeln (vis) sind 'no-data'.
-            const initialStatus = (metric.ruleName === 'minTemp') ? 'ok' : 'no-data'; 
-            
-            summary[key].hourlyStatus[hour] = initialStatus; 
-            summary[key].hourlyAlarms[hour] = new Set(); 
+            const initialStatus = 'no-data';
+
+            summary[key].hourlyStatus[hour] = initialStatus;
+            summary[key].hourlyAlarms[hour] = new Set();
 
             // hourlyData (für den Graphen) initialisieren
             // 'min'-Checks (temp, vis) suchen den kleinsten Wert (+Infinity)
@@ -218,8 +218,8 @@ function checkThresholds_Sampling(profile, locationsData) {
     const getWorseStatus = (s1, s2) => {
         if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
         if (s1 === 'warn' || s2 === 'warn') return 'warn';
-        if (s1 === 'ok' || s2 === 'ok') return 'ok'; 
-        return 'no-data'; 
+        if (s1 === 'ok' || s2 === 'ok') return 'ok';
+        return 'no-data';
     };
 
     // 2. Durch alle Standorte (Punkte) iterieren
@@ -230,29 +230,29 @@ function checkThresholds_Sampling(profile, locationsData) {
 
         const hourly = locationData.hourly;
         const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
-        
+
         // Iteriere durch die Stunden (0-23)
         hourly.time.forEach((time, h) => {
-            if (h >= timeStamps.length) return; 
-            const hour = timeStamps[h]; 
-            
+            if (h >= timeStamps.length) return;
+            const hour = timeStamps[h];
+
             // --- NEUE DYNAMISCHE SCHLEIFE ---
             // Iteriere durch alle konfigurierten Metriken
             metrics.forEach(metric => {
                 const ruleName = metric.ruleName;
                 const limit = rules[ruleName];
-                
+
                 // Springe zur nächsten Metrik, wenn diese Regel im Profil nicht gesetzt ist
                 // (Prüfung auf null/undefined, außer bei 'minTemp' und 'maxPrecipProb', wo 0 ein gültiger Wert sein könnte)
                 if (limit === null || limit === undefined) {
                     if (ruleName !== 'minTemp' && ruleName !== 'maxPrecipProb') {
-                         return; 
+                        return;
                     }
                 }
 
                 const apiName = metric.apiName;
                 const summaryKey = metric.summaryKey;
-                
+
                 // Prüfen, ob die API diesen Wert überhaupt geliefert hat
                 const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
                 const value = hasData ? hourly[apiName][h] : null;
@@ -267,44 +267,56 @@ function checkThresholds_Sampling(profile, locationsData) {
                 }
 
                 // --- Regel-Check ---
-                let currentStatus = 'no-data';
+            let currentStatus = 'no-data'; // Standard-Annahme
+
+            // 1. Prüfen, ob wir überhaupt einen gültigen, numerischen Wert haben.
+            //    (value !== null) UND (isFinite(value))
+            //    isFinite() fängt null, undefined, Infinity, etc. ab.
+            if (value !== null && isFinite(value)) {
                 
-                if (value === null || value === undefined) {
-                    // 'minTemp' ist 'ok', wenn keine Daten da sind (konservativ)
-                    currentStatus = (ruleName === 'minTemp') ? 'ok' : 'no-data';
-                } else {
-                    // Wir haben einen gültigen Wert
-                    const warnFactor = getWarnFactor(metric);
-                    
-                    if (metric.checkType === 'min') {
-                        // MIN-Check (z.B. Temperatur, Sicht)
-                        if (value < limit) {
-                            currentStatus = 'alarm';
-                            summary[summaryKey].triggered = true;
-                            if (value < summary[summaryKey].value) summary[summaryKey].value = value;
-                            summary[summaryKey].hourlyAlarms[hour].add(locationId);
-                        } else if (metric.ruleName === 'minTemp' && value < (limit + warnFactor)) { // temp: limit + 2
-                            currentStatus = 'warn';
-                        } else if (metric.ruleName === 'minVis' && value < (limit * warnFactor)) { // vis: limit * 1.2
-                            currentStatus = 'warn';
-                        } else {
-                            currentStatus = 'ok';
-                        }
+                // Wir haben eine echte Zahl, jetzt die Regeln prüfen:
+                const warnFactor = getWarnFactor(metric);
+                
+                if (metric.checkType === 'min') {
+                    // MIN-Check (z.B. Temperatur, Sicht)
+                    if (value < limit) {
+                        currentStatus = 'alarm';
+                        summary[summaryKey].triggered = true;
+                        if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                        summary[summaryKey].hourlyAlarms[hour].add(locationId);
+                    } else if (metric.ruleName === 'minTemp' && value < (limit + warnFactor)) { // temp: limit + 2
+                        currentStatus = 'warn';
+                    } else if (metric.ruleName === 'minVis' && value < (limit * warnFactor)) { // vis: limit * 1.2
+                        currentStatus = 'warn';
                     } else {
-                        // MAX-Check (z.B. Wind, Wolken, Niederschlag)
-                        if (value > limit) {
-                            currentStatus = 'alarm';
-                            summary[summaryKey].triggered = true;
-                            if (value > summary[summaryKey].value) summary[summaryKey].value = value;
-                            summary[summaryKey].hourlyAlarms[hour].add(locationId);
-                        } else if (value > (limit * warnFactor)) { // z.B. limit * 0.9
-                            currentStatus = 'warn';
-                        } else {
-                            currentStatus = 'ok';
-                        }
+                        currentStatus = 'ok';
+                    }
+                } else {
+                    // MAX-Check (z.B. Wind, Wolken, Niederschlag)
+                    if (value > limit) {
+                        currentStatus = 'alarm';
+                        summary[summaryKey].triggered = true;
+                        if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                        summary[summaryKey].hourlyAlarms[hour].add(locationId);
+                    } else if (value > (limit * warnFactor)) { // z.B. limit * 0.9
+                        currentStatus = 'warn';
+                    } else {
+                        currentStatus = 'ok';
                     }
                 }
+
+            } else {
+                // Der Wert ist 'null' oder ungültig (z.B. Infinity)
                 
+                // Sonderfall: 'minTemp' ist 'ok', wenn keine Daten da sind (konservativ)
+                if (ruleName === 'minTemp') {
+                    currentStatus = 'ok';
+                } else {
+                    // Alle anderen Parameter sind 'no-data'
+                    currentStatus = 'no-data';
+                }
+            }
+            
                 // Schlechtesten Status für diese Stunde setzen
                 summary[summaryKey].hourlyStatus[hour] = getWorseStatus(summary[summaryKey].hourlyStatus[hour], currentStatus);
             });
@@ -314,23 +326,23 @@ function checkThresholds_Sampling(profile, locationsData) {
 
     // --- Kombi-Zeile berechnen (Vollständig) ---
     timeStamps.forEach((hour, h) => {
-        let combinedStatus = 'no-data'; 
+        let combinedStatus = 'no-data';
 
         metrics.forEach(metric => {
             const ruleName = metric.ruleName;
             const limit = rules[ruleName];
-            
+
             // Berücksichtige nur, wenn die Regel im Profil aktiv ist
             if (limit !== null && limit !== undefined) {
-                 combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+                combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
             }
-             // Sonderfall: minTemp (wo 0 gültig ist)
+            // Sonderfall: minTemp (wo 0 gültig ist)
             else if (ruleName === 'minTemp' && limit !== null) {
-                 combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+                combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
             }
-             // Sonderfall: maxPrecipProb (wo 0 gültig ist)
+            // Sonderfall: maxPrecipProb (wo 0 gültig ist)
             else if (ruleName === 'maxPrecipProb' && limit !== null) {
-                 combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+                combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
             }
         });
 
@@ -339,7 +351,7 @@ function checkThresholds_Sampling(profile, locationsData) {
     });
 
     // Abwärtskompatibilität für .min / .max
-     Object.values(METRICS_CONFIG).forEach(metric => {
+    Object.values(METRICS_CONFIG).forEach(metric => {
         if (metric.checkType === 'min') {
             summary[metric.summaryKey].min = summary[metric.summaryKey].value;
         } else {

@@ -51,13 +51,19 @@ function handleSliderChange(hour) {
 /**
  * HANDLER: Wird von timeSlider.js aufgerufen, wenn das Modell geändert wird.
  */
-function handleModelChange(apiName, runTimeISO) {
+async function handleModelChange(apiName, runTimeISO) {
     console.log(`Main.js: Modell geändert auf ${apiName} (Lauf: ${runTimeISO})`);
     currentWeatherModel = { apiName, runTimeISO };
 
-    // TODO (später): Alle Prüfungen neu auslösen, da sich die Datenquelle geändert hat
-    // z.B.: runAndUpdateDashboard();
-    // z.B.: if (currentManualProfile) handleManualCheck(currentManualProfile);
+     if (currentManualProfile) {
+        console.log(`[Modell-Wechsel] Führe manuelle Prüfung für "${currentManualProfile.name}" mit neuem Modell aus.`);
+        
+        // Wir rufen dieselbe Funktion auf, die auch der "Prüfen & Laden"-Button nutzt.
+        // 'await' stellt sicher, dass alles der Reihe nach passiert.
+        await handleManualCheck(currentManualProfile);
+    }
+
+    await runAndUpdateDashboard(); 
 }
 
 /**
@@ -129,6 +135,8 @@ async function handleManualCheck(profileData) {
         return;
     }
 
+    await clearAllManualOverrides();
+    
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
 
@@ -291,6 +299,18 @@ export async function updateManualOverride(ruleKey, hour, newStatus) {
         charts.updateWeatherChart(currentManualProfile, currentManualSummary);
         map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);        // NEU: Auto-Check Dashboard neu laden, da sich der Status eines Profils geändert haben könnte
         runAndUpdateDashboard();
+    }
+}
+
+/**
+ * NEU: Helfer-Funktion zum Löschen UND Speichern des gelöschten Zustands.
+ */
+async function clearAllManualOverrides() {
+    // Nur löschen und speichern, wenn es tatsächlich Overrides gibt
+    if (Object.keys(manualOverrides).length > 0) {
+        console.log("Setze alle manuellen Overrides zurück...");
+        manualOverrides = {};
+        await db.setAppState('manualOverrides', manualOverrides);
     }
 }
 

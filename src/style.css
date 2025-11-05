@@ -27,7 +27,7 @@
     --border-radius: .25rem;
     --shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
 
-    --footer-height: 350px;
+    --footer-height: 150px;
 }
 
 /* --- GRUNDGERÜST (Version 2.0: Mit Footer) --- */
@@ -84,7 +84,11 @@ body {
     display: flex;
     flex-direction: column;
     height: 97%;
-    overflow: hidden; 
+    
+    /* --- ÄNDERUNG 1: Scrollen erlauben --- */
+    /* ALT: overflow: hidden; */
+    overflow-y: auto; 
+    
     margin-top: 10px;
 }
 
@@ -142,11 +146,11 @@ body {
     background-color: var(--background-interactive); /* Hellerer, neutraler Header */
     color: var(--text-primary);
     cursor: pointer;
-    padding: 15px; /* Mehr vertikaler Platz */
+    padding: 10px 15px;
     width: 100%;
     border: none;
     text-align: left;
-    font-size: 1em;
+    font-size: 0.9em;
     font-weight: bold;
     margin-top: 0; /* Margin entfernt */
     border-radius: 0;
@@ -183,6 +187,15 @@ background-color: #e2e6ea;
     display: block;
 }
 
+/* Ausnahme für das Auto-Monitor-Panel.
+   Es soll NICHT den restlichen Platz füllen (flex-grow: 0),
+   sondern sich an der Höhe seines Inhalts (#autoWarnDashboard) orientieren,
+   welcher auf max. 250px begrenzt ist. */
+#auto-monitor-panel {
+    flex-grow: 0;
+    flex-shrink: 0; /* Verhindert auch, dass es kleiner wird als sein Inhalt */
+}
+
 /* Pfeil-Indikator */
 .accordion-header:after {
     content: '\25BC'; /* UTF-8 Abwärtspfeil */
@@ -212,7 +225,7 @@ background-color: #e2e6ea;
     border: 1px solid #ccc;
     padding: 5px;
     min-height: 100px;
-    max-height: 250px;
+    max-height: 600px;
     overflow-y: auto;
     margin-top: 10px;
 }
