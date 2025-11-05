@@ -508,7 +508,10 @@ export const resetProfileInputs = () => {
  */
 const getRulesFromInputs = () => {
     const unitMode = uiElements.unitModeAviation.checked ? 'aviation' : 'metric';
-    const rules = { unitMode: unitMode };
+    const logicModeRadio = document.querySelector('input[name="logicMode"]:checked');
+    const logicMode = logicModeRadio ? logicModeRadio.value : 'OR'; // Standard ist 'OR'
+
+    const rules = { unitMode: unitMode, logicMode: logicMode }; // NEU: logicMode hinzugefügt
 
     for (const metric of Object.values(METRICS_CONFIG)) {
         const element = document.getElementById(metric.uiInputId);
@@ -748,12 +751,18 @@ function getBlendedStatus(summary, summaryKey, hour) { // <-- Nimmt jetzt summar
 }
 
 
+// src/ui.js
+
 /**
  * Berechnet den finalen, kombinierten Status (Auto + Overrides) für jede Stunde.
+ * NEU: Berücksichtigt den "AND" / "OR" Logik-Modus aus dem Profil.
  */
 function getBlendedCombinedStatus(profile, summary) {
     const rules = profile.rules;
     const combinedStatus = {};
+    
+    // NEU: Logik-Modus aus dem Profil holen, Standard ist 'OR'
+    const logicMode = rules.logicMode || 'OR';
 
     // Finde einen Referenz-Stunden-Key
     const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
@@ -762,19 +771,52 @@ function getBlendedCombinedStatus(profile, summary) {
         : [];
 
     hours.forEach(hour => {
-        let worstStatus = 'no-data'; // <-- Startet mit 'no-data'
+        let combinedStatusForHour = 'no-data';
+        let activeRuleStati = []; // Speichert den geblendeten Status aller *aktiven* Regeln
 
+        // 1. Sammle den *geblendeten* Status aller Regeln, die für dieses Profil aktiv sind
         for (const metric of Object.values(METRICS_CONFIG)) {
             const ruleName = metric.ruleName;
             const summaryKey = metric.summaryKey;
 
-            // Prüfen, ob die Regel im Profil aktiv ist
+            // Prüfen, ob die Regel im Profil aktiv ist (Limit nicht null/undefined)
             if (rules[ruleName] !== null && rules[ruleName] !== undefined && summary[summaryKey]) {
+                // HIER IST DER UNTERSCHIED: Wir holen den geblendeten Status
                 const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
-                worstStatus = getWorseStatus(worstStatus, blendedRuleStatus);
+                activeRuleStati.push(blendedRuleStatus);
             }
         }
-        combinedStatus[hour] = worstStatus;
+
+        // 2. Wende die "UND" / "ODER" Logik an
+        if (activeRuleStati.length === 0) {
+            // Keine Regeln aktiv
+            combinedStatusForHour = 'no-data';
+
+        } else if (logicMode === 'AND') {
+            // --- "UND"-Logik ---
+            // Alarm, wenn ALLE 'alarm' oder 'warn' sind
+            // OK, wenn auch nur EINE 'ok' ist
+            
+            if (activeRuleStati.some(s => s === 'ok')) {
+                combinedStatusForHour = 'ok';
+            } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
+                // Alle sind ausgelöst
+                combinedStatusForHour = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
+            } else {
+                // Mix aus 'no-data', 'warn', 'alarm', aber nicht alle sind ausgelöst
+                combinedStatusForHour = 'no-data'; 
+            }
+
+        } else {
+            // --- "ODER"-Logik (wie bisher) ---
+            let orStatus = 'no-data';
+            activeRuleStati.forEach(status => {
+                orStatus = getWorseStatus(orStatus, status);
+            });
+            combinedStatusForHour = orStatus;
+        }
+        
+        combinedStatus[hour] = combinedStatusForHour;
     });
 
     return combinedStatus;

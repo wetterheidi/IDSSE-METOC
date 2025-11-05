@@ -205,17 +205,12 @@ function checkThresholds_Sampling(profile, locationsData) {
     timeStamps.forEach((hour, h) => {
         metrics.forEach(metric => {
             const key = metric.summaryKey;
+            
+            const initialStatus = 'no-data'; 
+            
+            summary[key].hourlyStatus[hour] = initialStatus; 
+            summary[key].hourlyAlarms[hour] = new Set(); // <-- HIER IST DIE INITIALISIERUNG
 
-            // 'temp' (min) ist die einzige Regel, die ohne Daten 'ok' ist.
-            // Alle 'max'-Regeln (wind, cloud, precip) und 'min'-Regeln (vis) sind 'no-data'.
-            const initialStatus = 'no-data';
-
-            summary[key].hourlyStatus[hour] = initialStatus;
-            summary[key].hourlyAlarms[hour] = new Set();
-
-            // hourlyData (für den Graphen) initialisieren
-            // 'min'-Checks (temp, vis) suchen den kleinsten Wert (+Infinity)
-            // 'max'-Checks (wind, cloud, precip) suchen den größten Wert (-Infinity)
             summary[key].hourlyData[h] = (metric.checkType === 'min') ? Infinity : -Infinity;
         });
         summary.combined.hourlyStatus[hour] = 'no-data';
@@ -363,25 +358,53 @@ function checkThresholds_Sampling(profile, locationsData) {
 
     // --- Kombi-Zeile berechnen (Vollständig) ---
     timeStamps.forEach((hour, h) => {
+        
+        const logicMode = rules.logicMode || 'OR';
         let combinedStatus = 'no-data';
+        let activeRuleStati = []; // Speichert den Status aller *aktiven* Regeln
 
+        // 1. Sammle den Status aller Regeln, die für dieses Profil aktiv sind
         metrics.forEach(metric => {
             const ruleName = metric.ruleName;
             const limit = rules[ruleName];
-
-            // Berücksichtige nur, wenn die Regel im Profil aktiv ist
+            
+            // (Wir prüfen auf null/undefined, damit Regeln mit Limit 0 funktionieren)
             if (limit !== null && limit !== undefined) {
-                combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
-            // Sonderfall: minTemp (wo 0 gültig ist)
+             // Sonderfall: minTemp (wo 0 gültig ist)
             else if (ruleName === 'minTemp' && limit !== null) {
-                combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
-            // Sonderfall: maxPrecipProb (wo 0 gültig ist)
+             // Sonderfall: maxPrecipProb (wo 0 gültig ist)
             else if (ruleName === 'maxPrecipProb' && limit !== null) {
-                combinedStatus = getWorseStatus(combinedStatus, summary[metric.summaryKey].hourlyStatus[hour]);
+                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
         });
+
+        // 2. Wende die "UND" / "ODER" Logik an
+        if (activeRuleStati.length === 0) {
+            // Keine Regeln aktiv
+            combinedStatus = 'no-data';
+
+        } else if (logicMode === 'AND') {
+            // --- "UND"-Logik ---
+            if (activeRuleStati.some(s => s === 'ok')) {
+                combinedStatus = 'ok';
+            } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
+                combinedStatus = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
+            } else {
+                combinedStatus = 'no-data'; 
+            }
+
+        } else {
+            // --- "ODER"-Logik (wie bisher) ---
+            let orStatus = 'no-data';
+            activeRuleStati.forEach(status => {
+                orStatus = getWorseStatus(orStatus, status);
+            });
+            combinedStatus = orStatus;
+        }
 
         summary.combined.hourlyStatus[hour] = combinedStatus;
         if (combinedStatus !== 'ok' && combinedStatus !== 'no-data') summary.combined.triggered = true;

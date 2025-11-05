@@ -81,6 +81,17 @@
                         <input type="radio" name="unitMode" value="aviation"> Aviation (ft, kts, °C)
                     </label>
                 </div>
+                <div class="setting-group" style="padding-bottom: 10px; margin-top: 10px;">
+                    <strong>Logik-Modus (Gesamt-Status):</strong>
+                    <br>
+                    <label style="display: inline; margin-left: 10px;">
+                        <input type="radio" name="logicMode" value="OR" checked> ODER (Wenn 1 Regel auslöst)
+                    </label>
+                    <br>
+                    <label style="display: inline; margin-left: 10px;">
+                        <input type="radio" name="logicMode" value="AND"> UND (Wenn ALLE Regeln auslösen)
+                    </label>
+                </div>
                 <input type="text" id="profileName" placeholder="1. Profil-Name (z.B. Heli A)">
 
                 <details open

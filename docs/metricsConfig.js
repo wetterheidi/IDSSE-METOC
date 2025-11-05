@@ -138,7 +138,33 @@ export const METRICS_CONFIG = {
             axisLabel: 'Niederschlag (mm)', // <-- 8. Neuer Achsen-Titel
             type: 'bar'
         }
+    },
+
+    'snow': {
+        // --- API & Daten ---
+        apiName: 'snow_depth',              // API-Name
+        ruleName: 'maxSnowDepth',           // Regel-Name (für DB)
+        summaryKey: 'snow',                 // Interner Schlüssel
+        checkType: 'max',                   // Wir prüfen auf eine maximale Höhe
+        warnFactorKey: 'snow',              // Verwendet den neuen Key aus config.js
+
+        // --- UI & Anzeige ---
+        uiInputId: 'maxSnowDepth',          // ID für das <input>
+        uiUnitId: 'unit-maxSnowDepth',      // ID für das <span> (Einheit)
+        displayName: 'Schneehöhe',          // Name für UI-Label
+        formatter: formatter.formatAltitude,  // WICHTIG: Wiederverwendung des m/ft-Formatters
+        chartColor: '#17a2b8', // Info-Blau / Cyan
+
+        // --- Chart-Infos ---
+        chartOptions: {
+            axisId: 'ySnow',                // Eigene Y-Achse
+            axisPosition: 'right',
+            axisLabel: 'Schneehöhe',
+            type: 'line',
+            fill: true // Als Flächendiagramm (wie Wolken)
+        }
     }
+
 };
 
 /**
