@@ -29,6 +29,31 @@ export const METRICS_CONFIG = {
         }
     },
 
+    'wind_speed': {
+        // --- API & Daten ---
+        apiName: 'wind_speed_10m',      // Der API-Name, den Sie angefragt haben
+        ruleName: 'maxWindSpeed',       // Der Schlüssel für die Regeln (in DB/Profil)
+        paramType: 'hourly',
+        summaryKey: 'windSpeed',        // Der Schlüssel für das Summary-Objekt
+        checkType: 'max',               // Wir prüfen auf ein Maximum
+        warnFactorKey: 'wind',          // Wir können den 90%-Warnfaktor von Böen wiederverwenden
+
+        // --- UI & Anzeige ---
+        uiInputId: 'maxWindSpeed',      // ID für das <input>
+        uiUnitId: 'unit-maxWindSpeed',  // ID für das <span> (Einheit)
+        displayName: 'Wind (Mittel)',   // Name für UI-Label
+        formatter: formatter.formatSpeed, // Wir nutzen denselben Formatter wie für Böen
+        chartColor: '#E67E22', // Ein dunkles Orange, um es von Rot zu unterscheiden
+
+        // --- Chart-Infos ---
+        chartOptions: {
+            axisId: 'yWind',            // Nutzt dieselbe Y-Achse wie die Böen
+            axisPosition: 'left',
+            axisLabel: 'Wind',
+            type: 'line'
+        }
+    },
+
     'temp': {
         apiName: 'temperature_2m',
         ruleName: 'minTemp',

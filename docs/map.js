@@ -13,9 +13,10 @@ let samplePointsLayer;
  * (Unverändert)
  */
 export const initMap = () => {
-    map = L.map('map').setView([52.52, 13.405], 6); 
+    map = L.map('map').setView([52.52, 13.405], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        minZoom: 3,
     }).addTo(map);
     warningAreasLayer = L.layerGroup().addTo(map);
     samplePointsLayer = L.layerGroup().addTo(map);
@@ -62,13 +63,13 @@ export const onMapCreate = (callback) => {
  * NEU: Signatur geändert -> benötigt jetzt 'profile'.
  */
 export const visualizeWarnings = (profile, summary, hour) => {
-    warningAreasLayer.clearLayers(); 
+    warningAreasLayer.clearLayers();
 
     // Wenn kein Summary oder Profil da ist, tu nichts.
     if (!profile || !summary) return;
 
     const hourInt = parseInt(hour, 10);
-    const hourString = hourInt.toString(); 
+    const hourString = hourInt.toString();
 
     // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
     const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
@@ -79,7 +80,7 @@ export const visualizeWarnings = (profile, summary, hour) => {
     // (Findet Alarm-Standorte, auch für manuelle Overrides ohne autom. Alarm)
     const getAlarmLocations = (summaryKey, currentHourString, autoAlarms) => {
         const blendedStatus = getBlendedStatus(summary, summaryKey, currentHourString);
-        
+
         if (autoAlarms && autoAlarms.size > 0) {
             return autoAlarms;
         }
@@ -131,11 +132,11 @@ export const visualizeWarnings = (profile, summary, hour) => {
             console.error("Turf.js Fehler beim Erstellen der konvexen Hülle:", e);
         }
     };
-    
+
     // --- DYNAMISCHE SCHLEIFE statt 5 harter Blöcke ---
     for (const metric of Object.values(METRICS_CONFIG)) {
         const { summaryKey, ruleName, displayName, chartColor, formatter } = metric;
-        
+
         // Überspringen, wenn die Regel im Profil nicht aktiv ist
         if (profile.rules[ruleName] === null || profile.rules[ruleName] === undefined) {
             continue;
@@ -143,16 +144,16 @@ export const visualizeWarnings = (profile, summary, hour) => {
 
         // Finde die Alarme für diese Metrik
         const alarms = getAlarmLocations(summaryKey, hourString, summary[summaryKey].hourlyAlarms[hourString]);
-        
+
         if (alarms && alarms.size > 0) {
             const blendedStatus = getBlendedStatus(summary, summaryKey, hourString);
-            
+
             // NEU: Nutze den Formatter aus der Config für den Tooltip
             // .value ist der aggregierte Min/Max-Wert aus weather.js
-            const { value, unit } = formatter(summary[summaryKey].value, profile); 
-            
+            const { value, unit } = formatter(summary[summaryKey].value, profile);
+
             const tooltip = `${displayName} (${hourString}h): ${blendedStatus.toUpperCase()} (Wert: ${value} ${unit})`;
-            drawWarningArea(getPointFeatures(alarms), chartColor, tooltip); 
+            drawWarningArea(getPointFeatures(alarms), chartColor, tooltip);
         }
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
