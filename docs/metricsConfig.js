@@ -10,6 +10,7 @@ export const METRICS_CONFIG = {
         // --- API & Daten ---
         apiName: 'wind_gusts_10m',
         ruleName: 'maxWind',
+        paramType: 'hourly',
         summaryKey: 'wind',
         checkType: 'max',
         warnFactorKey: 'wind',
@@ -31,6 +32,7 @@ export const METRICS_CONFIG = {
     'temp': {
         apiName: 'temperature_2m',
         ruleName: 'minTemp',
+        paramType: 'hourly',
         summaryKey: 'temp',
         checkType: 'min',
         warnFactorKey: 'temp',
@@ -50,6 +52,7 @@ export const METRICS_CONFIG = {
     'vis': {
         apiName: 'visibility',
         ruleName: 'minVis',
+        paramType: 'hourly',
         summaryKey: 'vis',
         checkType: 'min',
         warnFactorKey: 'vis',
@@ -69,6 +72,7 @@ export const METRICS_CONFIG = {
     'cloud': {
         apiName: 'cloud_cover_low',
         ruleName: 'maxCloudCover',
+        paramType: 'hourly',
         summaryKey: 'cloud',
         checkType: 'max',
         warnFactorKey: 'cloud',
@@ -90,6 +94,7 @@ export const METRICS_CONFIG = {
         // --- API & Daten ---
         apiName: 'precipitation',           // <-- 1. API-Name geändert
         ruleName: 'maxPrecip',              // <-- 2. Regel-Name geändert
+        paramType: 'hourly',
         summaryKey: 'precip',
         checkType: 'max',
         warnFactorKey: 'precip',            // (Der 0.9 Faktor funktioniert auch für mm)
@@ -115,9 +120,32 @@ export const METRICS_CONFIG = {
  * Hilfsfunktion: Gibt alle API-Parameter als String zurück
  * (Unverändert)
  */
-export const getApiParams = () => {
-    const apiNames = new Set(Object.values(METRICS_CONFIG).map(m => m.apiName));
-    return Array.from(apiNames).join(',');
+export const getApiParams = (metrics) => {
+    const groups = {
+        hourly: new Set(),
+        daily: new Set(),
+        // (Vorbereitung für die Zukunft)
+        // pressure_850: new Set(), 
+    };
+
+    for (const metric of metrics) {
+        const apiName = metric.apiName;
+
+        if (metric.paramType === 'hourly') {
+            groups.hourly.add(apiName);
+        } else if (metric.paramType === 'daily') {
+            groups.daily.add(apiName);
+        }
+        // Zukünftige Erweiterung:
+        // else if (metric.paramType === 'pressure' && metric.pressureLevel === 850) {
+        //    groups.pressure_850.add(apiName);
+        // }
+    }
+
+    return {
+        hourly: Array.from(groups.hourly).join(','),
+        daily: Array.from(groups.daily).join(',')
+    };
 };
 
 /**

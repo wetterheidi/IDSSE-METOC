@@ -118,21 +118,28 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     // 4. Punkte stapeln (Unverändert)
     const CHUNK_SIZE = 50;
     const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
-
     let allApiResponses = [];
 
-    // NEU: API-Parameter dynamisch aus der Config holen
-    const hourlyParams = getApiParams(); // <-- DYNAMISCH
+    // NEU: API-Parameter dynamisch UND gruppiert holen
+    const { hourly, daily } = getApiParams(Object.values(METRICS_CONFIG));
 
-    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte in ${pointChunks.length} Stapeln. Parameter: ${hourlyParams}`);
+    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte...`);
+    console.log(`Hourly-Params: ${hourly}`);
+    console.log(`Daily-Params: ${daily}`);
 
     // 5. Sequenzielle Schleife (API-URL-Bau)
     for (const chunk of pointChunks) {
         const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
         const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
-        // NEU: Nutzt die dynamischen hourlyParams
-        let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=${hourlyParams}&forecast_days=1`;
+        let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=2`; // <-- WICHTIG: Auf 2 Tage erhöhen!
+
+        if (hourly.length > 0) {
+            apiUrl += `&hourly=${hourly}`;
+        }
+        if (daily.length > 0) {
+            apiUrl += `&daily=${daily}`;
+        }
 
         // Modell-Logik (Unverändert)
         if (modelInfo && modelInfo.apiName) {
@@ -224,12 +231,31 @@ function checkThresholds_Sampling(profile, locationsData) {
 
     // 2. Durch alle Standorte (Punkte) iterieren
     locationsData.forEach(locationData => {
-        if (!locationData || !locationData.hourly || locationData.latitude === null || locationData.longitude === null) {
+        if (!locationData || locationData.latitude === null) {
             return; // Überspringe fehlerhafte Datenpunkte
         }
 
         const hourly = locationData.hourly;
+        const daily = locationData.daily; // <-- NEU
         const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
+
+        // --- NEU: Tages-Werte "vorladen" ---
+        // Wir müssen den richtigen Tages-Index finden (0 = heute, 1 = morgen)
+        // Wir nehmen an, dass die 'hourly'-Zeitstempel bestimmen, welchen Tag wir betrachten.
+        // (Einfache Annahme für jetzt: Wir nehmen Index 0 für den ersten Tag)
+        const dayIndex = 0; // (Diese Logik muss ggf. verfeinert werden, falls Modell-Läufe über Mitternacht gehen)
+
+        const dailyValueCache = {};
+        if (daily) {
+            for (const metric of metrics.filter(m => m.paramType === 'daily')) {
+                if (daily[metric.apiName] && daily[metric.apiName].length > dayIndex) {
+                    dailyValueCache[metric.summaryKey] = daily[metric.apiName][dayIndex];
+                } else {
+                    dailyValueCache[metric.summaryKey] = null; // Kein Wert verfügbar
+                }
+            }
+        }
+        // ------------------------------------
 
         // Iteriere durch die Stunden (0-23)
         hourly.time.forEach((time, h) => {
@@ -253,9 +279,20 @@ function checkThresholds_Sampling(profile, locationsData) {
                 const apiName = metric.apiName;
                 const summaryKey = metric.summaryKey;
 
-                // Prüfen, ob die API diesen Wert überhaupt geliefert hat
-                const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
-                const value = hasData ? hourly[apiName][h] : null;
+                // --- NEUE LOGIK: Woher kommt der Wert? ---
+                let value = null;
+
+                if (metric.paramType === 'hourly') {
+                    // VERHALTEN WIE BISHER
+                    const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
+                    value = hasData ? hourly[apiName][h] : null;
+
+                } else if (metric.paramType === 'daily') {
+                    // NEUES VERHALTEN: Nimm den vorgeladenen Tageswert
+                    value = dailyValueCache[summaryKey];
+                    // Dieser EINE Wert (z.B. 10°C Max-Temp) wird jetzt für
+                    // die Stunde 'h' verwendet und mit dem Limit verglichen.
+                }
 
                 // Graph-Aggregation (Aggregiere nur gültige Zahlen)
                 if (value !== null && isFinite(value)) {
@@ -267,56 +304,56 @@ function checkThresholds_Sampling(profile, locationsData) {
                 }
 
                 // --- Regel-Check ---
-            let currentStatus = 'no-data'; // Standard-Annahme
+                let currentStatus = 'no-data'; // Standard-Annahme
 
-            // 1. Prüfen, ob wir überhaupt einen gültigen, numerischen Wert haben.
-            //    (value !== null) UND (isFinite(value))
-            //    isFinite() fängt null, undefined, Infinity, etc. ab.
-            if (value !== null && isFinite(value)) {
-                
-                // Wir haben eine echte Zahl, jetzt die Regeln prüfen:
-                const warnFactor = getWarnFactor(metric);
-                
-                if (metric.checkType === 'min') {
-                    // MIN-Check (z.B. Temperatur, Sicht)
-                    if (value < limit) {
-                        currentStatus = 'alarm';
-                        summary[summaryKey].triggered = true;
-                        if (value < summary[summaryKey].value) summary[summaryKey].value = value;
-                        summary[summaryKey].hourlyAlarms[hour].add(locationId);
-                    } else if (metric.ruleName === 'minTemp' && value < (limit + warnFactor)) { // temp: limit + 2
-                        currentStatus = 'warn';
-                    } else if (metric.ruleName === 'minVis' && value < (limit * warnFactor)) { // vis: limit * 1.2
-                        currentStatus = 'warn';
+                // 1. Prüfen, ob wir überhaupt einen gültigen, numerischen Wert haben.
+                //    (value !== null) UND (isFinite(value))
+                //    isFinite() fängt null, undefined, Infinity, etc. ab.
+                if (value !== null && isFinite(value)) {
+
+                    // Wir haben eine echte Zahl, jetzt die Regeln prüfen:
+                    const warnFactor = getWarnFactor(metric);
+
+                    if (metric.checkType === 'min') {
+                        // MIN-Check (z.B. Temperatur, Sicht)
+                        if (value < limit) {
+                            currentStatus = 'alarm';
+                            summary[summaryKey].triggered = true;
+                            if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                            summary[summaryKey].hourlyAlarms[hour].add(locationId);
+                        } else if (metric.ruleName === 'minTemp' && value < (limit + warnFactor)) { // temp: limit + 2
+                            currentStatus = 'warn';
+                        } else if (metric.ruleName === 'minVis' && value < (limit * warnFactor)) { // vis: limit * 1.2
+                            currentStatus = 'warn';
+                        } else {
+                            currentStatus = 'ok';
+                        }
                     } else {
-                        currentStatus = 'ok';
+                        // MAX-Check (z.B. Wind, Wolken, Niederschlag)
+                        if (value > limit) {
+                            currentStatus = 'alarm';
+                            summary[summaryKey].triggered = true;
+                            if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                            summary[summaryKey].hourlyAlarms[hour].add(locationId);
+                        } else if (value > (limit * warnFactor)) { // z.B. limit * 0.9
+                            currentStatus = 'warn';
+                        } else {
+                            currentStatus = 'ok';
+                        }
                     }
+
                 } else {
-                    // MAX-Check (z.B. Wind, Wolken, Niederschlag)
-                    if (value > limit) {
-                        currentStatus = 'alarm';
-                        summary[summaryKey].triggered = true;
-                        if (value > summary[summaryKey].value) summary[summaryKey].value = value;
-                        summary[summaryKey].hourlyAlarms[hour].add(locationId);
-                    } else if (value > (limit * warnFactor)) { // z.B. limit * 0.9
-                        currentStatus = 'warn';
-                    } else {
+                    // Der Wert ist 'null' oder ungültig (z.B. Infinity)
+
+                    // Sonderfall: 'minTemp' ist 'ok', wenn keine Daten da sind (konservativ)
+                    if (ruleName === 'minTemp') {
                         currentStatus = 'ok';
+                    } else {
+                        // Alle anderen Parameter sind 'no-data'
+                        currentStatus = 'no-data';
                     }
                 }
 
-            } else {
-                // Der Wert ist 'null' oder ungültig (z.B. Infinity)
-                
-                // Sonderfall: 'minTemp' ist 'ok', wenn keine Daten da sind (konservativ)
-                if (ruleName === 'minTemp') {
-                    currentStatus = 'ok';
-                } else {
-                    // Alle anderen Parameter sind 'no-data'
-                    currentStatus = 'no-data';
-                }
-            }
-            
                 // Schlechtesten Status für diese Stunde setzen
                 summary[summaryKey].hourlyStatus[hour] = getWorseStatus(summary[summaryKey].hourlyStatus[hour], currentStatus);
             });

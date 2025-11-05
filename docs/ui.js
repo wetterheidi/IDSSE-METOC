@@ -375,17 +375,30 @@ export const displayManualWarning = (profile, summary) => {
 
 /**
  * Baut die Profil-Liste in der Sidebar auf.
- * (Unverändert)
+ * (NEU: Umgebaut auf Flexbox-Layout mit Icon-Button)
  */
 export const displayProfileList = (profiles, handlers) => {
     uiElements.profileList.innerHTML = '';
     profiles.forEach(profile => {
         const li = document.createElement('li');
-        li.textContent = `${profile.name}`;
+
+        // NEU: Span für den Namen, damit Flexbox funktioniert
+        const profileNameSpan = document.createElement('span');
+        profileNameSpan.textContent = profile.name;
+        profileNameSpan.className = 'profile-list-name';
+        li.appendChild(profileNameSpan);
+
+        // NEU: Container für die Buttons, um sie rechts zu gruppieren
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'profile-button-container';
+
+        // "Prüfen & Laden"-Button
         const testButton = document.createElement('button');
         testButton.textContent = 'Prüfen & Laden';
         testButton.className = 'check-profile-button';
-        testButton.style.marginLeft = '10px';
+        
+        // ALT: testButton.style.marginLeft = '10px'; (Wird jetzt von CSS gehandhabt)
+        
         testButton.onclick = async () => {
             setProfileButtonsDisabled(true);
             const profileData = {
@@ -397,15 +410,28 @@ export const displayProfileList = (profiles, handlers) => {
             await handlers.onCheck(profileData);
             setProfileButtonsDisabled(false);
         };
-        li.appendChild(testButton);
+        buttonContainer.appendChild(testButton); // NEU: Zum Container hinzugefügt
+
+        // "Löschen"-Button (als Icon)
         const deleteButton = document.createElement('button');
-        deleteButton.textContent = 'Löschen';
-        deleteButton.style.marginLeft = '5px';
-        deleteButton.style.color = 'red';
+        
+        // ALT: deleteButton.textContent = 'Löschen';
+        deleteButton.innerHTML = '&#128465;'; // NEU: Unicode Papierkorb-Symbol
+        
+        // ALT: deleteButton.style.marginLeft = '5px';
+        // ALT: deleteButton.style.color = 'red';
+        deleteButton.className = 'delete-profile-button'; // NEU: Styling über CSS
+        
+        deleteButton.title = `Profil '${profile.name}' löschen`; // NEU: Tooltip
+        
         deleteButton.onclick = () => {
             handlers.onDelete(profile);
         };
-        li.appendChild(deleteButton);
+        buttonContainer.appendChild(deleteButton); // NEU: Zum Container hinzugefügt
+
+        // NEU: Den Button-Container zur li hinzufügen
+        li.appendChild(buttonContainer);
+        
         uiElements.profileList.appendChild(li);
     });
 };

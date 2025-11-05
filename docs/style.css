@@ -680,3 +680,62 @@ button:hover {
        Die Klick-Logik in ui.js erlaubt das Überschreiben aber trotzdem. */
     cursor: pointer;
 }
+
+/* src/style.css */
+
+/* --- NEU: Styling für die Profil-Liste --- */
+
+/* 1. Das <li>-Element als Flex-Container (Text links, Buttons rechts) */
+#profileList li {
+    display: flex;
+    justify-content: space-between; /* Text links, Buttons rechts */
+    align-items: center; /* Vertikal zentrieren */
+    margin-bottom: 5px;
+    padding: 2px 0;
+}
+
+/* 2. Der Name-Span (stellt sicher, dass er bei langen Namen nicht überläuft) */
+.profile-list-name {
+    flex-grow: 1; /* Nimmt den restlichen Platz ein */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Schneidet lange Namen mit '...' ab */
+    padding-right: 10px; /* Abstand zu den Buttons */
+}
+
+/* 3. Der Button-Container (rechtsbündig, Buttons nebeneinander) */
+.profile-button-container {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0; /* Verhindert, dass er gequetscht wird */
+    gap: 5px; /* Abstand zwischen "Prüfen" und "Löschen" */
+}
+
+/* 4. Der neue Papierkorb-Button */
+.delete-profile-button {
+    /* Globale Button-Styles zurücksetzen */
+    background: transparent;
+    border: none;
+    color: var(--color-danger); /* Nutzt die Standard-Gefahrenfarbe */
+    font-size: 1.2em; /* Macht das Icon etwas größer */
+    cursor: pointer;
+    padding: 0 4px; /* Klickbereich etwas vergrößern */
+    margin: 0;
+    
+    /* Globale Button-Styles überschreiben */
+    width: auto;
+    font-weight: normal;
+    border-radius: 4px;
+    line-height: 1; /* Wichtig für vertikale Zentrierung des Icons */
+}
+
+.delete-profile-button:hover {
+    background: #f0f0f0; /* Leichter grauer Hover-Effekt */
+    color: #a71d2a; /* Dunkleres Rot */
+}
+
+/* 5. (Optional) Aufräumen des "Prüfen"-Buttons */
+/* (Wir entfernen den inline-style 'marginLeft' aus ui.js, CSS steuert das jetzt) */
+.check-profile-button {
+    margin-left: 0; 
+}
