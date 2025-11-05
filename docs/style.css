@@ -431,25 +431,14 @@ button:hover {
     transition: opacity 0.2s ease;
     position: relative;
     z-index: 2;
-    background: transparent;
-    /* Wichtig, damit Highlight durchscheint */
 }
 
-/* NEU: Erzeugt den 100% grauen Basis-Balken unter dem Highlight */
-#timeSlider::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    /* Zentriert das Element vertikal auf der Höhe des Slider-Tracks */
-    transform: translateY(-50%);
+#timeSlider::-moz-range-track {
     width: 100%;
     height: 6px;
-    background: var(--background-interactive);
-    /* Dies ist die gewünschte graue Basisfarbe */
+    background: var(--background-interactive); /* Der graue Balken */
     border-radius: 3px;
-    /* Der z-index von 0 stellt sicher, dass es hinter dem Highlight (z-index: 1) liegt */
-    z-index: 0;
+    border: none;
 }
 
 #timeSlider::-webkit-slider-thumb {
