@@ -66,10 +66,9 @@ body {
     /* NEU: Einhaltung der Höhe sicherstellen */
     height: 80px;
 
-    /* NEU: Flexbox-Steuerung für die 2 (statt 3) Header-Teile */
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr;
     align-items: center;
-    justify-content: space-between;
 }
 
 /* --- SIDEBAR & KARTE (Mittlere Zeile) --- */
@@ -77,18 +76,19 @@ body {
     grid-row: 2;
     grid-column: 1;
     /* KORRIGIERT: Saubere, weiße Oberfläche */
-    background: var(--background-surface); 
-    padding: 0; /* Padding in die Panels verschoben */
+    background: var(--background-surface);
+    padding: 0;
+    /* Padding in die Panels verschoben */
     border-right: 1px solid var(--border-color);
-    
+
     display: flex;
     flex-direction: column;
     height: 97%;
-    
+
     /* --- ÄNDERUNG 1: Scrollen erlauben --- */
     /* ALT: overflow: hidden; */
-    overflow-y: auto; 
-    
+    overflow-y: auto;
+
     margin-top: 10px;
 }
 
@@ -143,7 +143,8 @@ body {
 
 /* --- AKKORDEON (Flexbox-Version) --- */
 .accordion-header {
-    background-color: var(--background-interactive); /* Hellerer, neutraler Header */
+    background-color: var(--background-interactive);
+    /* Hellerer, neutraler Header */
     color: var(--text-primary);
     cursor: pointer;
     padding: 10px 15px;
@@ -152,23 +153,25 @@ body {
     text-align: left;
     font-size: 0.9em;
     font-weight: bold;
-    margin-top: 0; /* Margin entfernt */
+    margin-top: 0;
+    /* Margin entfernt */
     border-radius: 0;
     flex-shrink: 0;
-    
+
     /* NEU: Flexbox und Pfeil-Indikator */
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid var(--border-color);
-    border-top: 1px solid var(--border-color); /* Trennung zur Header-Border */
+    border-top: 1px solid var(--border-color);
+    /* Trennung zur Header-Border */
 }
 
 
 
 .accordion-header:hover,
 .accordion-header.active {
-background-color: #e2e6ea; 
+    background-color: #e2e6ea;
 }
 
 .accordion-panel {
@@ -193,25 +196,29 @@ background-color: #e2e6ea;
    welcher auf max. 250px begrenzt ist. */
 #auto-monitor-panel {
     flex-grow: 0;
-    flex-shrink: 0; /* Verhindert auch, dass es kleiner wird als sein Inhalt */
+    flex-shrink: 0;
+    /* Verhindert auch, dass es kleiner wird als sein Inhalt */
 }
 
 /* Pfeil-Indikator */
 .accordion-header:after {
-    content: '\25BC'; /* UTF-8 Abwärtspfeil */
+    content: '\25BC';
+    /* UTF-8 Abwärtspfeil */
     font-size: 10px;
     transition: transform 0.3s ease;
     padding-left: 10px;
 }
 
 .accordion-header.active:after {
-    transform: rotate(180deg); /* Pfeil dreht sich beim Öffnen */
+    transform: rotate(180deg);
+    /* Pfeil dreht sich beim Öffnen */
 }
 
 .accordion-panel {
     padding: 10px 15px;
     background-color: var(--background-surface);
-    border: none; /* Border entfernt */
+    border: none;
+    /* Border entfernt */
     border-radius: 0;
     display: none;
     overflow-y: auto;
@@ -251,7 +258,7 @@ button {
 }
 
 button {
-font-size: 14px;
+    font-size: 14px;
     font-weight: bold;
     color: var(--text-inverted);
     background: var(--color-primary);
@@ -325,13 +332,14 @@ button:hover {
 
 
 #slider-container {
+    grid-column: 2;
     flex-grow: 1;
     /* Slider nimmt den mittleren Platz ein */
     display: flex;
     justify-content: center;
     align-items: center;
-    min-width: 300px;
-    max-width: 900px;
+    width: 100%;
+    min-width: 400px;
 }
 
 .slider-content-wrapper {
@@ -607,6 +615,11 @@ button:hover {
 
 /* NEU: Kompakte linke Seite für Titel und Demo-Modus */
 .header-left-compact {
+    /* --- ÄNDERUNG 3: Spalten-Zuweisung --- */
+    /* NEU: Weist das Logo der linken Spalte zu */
+    grid-column: 1;
+
+    /* (Rest bleibt gleich) */
     display: flex;
     flex-direction: column;
     /* Stapelt Titel und Demo untereinander */
@@ -642,11 +655,12 @@ button:hover {
     text-align: left;
     padding-right: 10px;
     /* NEU: Stellt sicher, dass der Text nicht umbricht */
-    white-space: nowrap; 
+    white-space: nowrap;
 }
 
 .rule-input-group input[type="number"] {
-    width: 90px; /* Feste Breite für die Werteingabe */
+    width: 90px;
+    /* Feste Breite für die Werteingabe */
     text-align: right;
     margin: 0;
     padding: 3px;
@@ -654,16 +668,15 @@ button:hover {
 }
 
 .status-no-data {
-    background-color: #d8d8d8; /* Helles Grau */
-    cursor: default; 
+    background-color: #d8d8d8;
+    /* Helles Grau */
+    cursor: default;
     /* Fügt eine leichte Textur hinzu, um es von 'ok' zu unterscheiden */
-    background-image: repeating-linear-gradient(
-        -45deg,
-        #f0f0f0,
-        #f0f0f0 5px,
-        #d8d8d8 5px,
-        #d8d8d8 10px
-    );
+    background-image: repeating-linear-gradient(-45deg,
+            #f0f0f0,
+            #f0f0f0 5px,
+            #d8d8d8 5px,
+            #d8d8d8 10px);
     opacity: 0.8;
 }
 
@@ -671,9 +684,10 @@ button:hover {
 .manual-override-cell {
     cursor: pointer;
 }
+
 .status-no-data.manual-override-cell {
     /* Wichtig: Auch wenn die Zelle als klickbar markiert ist, 
        soll der Cursor bei fehlenden Modelldaten neutral sein.
        Die Klick-Logik in ui.js erlaubt das Überschreiben aber trotzdem. */
-    cursor: pointer; 
+    cursor: pointer;
 }
