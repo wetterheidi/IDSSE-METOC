@@ -55,9 +55,25 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
     metrics.forEach(metric => {
         const key = metric.summaryKey;
         const ruleName = metric.ruleName;
-        if ((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-            (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) {
-            activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
+        
+        // --- KORREKTUR ---
+        // ALT: const limit = rules[ruleName];
+        // NEU: Nimm den Alarm-Wert als Referenz für den Mock
+        const limit = rules[ruleName + '_alarm'];
+        // --- ENDE KORREKTUR ---
+
+        if (metric.checkType === 'min') {
+            if (key === 'temp') {
+                summary.temp.hourlyData = [...fakeDataTemplates.lowMorning];
+                // Alarm auslösen, falls Regel gesetzt
+                if (limit !== null && limit !== undefined) summary.temp.hourlyData[6] = limit - 1; 
+            } else if (key === 'vis') {
+                summary.vis.hourlyData = [...fakeDataTemplates.lowForenoon];
+                if (limit !== null && limit !== undefined) summary.vis.hourlyData[10] = limit - 500;
+            }
+        } else { // 'max'
+             summary[key].hourlyData = [...fakeDataTemplates.peakAfternoon];
+             if (limit !== null && limit !== undefined) summary[key].hourlyData[14] = limit + 10; // Alarm um 14h
         }
     });
 

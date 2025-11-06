@@ -189,12 +189,21 @@ export const initUI = (handlers) => {
     if (uiElements.saveTemplateButton) {
         uiElements.saveTemplateButton.addEventListener('click', () => {
             const name = uiElements.templateNameInput.value;
-            const rules = getRulesFromInputs(); // <-- Jetzt dynamisch
+            const rules = getRulesFromInputs(); // 1. Regeln lesen
+
+            // --- HIER VALIDIERUNG HINZUFÜGEN ---
+            const validationError = validateRules(rules);
+            if (validationError) {
+                alert(validationError); // Zeige den Logikfehler
+                return; // Stoppe das Speichern
+            }
+            // --- ENDE VALIDIERUNG ---
+
             if (!name) {
                 alert("Bitte einen Namen für die Vorlage eingeben.");
                 return;
             }
-            handlers.onSaveTemplate(name, rules);
+            handlers.onSaveTemplate(name, rules); // 3. Erst jetzt speichern
         });
     }
 
@@ -550,10 +559,14 @@ export const enableSaveButton = () => {
 
 export const resetProfileInputs = () => {
     uiElements.profileNameInput.value = '';
-    // Lösche auch die dynamischen Input-Felder
+    
+    // --- KORREKTUR ---
+    // Lösche die dynamischen _alarm und _warn Input-Felder
     for (const metric of Object.values(METRICS_CONFIG)) {
-        const element = document.getElementById(metric.uiInputId);
-        if (element) element.value = '';
+        const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
+        const elem_warn = document.getElementById(metric.ruleName + '_warn');
+        if (elem_alarm) elem_alarm.value = '';
+        if (elem_warn) elem_warn.value = '';
     }
     initMapStatusPlaceholder();
 };

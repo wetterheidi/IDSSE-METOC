@@ -39,7 +39,7 @@ export const initGeoman = (leafletMap) => {
         drawText: false,
         editMode: true,
         dragMode: true,
-        cutPolygon: true,
+        cutPolygon: false,
         removalMode: true,
         rotateMode: false,
         lassoMode: true
