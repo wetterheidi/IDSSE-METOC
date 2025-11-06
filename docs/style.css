@@ -739,3 +739,59 @@ button:hover {
 .check-profile-button {
     margin-left: 0; 
 }
+
+/* src/style.css (am Ende der Datei hinzufügen) */
+
+.rule-input-group {
+    /* ALT: display: flex; justify-content: space-between; */
+    /* NEU: Wir stapeln Label und Inputs untereinander */
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+
+.rule-input-group label {
+    font-weight: bold;
+    margin-bottom: 3px;
+    text-align: left;
+}
+
+/* NEU: Ein Flex-Container für die beiden Input-Felder + Einheit */
+.rule-input-fields {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 5px; /* Abstand zwischen den Elementen */
+}
+
+/* NEU: Styling für die 2 Input-Felder */
+.rule-input-fields input[type="number"] {
+    width: 40%; /* Jedes Feld nimmt 40% der Breite ein */
+    text-align: right;
+    margin: 0;
+    padding: 3px;
+    height: auto;
+    
+    /* NEU: Visuelle Unterscheidung (Rot/Gelb) */
+    border: 2px solid var(--border-color);
+}
+.rule-input-fields input:focus {
+     outline: none;
+}
+
+/* Roter Rand für das Alarm-Feld */
+input[id$="_alarm"] { 
+    border-color: var(--color-danger);
+}
+/* Gelber Rand für das Warn-Feld */
+input[id$="_warn"] {
+    border-color: var(--color-warning);
+}
+
+/* NEU: Das Einheiten-Span */
+.rule-input-fields span {
+    width: 15%; /* Nimmt den Restplatz ein */
+    text-align: left;
+    white-space: nowrap;
+}

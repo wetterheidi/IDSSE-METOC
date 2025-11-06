@@ -2,7 +2,6 @@
 // (Version 1.1: Erweitert um Chart-Optionen)
 
 import * as formatter from './formatter.js';
-import { WARN_FACTORS } from './config.js';
 
 export const METRICS_CONFIG = {
 
@@ -13,9 +12,7 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'wind',
         checkType: 'max',
-        warnFactorKey: 'wind',
         // --- UI & Anzeige ---
-        uiInputId: 'maxWind',
         uiUnitId: 'unit-maxWind',
         displayName: 'Windböe',
         formatter: formatter.formatSpeed,
@@ -36,10 +33,8 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'windSpeed',        // Der Schlüssel für das Summary-Objekt
         checkType: 'max',               // Wir prüfen auf ein Maximum
-        warnFactorKey: 'wind',          // Wir können den 90%-Warnfaktor von Böen wiederverwenden
 
         // --- UI & Anzeige ---
-        uiInputId: 'maxWindSpeed',      // ID für das <input>
         uiUnitId: 'unit-maxWindSpeed',  // ID für das <span> (Einheit)
         displayName: 'Wind (Mittel)',   // Name für UI-Label
         formatter: formatter.formatSpeed, // Wir nutzen denselben Formatter wie für Böen
@@ -60,8 +55,6 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'temp',
         checkType: 'min',
-        warnFactorKey: 'temp',
-        uiInputId: 'minTemp',
         uiUnitId: 'unit-minTemp',
         displayName: 'Temperatur',
         formatter: formatter.formatTemp,
@@ -80,8 +73,6 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'vis',
         checkType: 'min',
-        warnFactorKey: 'vis',
-        uiInputId: 'minVis',
         uiUnitId: 'unit-minVis',
         displayName: 'Sichtweite',
         formatter: formatter.formatAltitude,
@@ -100,8 +91,6 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'cloud',
         checkType: 'max',
-        warnFactorKey: 'cloud',
-        uiInputId: 'maxCloudCover',
         uiUnitId: 'unit-maxCloudCover',
         displayName: 'Wolken (Tief)',
         formatter: formatter.formatPercent,
@@ -122,10 +111,8 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'precip',
         checkType: 'max',
-        warnFactorKey: 'precip',            // (Der 0.9 Faktor funktioniert auch für mm)
 
         // --- UI & Anzeige ---
-        uiInputId: 'maxPrecip',             // <-- 3. ID für <input> geändert
         uiUnitId: 'unit-maxPrecip',         // <-- 4. ID für <span> geändert
         displayName: 'Niederschlagsmenge',  // <-- 5. Neuer Anzeigename
         formatter: formatter.formatPrecipMM,  // <-- 6. Neuer Formatter (mm statt %)
@@ -147,10 +134,8 @@ export const METRICS_CONFIG = {
         paramType: 'hourly',
         summaryKey: 'snow',                 // Interner Schlüssel
         checkType: 'max',                   // Wir prüfen auf eine maximale Höhe
-        warnFactorKey: 'snow',              // Verwendet den neuen Key aus config.js
 
         // --- UI & Anzeige ---
-        uiInputId: 'maxSnowDepth',          // ID für das <input>
         uiUnitId: 'unit-maxSnowDepth',      // ID für das <span> (Einheit)
         displayName: 'Schneehöhe',          // Name für UI-Label
         formatter: formatter.formatAltitude,  // WICHTIG: Wiederverwendung des m/ft-Formatters
@@ -172,10 +157,8 @@ export const METRICS_CONFIG = {
         ruleName: 'minWindchill',           // Regel-Name (für DB)
         summaryKey: 'windchill',            // Interner Schlüssel
         checkType: 'min',                   // Wir prüfen auf eine minimale Temp.
-        warnFactorKey: 'temp',              // Wir nutzen den 2°C Warnfaktor
 
         // --- UI & Anzeige ---
-        uiInputId: 'minWindchill',          // ID für das <input>
         uiUnitId: 'unit-minWindchill',      // ID für das <span> (Einheit)
         displayName: 'Gefühlte Temp.',      // Name für UI-Label
         formatter: formatter.formatTemp,    // Nutzt den normalen Temperatur-Formatter
@@ -223,16 +206,3 @@ export const getApiParams = (metrics) => {
         daily: Array.from(groups.daily).join(',')
     };
 };
-
-/**
- * Hilfsfunktion: Gibt die Gelb-Warnfaktoren für eine Metrik zurück.
- * (Unverändert)
- */
-export const getWarnFactor = (metric, warnFactors = WARN_FACTORS) => {
-    const factor = warnFactors[metric.warnFactorKey];
-    if (!factor) {
-        console.warn(`Kein WARN_FACTOR für ${metric.warnFactorKey} gefunden.`);
-        return (metric.checkType === 'max') ? 0.9 : 1.1;
-    }
-    return factor;
-}

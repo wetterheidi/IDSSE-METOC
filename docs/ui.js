@@ -44,9 +44,12 @@ function generateDynamicRuleInputs() {
         // Erzeuge das HTML für diese Regel
         html += `
             <div class="rule-input-group">
-                <label for="${metric.uiInputId}">${metric.displayName}:</label>
-                <input type="number" id="${metric.uiInputId}">
-                <span id="${metric.uiUnitId}">${initialUnit}</span>
+                <label>${metric.displayName}:</label>
+                <div class="rule-input-fields">
+                    <input type="number" id="${metric.ruleName}_alarm" placeholder="Rot (z.B. < 50)">
+                    <input type="number" id="${metric.ruleName}_warn" placeholder="Gelb (z.B. < 200)">
+                    <span id="${metric.uiUnitId}">${initialUnit}</span>
+                </div>
             </div>
         `;
     }
@@ -154,14 +157,30 @@ export const initUI = (handlers) => {
     // Profil speichern
     if (uiElements.saveButton) {
         uiElements.saveButton.addEventListener('click', () => {
+            
+            // 1. Regeln zuerst auslesen
+            const rules = getRulesFromInputs();
+
+            // 2. --- NEUE VALIDIERUNG ---
+            const validationError = validateRules(rules);
+            if (validationError) {
+                alert(validationError); // Zeige den Logikfehler
+                return; // Stoppe das Speichern
+            }
+            // --- ENDE VALIDIERUNG ---
+
+            // 3. Erst jetzt das Profil-Objekt bauen
             const profileData = {
                 name: uiElements.profileNameInput.value,
-                rules: getRulesFromInputs() // <-- Jetzt dynamisch
+                rules: rules // Die bereits validierten Regeln
             };
+            
             if (!profileData.name) {
                 alert("Bitte einen Profil-Namen eingeben.");
                 return;
             }
+            
+            // 4. Handler aufrufen
             handlers.onSaveProfile(profileData);
         });
     }
@@ -281,8 +300,8 @@ export const displayAutoWarnings = (alarmResults) => {
             const summaryKey = metric.summaryKey;
 
             // Prüfen, ob die Regel im Profil (r) aktiv ist UND ob ein Summary (s) dafür existiert
-            if (r[ruleName] !== null && r[ruleName] !== undefined && s[summaryKey]) {
-
+            if (((r[ruleName + '_alarm'] !== null && r[ruleName + '_alarm'] !== undefined) ||
+                (r[ruleName + '_warn'] !== null && r[ruleName + '_warn'] !== undefined)) && s[summaryKey]) {
                 const blendedStatus = createBlendedStatus(s, summaryKey);
                 // Prüfen, ob für diese Metrik ein Alarm/Warnung vorliegt
                 if (Object.values(blendedStatus).some(status => status !== 'ok' && status !== 'no-data')) {
@@ -360,7 +379,8 @@ export const displayManualWarning = (profile, summary) => {
         for (const metric of Object.values(METRICS_CONFIG)) {
             const ruleName = metric.ruleName;
             // Zeile nur bauen, wenn Regel im Profil aktiv ist
-            if (rules[ruleName] !== null && rules[ruleName] !== undefined) {
+            if ((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
+                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) {
                 tableHtml += buildRow(metric.displayName, summary[metric.summaryKey].hourlyStatus, hours, metric.summaryKey);
             }
         }
@@ -454,19 +474,28 @@ export const displayTemplateList = (templates) => {
 /**
  * NEU: Füllt die Eingabefelder (Regeln, Name, Modus)
  * basierend auf einem übergebenen Regel-Objekt.
- * @param {object} rules - Das 'rules'-Objekt (aus Profil oder Vorlage)
- * @param {string | null} profileName - Der Name des Profils (oder null, wenn Vorlage)
+ * (Angepasst für Dual-Threshold: _alarm / _warn)
  */
 export const applyRulesToInputs = (rules, profileName) => {
     if (!rules) return;
 
     // 1. Setze die Input-Werte dynamisch
     for (const metric of Object.values(METRICS_CONFIG)) {
-        const element = document.getElementById(metric.uiInputId);
-        if (element) {
-            const value = rules[metric.ruleName];
-            // Setze den Wert (oder leer, wenn null/undefined)
-            element.value = (value !== null && value !== undefined) ? value : '';
+
+        // Finde die ZWEI neuen Input-Felder
+        const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
+        const elem_warn = document.getElementById(metric.ruleName + '_warn');
+
+        // Lese die Werte aus dem Profil
+        const value_alarm = rules[metric.ruleName + '_alarm'];
+        const value_warn = rules[metric.ruleName + '_warn'];
+
+        // Setze den Wert (oder leer, wenn null/undefined)
+        if (elem_alarm) {
+            elem_alarm.value = (value_alarm !== null && value_alarm !== undefined) ? value_alarm : '';
+        }
+        if (elem_warn) {
+            elem_warn.value = (value_warn !== null && value_warn !== undefined) ? value_warn : '';
         }
     }
 
@@ -477,7 +506,7 @@ export const applyRulesToInputs = (rules, profileName) => {
         uiElements.unitModeMetric.checked = true;
     }
 
-    // 3. NEU: Setze den Logik-Modus Radio-Button
+    // 3. Setze den Logik-Modus Radio-Button
     const logicModeRadio = document.querySelector(`input[name="logicMode"][value="${rules.logicMode || 'OR'}"]`);
     if (logicModeRadio) {
         logicModeRadio.checked = true;
@@ -530,27 +559,64 @@ export const resetProfileInputs = () => {
 };
 
 /**
+ * NEU: Validiert die logische Konsistenz der Alarm- und Warn-Regeln.
+ * @param {object} rules - Das Regel-Objekt von getRulesFromInputs
+ * @returns {string | null} - Eine Fehlermeldung oder null, wenn alles OK ist.
+ */
+function validateRules(rules) {
+    for (const metric of Object.values(METRICS_CONFIG)) {
+        const alarm_val = rules[metric.ruleName + '_alarm'];
+        const warn_val = rules[metric.ruleName + '_warn'];
+
+        // Nur prüfen, wenn BEIDE Werte gesetzt wurden
+        if (alarm_val !== null && warn_val !== null) {
+            
+            if (metric.checkType === 'min') {
+                // "MIN"-Check (Sicht, Temp): Alarm-Limit muss *kleiner* sein als Warn-Limit
+                // z.B. FEHLER: Rot (50) >= Gelb (200) -> Falsch
+                if (alarm_val >= warn_val) {
+                    return `Logikfehler bei "${metric.displayName}": Das Rote Limit (${alarm_val}) muss *kleiner* sein als das Gelbe Limit (${warn_val}).`;
+                }
+            } else { // 'max'
+                // "MAX"-Check (Wind, Wolken): Alarm-Limit muss *größer* sein als Warn-Limit
+                // z.B. FEHLER: Rot (50) <= Gelb (40) -> Falsch
+                if (alarm_val <= warn_val) {
+                    return `Logikfehler bei "${metric.displayName}": Das Rote Limit (${alarm_val}) muss *größer* sein als das Gelbe Limit (${warn_val}).`;
+                }
+            }
+        }
+    }
+    return null; // Alles OK
+}
+
+/**
  * Liest die aktuellen Werte aus den Regel-Feldern.
- * NEU: Dynamisch und fixt den "0 || null" Bug.
+ * NEU: Liest _alarm und _warn Felder.
  */
 const getRulesFromInputs = () => {
     const unitMode = uiElements.unitModeAviation.checked ? 'aviation' : 'metric';
     const logicModeRadio = document.querySelector('input[name="logicMode"]:checked');
-    const logicMode = logicModeRadio ? logicModeRadio.value : 'OR'; // Standard ist 'OR'
-
-    const rules = { unitMode: unitMode, logicMode: logicMode }; // NEU: logicMode hinzugefügt
+    const logicMode = logicModeRadio ? logicModeRadio.value : 'OR';
+    const rules = { unitMode: unitMode, logicMode: logicMode };
 
     for (const metric of Object.values(METRICS_CONFIG)) {
-        const element = document.getElementById(metric.uiInputId);
-        const rawValue = element.value;
 
-        if (rawValue === "") {
-            rules[metric.ruleName] = null;
-        } else {
-            const parsedValue = parseFloat(rawValue);
-            // Speichert die Zahl (auch 0) oder null, wenn es kein Text war
-            rules[metric.ruleName] = isNaN(parsedValue) ? null : parsedValue;
-        }
+        // Finde die ZWEI neuen Input-Felder
+        const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
+        const elem_warn = document.getElementById(metric.ruleName + '_warn');
+
+        // Lese die Rohwerte (oder leer, falls nicht gefunden)
+        const rawVal_alarm = elem_alarm ? elem_alarm.value : "";
+        const rawVal_warn = elem_warn ? elem_warn.value : "";
+
+        // Verarbeite die Werte: "" wird null, Text wird Zahl
+        // (Wir nutzen parseFloat, damit auch 0 als Wert gespeichert wird)
+
+        const parsed_alarm = parseFloat(rawVal_alarm);
+        rules[metric.ruleName + '_alarm'] = isNaN(parsed_alarm) ? null : parsed_alarm;
+
+        const parsed_warn = parseFloat(rawVal_warn);
+        rules[metric.ruleName + '_warn'] = isNaN(parsed_warn) ? null : parsed_warn;
     }
     return rules;
 };
@@ -804,7 +870,9 @@ function getBlendedCombinedStatus(profile, summary) {
             const summaryKey = metric.summaryKey;
 
             // Prüfen, ob die Regel im Profil aktiv ist (Limit nicht null/undefined)
-            if (rules[ruleName] !== null && rules[ruleName] !== undefined && summary[summaryKey]) {
+            if (((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
+                 (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) && summary[summaryKey])
+            {
                 // HIER IST DER UNTERSCHIED: Wir holen den geblendeten Status
                 const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
                 activeRuleStati.push(blendedRuleStatus);
@@ -855,8 +923,8 @@ export const openProfileEditorAccordion = () => {
     // 0 = 🚨 Automatischer Alarm-Monitor
     // 1 = ✍️ Profil erstellen / Regeln definieren
     if (!uiElements.accordions || uiElements.accordions.length < 2) return;
-    
-    const editorHeader = uiElements.accordions[1]; 
+
+    const editorHeader = uiElements.accordions[1];
     if (editorHeader) {
         const panel = editorHeader.nextElementSibling;
         const isOpen = panel.classList.contains('open');

@@ -55,15 +55,15 @@ async function handleModelChange(apiName, runTimeISO) {
     console.log(`Main.js: Modell geändert auf ${apiName} (Lauf: ${runTimeISO})`);
     currentWeatherModel = { apiName, runTimeISO };
 
-     if (currentManualProfile) {
+    if (currentManualProfile) {
         console.log(`[Modell-Wechsel] Führe manuelle Prüfung für "${currentManualProfile.name}" mit neuem Modell aus.`);
-        
+
         // Wir rufen dieselbe Funktion auf, die auch der "Prüfen & Laden"-Button nutzt.
         // 'await' stellt sicher, dass alles der Reihe nach passiert.
         await handleManualCheck(currentManualProfile);
     }
 
-    await runAndUpdateDashboard(); 
+    await runAndUpdateDashboard();
 }
 
 /**
@@ -128,6 +128,11 @@ async function runAndUpdateDashboard() {
  * (Version 3.0: KORRIGIERT für Tiling-Engine)
  */
 async function handleManualCheck(profileData) {
+
+    // --- DEBUG 1 ---
+    console.log("--- DEBUG [main.js]: handleManualCheck GESTARTET ---");
+    console.log("Profil:", profileData.name);
+
     // KUGELSICHERER CHECK: Hat das Profil eine Form?
     if (!profileData.geojson) {
         alert("Fehler: Dieses Profil hat keine gezeichnete Form. Bitte löschen und neu anlegen.");
@@ -136,18 +141,27 @@ async function handleManualCheck(profileData) {
     }
 
     await clearAllManualOverrides();
-    
+
     // 1. Lade die Regeln des angeklickten Profils in die Sidebar-Inputs
     ui.applyRulesToInputs(profileData.rules, profileData.name);
-    
+
     // 2. Öffne das Sidebar-Panel, damit der Nutzer die Regeln sieht
     ui.openProfileEditorAccordion();
-    
+
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
 
+    // --- DEBUG 2 ---
+    console.log("--- DEBUG [main.js]: Rufe getGridPoints auf...");
+
     // 1. Punkte "offline" berechnen (Demo-Modus-kompatibel)
     const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
+
+    // --- DEBUG 3 ---
+    console.log("--- DEBUG [main.js]: getGridPoints BEENDET.");
+    console.log("GridPoints gefunden:", gridPoints ? gridPoints.features.length : 'null');
+    console.log("Error:", error);
+
     if (error) {
         ui.setManualMonitorMessage(`<p>Fehler beim Berechnen der Punkte: ${error}</p>`);
         return;
@@ -157,8 +171,16 @@ async function handleManualCheck(profileData) {
     map.drawSamplePoints(gridPoints, profileData.geojson);
     map.zoomToGeoJSON(profileData.geojson);
 
+    // --- DEBUG 4 ---
+    console.log("--- DEBUG [main.js]: Rufe fetchAndCheckProfile auf...");
+
     // 3. Engine aufrufen (MIT den Punkten)
     const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
+
+    // --- DEBUG 5 ---
+    console.log("--- DEBUG [main.js]: fetchAndCheckProfile BEENDET.");
+    console.log("Summary-Ergebnis:", summary);
+
 
     // 4. Ergebnisse speichern & anzeigen
     currentManualProfile = profileData;

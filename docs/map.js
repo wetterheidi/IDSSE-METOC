@@ -138,7 +138,8 @@ export const visualizeWarnings = (profile, summary, hour) => {
         const { summaryKey, ruleName, displayName, chartColor, formatter } = metric;
 
         // Überspringen, wenn die Regel im Profil nicht aktiv ist
-        if (profile.rules[ruleName] === null || profile.rules[ruleName] === undefined) {
+        if ((profile.rules[ruleName + '_alarm'] === null || profile.rules[ruleName + '_alarm'] === undefined) &&
+            (profile.rules[ruleName + '_warn'] === null || profile.rules[ruleName + '_warn'] === undefined)) {
             continue;
         }
 

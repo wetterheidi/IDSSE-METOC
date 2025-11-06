@@ -109,7 +109,8 @@ export function updateWeatherChart(profile, summary) {
         const opts = metric.chartOptions;
 
         // Nur fortfahren, wenn die Regel im Profil aktiv ist
-        if (rules[ruleName] === null || rules[ruleName] === undefined) {
+        if ((rules[ruleName + '_alarm'] === null || rules[ruleName + '_alarm'] === undefined) &&
+            (rules[ruleName + '_warn'] === null || rules[ruleName + '_warn'] === undefined)) {
             continue;
         }
 
@@ -152,9 +153,37 @@ export function updateWeatherChart(profile, summary) {
             axisGridCounter++;
         }
 
-        // C. Limit-Linie (Annotation) erstellen
-        const { value: limitValue } = metric.formatter(rules[ruleName], profile);
-        annotationLimits.push(createLimitLine(limitValue, metric.chartColor, opts.axisId));
+        // C. Limit-Linie(n) (Annotation) erstellen (NEUE LOGIK)
+
+        // 1. Lese die ZWEI Limits aus dem Profil
+        const limitValue_alarm = rules[metric.ruleName + '_alarm'];
+        const limitValue_warn = rules[metric.ruleName + '_warn'];
+
+        // 2. Erstelle die ROTE Alarm-Linie (wenn vorhanden)
+        if (limitValue_alarm !== null && limitValue_alarm !== undefined) {
+            // Formatiere den Wert (z.B. von Meter in Fuß)
+            const { value: formattedVal } = metric.formatter(limitValue_alarm, profile);
+
+            // Erstelle die rote Linie
+            annotationLimits.push(createLimitLine(
+                formattedVal,
+                '#dc3545', // Alarm-Rot
+                opts.axisId
+            ));
+        }
+
+        // 3. Erstelle die GELBE Warn-Linie (wenn vorhanden)
+        if (limitValue_warn !== null && limitValue_warn !== undefined) {
+            // Formatiere den Wert
+            const { value: formattedVal } = metric.formatter(limitValue_warn, profile);
+
+            // Erstelle die gelbe Linie
+            annotationLimits.push(createLimitLine(
+                formattedVal,
+                '#ffc107', // Warn-Gelb
+                opts.axisId
+            ));
+        }
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
 
