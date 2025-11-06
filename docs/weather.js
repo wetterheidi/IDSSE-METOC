@@ -27,8 +27,6 @@ function calculateDerivedValue(metric, hourly, h) { // <-- Akzeptiert 'metric'
                 return chill;
 
             case 'cloudBase':
-                // ALT: const metricConfig = METRICS_CONFIG[summaryKey]; // <-- FEHLER
-                // NEU: Wir haben die Config bereits als 'metric'
                 if (!metric.pressureLevels) {
                     console.error("Config für cloudBase/pressureLevels fehlt!");
                     return null;

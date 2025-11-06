@@ -317,7 +317,15 @@ export const displayAutoWarnings = (alarmResults) => {
 
                     // Verwende den Formatter aus der Config
                     const { value, unit } = metric.formatter(s[summaryKey].value, p);
-                    const { value: limit } = metric.formatter(r[ruleName], p);
+
+                    // --- KORREKTUR HIER ---
+                    // ALT:
+                    // const { value: limit } = metric.formatter(r[ruleName], p);
+
+                    // NEU: (Zeige das Alarm-Limit als Referenz)
+                    const { value: limit } = metric.formatter(r[ruleName + '_alarm'], p);
+                    // --- ENDE KORREKTUR ---
+
                     const range = getAlarmTimeRange(blendedStatus);
 
                     html += `<span style="color: ${metric.chartColor};">&#9658; ${metric.displayName} (Limit: ${limit}${unit}): ${range}</span><br>`;
@@ -884,7 +892,7 @@ function getBlendedCombinedStatus(profile, summary) {
         return combinedStatus; // (bleibt leer, was korrekt ist)
     }
     const firstMetricKey = activeMetrics[0].summaryKey;
-    
+
     const hours = (summary[firstMetricKey] && summary[firstMetricKey].hourlyStatus)
         ? Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
         : [];
