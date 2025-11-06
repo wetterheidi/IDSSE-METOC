@@ -1,5 +1,5 @@
 // map.js (Version 2.0 - Config-Driven)
-import { getManualOverrides } from './main.js';
+import { getManualOverrides, getVisibleChartMetrics } from './main.js';
 // NEU: Importiere das "Gehirn"
 import { METRICS_CONFIG } from './metricsConfig.js';
 
@@ -133,9 +133,16 @@ export const visualizeWarnings = (profile, summary, hour) => {
         }
     };
 
+    const visibleMetrics = getVisibleChartMetrics();
+
     // --- DYNAMISCHE SCHLEIFE statt 5 harter Blöcke ---
     for (const metric of Object.values(METRICS_CONFIG)) {
         const { summaryKey, ruleName, displayName, chartColor, formatter } = metric;
+
+        // Überspringe das Zeichnen, wenn die Metrik im Graphen ausgeblendet ist
+        if (!visibleMetrics.has(summaryKey)) {
+            continue;
+        }
 
         // Überspringen, wenn die Regel im Profil nicht aktiv ist
         if ((profile.rules[ruleName + '_alarm'] === null || profile.rules[ruleName + '_alarm'] === undefined) &&

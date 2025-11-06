@@ -1,5 +1,5 @@
 // charts.js (Version 2.0 - Config-Driven)
-import { getManualOverrides } from './main.js';
+import { getManualOverrides, handleChartVisibilityUpdate } from './main.js';
 // NEU: Importiere das "Gehirn"
 import { METRICS_CONFIG } from './metricsConfig.js';
 
@@ -137,10 +137,11 @@ export function updateWeatherChart(profile, summary) {
             label: label,
             data: data,
             borderColor: metric.chartColor,
-            backgroundColor: hexToRgba(metric.chartColor, 0.1), // <-- KORRIGIERT
+            backgroundColor: hexToRgba(metric.chartColor, 0.1), 
             fill: opts.fill || false,
             yAxisID: opts.axisId,
-            type: opts.type // 'line' or 'bar'
+            type: opts.type,
+            summaryKey: metric.summaryKey // <-- NEUE ZEILE HINZUFÜGEN
         });
 
         // B. Achse (Scale) erstellen (nur, wenn sie noch nicht existiert)
@@ -249,7 +250,14 @@ export function updateWeatherChart(profile, summary) {
                     intersect: false
                 },
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    onClick: (e, legendItem, legend) => {
+                        // 1. Führe das Standard-Verhalten aus (blendet den Graphen aus)
+                        Chart.defaults.plugins.legend.onClick(e, legendItem, legend);
+                        
+                        // 2. Rufe unseren neuen Handler in main.js auf, um die Karte zu aktualisieren
+                        handleChartVisibilityUpdate(legend.chart);
+                    }
                 },
                 annotation: {
                     annotations: finalAnnotations

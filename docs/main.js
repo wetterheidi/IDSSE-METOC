@@ -18,6 +18,11 @@ let currentManualSummary = null; // NEU: Merkt sich das *Ergebnis* der letzten P
 let currentSliderHour = 0;       // NEU: Merkt sich die Stunde (0-23)
 let currentWeatherModel = null;  // NEU: Merkt sich { apiName, runTimeISO }
 export let manualOverrides = {};
+// NEU: Speichert, welche Graphen-Layer sichtbar sind.
+// Wir initialisieren es mit *allen* Metrik-Schlüsseln.
+export let visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
+// NEU: Getter-Funktion, damit map.js den Zustand lesen kann.
+export const getVisibleChartMetrics = () => visibleChartMetrics;
 
 /**
  * Die Weiche: Entscheidet, ob wir die echte API oder den Fake benutzen.
@@ -191,6 +196,11 @@ async function handleManualCheck(profileData) {
     // 4. Ergebnisse speichern & anzeigen
     currentManualProfile = profileData;
     currentManualSummary = summary;
+
+    // --- NEU: Setze die Graphen-Sichtbarkeit zurück ---
+    // (Stellt sicher, dass beim Laden eines neuen Profils alle Layer sichtbar sind)
+    visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
+
     ui.displayManualWarning(profileData, summary); // <-- Aktualisiert die Matrix
     charts.updateWeatherChart(profileData, summary); // <-- HIER IST DIE REPARATUR
     map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
@@ -349,6 +359,29 @@ async function clearAllManualOverrides() {
 }
 
 export const getManualOverrides = () => manualOverrides;
+
+/**
+ * Wird von charts.js aufgerufen, wenn sich die Sichtbarkeit der Legende ändert.
+ * Aktualisiert den globalen Zustand und zeichnet die Karte neu.
+ */
+export function handleChartVisibilityUpdate(chart) {
+    // 1. Set leeren
+    visibleChartMetrics.clear();
+
+    // 2. Set mit den sichtbaren Metriken neu füllen
+    chart.data.datasets.forEach((dataset, index) => {
+        if (chart.isDatasetVisible(index)) {
+            // (Wir holen den summaryKey, den wir in Schritt 2 in das Dataset einfügen)
+            if (dataset.summaryKey) {
+                visibleChartMetrics.add(dataset.summaryKey);
+            }
+        }
+    });
+
+    // 3. Karte neu zeichnen
+    // (Nutzt die globalen Variablen für Profil, Summary und Stunde)
+    map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
+}
 
 /**
  * NEU: Filtert die METRICS_CONFIG, um nur Metriken zurückzugeben,
