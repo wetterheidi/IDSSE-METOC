@@ -8,6 +8,7 @@ import * as map from './map.js';
 import * as ui from './ui.js';
 import * as timeSlider from './timeSlider.js';
 import * as charts from './charts.js'; // <-- NEU
+import { METRICS_CONFIG } from './metricsConfig.js';
 
 // --- Globaler App-Zustand ---
 // (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
@@ -113,8 +114,9 @@ async function runAndUpdateDashboard() {
             continue;
         }
 
-        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
+        const activeMetrics = getActiveMetrics(profileData.rules);
 
+        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics, currentWeatherModel); // <-- currentWeatherModel zweimal übergeben
         results.push({ profile: profileData, summary: summary });
     }
 
@@ -175,7 +177,11 @@ async function handleManualCheck(profileData) {
     console.log("--- DEBUG [main.js]: Rufe fetchAndCheckProfile auf...");
 
     // 3. Engine aufrufen (MIT den Punkten)
-    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints);
+    // Finde HIER heraus, welche Metriken für DIESES Profil aktiv sind
+    const activeMetrics = getActiveMetrics(profileData.rules);
+
+    // 3. Engine aufrufen (MIT den Punkten UND den gefilterten Metriken)
+    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics);
 
     // --- DEBUG 5 ---
     console.log("--- DEBUG [main.js]: fetchAndCheckProfile BEENDET.");
@@ -343,6 +349,19 @@ async function clearAllManualOverrides() {
 }
 
 export const getManualOverrides = () => manualOverrides;
+
+/**
+ * NEU: Filtert die METRICS_CONFIG, um nur Metriken zurückzugeben,
+ * die im Profil (rules) aktiv sind (Alarm oder Warnung gesetzt).
+ */
+function getActiveMetrics(rules) {
+    return Object.values(METRICS_CONFIG).filter(metric => {
+        const hasAlarm = rules[metric.ruleName + '_alarm'] !== null && rules[metric.ruleName + '_alarm'] !== undefined;
+        const hasWarn = rules[metric.ruleName + '_warn'] !== null && rules[metric.ruleName + '_warn'] !== undefined;
+        return hasAlarm || hasWarn;
+    });
+}
+
 export const getCurrentManualSummary = () => currentManualSummary;
 
 

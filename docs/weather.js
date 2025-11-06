@@ -2,6 +2,82 @@
 import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
 // Importiere das NEUE "Gehirn"
 import { METRICS_CONFIG, getApiParams } from './metricsConfig.js';
+import { WEATHER_MODELS } from './config.js';
+
+/**
+ * Berechnet abgeleitete Metriken.
+ * @param {string} summaryKey - Der Schlüssel der Metrik (z.B. 'windchill')
+ * @param {object} hourly - Das Open-Meteo 'hourly'-Objekt für EINEN Punkt
+ * @param {int} h - Der Index der Stunde (0-23)
+ * @returns {number | null} - Der berechnete Wert oder null
+ */
+function calculateDerivedValue(metric, hourly, h) { // <-- Akzeptiert 'metric'
+    const summaryKey = metric.summaryKey; // Holen wir uns aus dem Objekt
+    try {
+        switch (summaryKey) {
+            case 'windchill':
+                const temp = hourly['temperature_2m'][h];
+                const wind_kmh = hourly['wind_speed_10m'][h];
+                if (temp === null || wind_kmh === null) return null;
+                if (temp > 10 || wind_kmh < 4.8) {
+                    return temp;
+                }
+                const v_pow = Math.pow(wind_kmh, 0.16);
+                const chill = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * temp * v_pow;
+                return chill;
+
+            case 'cloudBase':
+                // ALT: const metricConfig = METRICS_CONFIG[summaryKey]; // <-- FEHLER
+                // NEU: Wir haben die Config bereits als 'metric'
+                if (!metric.pressureLevels) {
+                    console.error("Config für cloudBase/pressureLevels fehlt!");
+                    return null;
+                }
+
+                const cc = hourly['cloud_cover'] ? hourly['cloud_cover'][h] : null;
+                // (Wir ignorieren 'cc' für den Test)
+
+                let verticalProfile = [];
+
+                // ALT: for (const level of metricConfig.pressureLevels) {
+                // NEU:
+                for (const level of metric.pressureLevels) {
+                    const rh_key = `relative_humidity_${level}hPa`;
+                    const h_key = `geopotential_height_${level}hPa`;
+
+                    if (hourly[rh_key] && hourly[h_key]) {
+                        const rh = hourly[rh_key][h];
+                        const height = hourly[h_key][h];
+
+                        if (rh !== null && height !== null) {
+                            verticalProfile.push({ level: level, rh: rh, height: height });
+                        }
+                    }
+                }
+
+                if (verticalProfile.length < 1) {
+                    console.warn(`[Test CloudBase] Konnte keine gültigen Druckstufen-Daten für Stunde ${h} finden.`);
+                    return null;
+                }
+
+                verticalProfile.sort((a, b) => b.level - a.level); // 1000hPa zuerst
+
+                const testValue = verticalProfile[0].height;
+
+                if (h === 0) { // Logge nur einmal pro Prüfung
+                    console.log(`[Test CloudBase] Rohdaten (Stunde 0): ${verticalProfile[0].level}hPa -> ${testValue}m`);
+                }
+
+                return testValue;
+
+            default:
+                return null;
+        }
+    } catch (e) {
+        console.error(`Fehler bei Berechnung von '${summaryKey}':`, e);
+        return null;
+    }
+}
 
 /**
  * Teilt ein Array in kleinere Stapel (Chunks) auf.
@@ -89,8 +165,7 @@ export function getGridPoints(geojson) {
 
 // --- 2. Die "Kachel-Engine" (Tiling + Caching) ---
 
-export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
-
+export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activeMetrics) {
     // 1. Cache-Schlüssel (Unverändert)
     const modelApiName = modelInfo ? modelInfo.apiName : 'auto';
     const modelRunISO = modelInfo ? modelInfo.runTimeISO : 'latest';
@@ -121,11 +196,13 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     let allApiResponses = [];
 
     // NEU: API-Parameter dynamisch UND gruppiert holen
-    const { hourly, daily } = getApiParams(Object.values(METRICS_CONFIG));
+    const metricsForParams = activeMetrics || Object.values(METRICS_CONFIG);
+    const { hourly, daily, pressure } = getApiParams(metricsForParams, modelInfo);
 
     console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte...`);
     console.log(`Hourly-Params: ${hourly}`);
     console.log(`Daily-Params: ${daily}`);
+    console.log(`Pressure-Params: ${pressure}`); // <-- Neuer Log
 
     // 5. Sequenzielle Schleife (API-URL-Bau)
     for (const chunk of pointChunks) {
@@ -171,7 +248,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
     // 6. Daten zusammennähen (Unverändert)
     console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
     console.log("%cRAW API DATA (Aggregated from Tiling):", "color: blue; font-weight: bold;", allApiResponses);
-    const finalSummary = checkThresholds_Sampling(profile, allApiResponses);
+    const finalSummary = checkThresholds_Sampling(profile, allApiResponses, activeMetrics);
 
     // 7. Cache speichern (Unverändert)
     try {
@@ -189,10 +266,10 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints) {
  * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
  * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
  */
-function checkThresholds_Sampling(profile, locationsData) {
+function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
     const rules = profile.rules;
     const summary = getEmptySummary();
-    const metrics = Object.values(METRICS_CONFIG); // Alle Metriken, die wir prüfen
+    const metrics = activeMetrics || Object.values(METRICS_CONFIG);
 
     // --- NEUES DEBUG (Ganz oben) ---
     console.log("--- DEBUG: checkThresholds_Sampling GESTARTET ---");
@@ -291,8 +368,9 @@ function checkThresholds_Sampling(profile, locationsData) {
                 } else if (metric.paramType === 'derived') {
                     // apiName ist ein Array (wird in der Funktion verwendet)
                     value = calculateDerivedValue(metric.summaryKey, hourly, h);
+                } else if (metric.paramType === 'derived_pressure') {
+                    value = calculateDerivedValue(metric, hourly, h); // Übergebe die *gesamte* Metrik-Config
                 }
-
                 // --- 2. GRAPH-AGGREGATION ---
                 if (value !== null && isFinite(value)) {
                     if (metric.checkType === 'min') {
@@ -332,10 +410,11 @@ function checkThresholds_Sampling(profile, locationsData) {
                         }
                     }
 
+                    if (metric.checkType === 'min' && value < summary[summaryKey].value) summary[summaryKey].value = value;
+                    if (metric.checkType === 'max' && value > summary[summaryKey].value) summary[summaryKey].value = value;
+
                     if (currentStatus === 'alarm') {
                         summary[summaryKey].triggered = true;
-                        if (metric.checkType === 'min' && value < summary[summaryKey].value) summary[summaryKey].value = value;
-                        if (metric.checkType === 'max' && value > summary[summaryKey].value) summary[summaryKey].value = value;
                         summary[summaryKey].hourlyAlarms[hour].add(locationId);
                     }
 
@@ -410,40 +489,3 @@ function checkThresholds_Sampling(profile, locationsData) {
     return summary;
 }
 
-/**
- * Berechnet abgeleitete Metriken.
- * @param {string} summaryKey - Der Schlüssel der Metrik (z.B. 'windchill')
- * @param {object} hourly - Das Open-Meteo 'hourly'-Objekt für EINEN Punkt
- * @param {int} h - Der Index der Stunde (0-23)
- * @returns {number | null} - Der berechnete Wert oder null
- */
-function calculateDerivedValue(summaryKey, hourly, h) {
-    try {
-        switch (summaryKey) {
-            case 'windchill':
-                const temp = hourly['temperature_2m'][h];
-                const wind_kmh = hourly['wind_speed_10m'][h]; // API liefert km/h
-
-                // Wenn Daten fehlen, keine Berechnung
-                if (temp === null || wind_kmh === null) return null;
-
-                // Windchill (Gefühlte Temperatur) wird typischerweise nur bei
-                // Temperaturen unter 10°C und Wind über 4.8 km/h berechnet.
-                if (temp > 10 || wind_kmh < 4.8) {
-                    return temp; // Fühlt sich an wie die Lufttemperatur
-                }
-
-                // Offizielle Formel (angepasst für km/h)
-                const v_pow = Math.pow(wind_kmh, 0.16);
-                const chill = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * temp * v_pow;
-
-                return chill; // (Kann kälter sein als die Lufttemp.)
-
-            default:
-                return null;
-        }
-    } catch (e) {
-        console.error(`Fehler bei Berechnung von '${summaryKey}':`, e);
-        return null;
-    }
-}

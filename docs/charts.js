@@ -66,13 +66,25 @@ export function updateWeatherChart(profile, summary) {
 
     const ctx = document.getElementById('weatherChartCanvas').getContext('2d');
 
+    if (!profile || !profile.rules) {
+        return; // Nichts zu zeichnen, wenn das Profil oder die Regeln fehlen
+    }
+    const rules = profile.rules;
+
     // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
-    const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
+        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
+        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
+    );
+
+    if (activeMetrics.length === 0) {
+        return; // Keine Regeln aktiv, nichts zu zeichnen
+    }
+    const firstMetricKey = activeMetrics[0].summaryKey;
     if (!summary || !profile || !summary[firstMetricKey].hourlyData || summary[firstMetricKey].hourlyData.length === 0) {
         return; // Nichts zu zeichnen
     }
 
-    const rules = profile.rules;
     const hours = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
     // --- 1. Datensätze und Achsen dynamisch erstellen ---

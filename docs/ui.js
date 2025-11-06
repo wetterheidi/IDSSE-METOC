@@ -157,7 +157,7 @@ export const initUI = (handlers) => {
     // Profil speichern
     if (uiElements.saveButton) {
         uiElements.saveButton.addEventListener('click', () => {
-            
+
             // 1. Regeln zuerst auslesen
             const rules = getRulesFromInputs();
 
@@ -174,12 +174,12 @@ export const initUI = (handlers) => {
                 name: uiElements.profileNameInput.value,
                 rules: rules // Die bereits validierten Regeln
             };
-            
+
             if (!profileData.name) {
                 alert("Bitte einen Profil-Namen eingeben.");
                 return;
             }
-            
+
             // 4. Handler aufrufen
             handlers.onSaveProfile(profileData);
         });
@@ -367,8 +367,15 @@ export const displayManualWarning = (profile, summary) => {
     let tableHtml = "";
     const blendedCombinedStatus = getBlendedCombinedStatus(profile, summary);
 
-    // Finde einen Referenz-Stunden-Key (z.B. von 'wind')
-    const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
+        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
+        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
+    );
+
+    if (activeMetrics.length === 0) {
+        return combinedStatus; // (bleibt leer, was korrekt ist)
+    }
+    const firstMetricKey = activeMetrics[0].summaryKey;
     const hours = (summary[firstMetricKey] && summary[firstMetricKey].hourlyStatus)
         ? Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
         : [];
@@ -559,7 +566,7 @@ export const enableSaveButton = () => {
 
 export const resetProfileInputs = () => {
     uiElements.profileNameInput.value = '';
-    
+
     // --- KORREKTUR ---
     // Lösche die dynamischen _alarm und _warn Input-Felder
     for (const metric of Object.values(METRICS_CONFIG)) {
@@ -583,7 +590,7 @@ function validateRules(rules) {
 
         // Nur prüfen, wenn BEIDE Werte gesetzt wurden
         if (alarm_val !== null && warn_val !== null) {
-            
+
             if (metric.checkType === 'min') {
                 // "MIN"-Check (Sicht, Temp): Alarm-Limit muss *kleiner* sein als Warn-Limit
                 // z.B. FEHLER: Rot (50) >= Gelb (200) -> Falsch
@@ -868,7 +875,16 @@ function getBlendedCombinedStatus(profile, summary) {
     const logicMode = rules.logicMode || 'OR';
 
     // Finde einen Referenz-Stunden-Key
-    const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
+        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
+        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
+    );
+
+    if (activeMetrics.length === 0) {
+        return combinedStatus; // (bleibt leer, was korrekt ist)
+    }
+    const firstMetricKey = activeMetrics[0].summaryKey;
+    
     const hours = (summary[firstMetricKey] && summary[firstMetricKey].hourlyStatus)
         ? Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
         : [];
@@ -884,8 +900,7 @@ function getBlendedCombinedStatus(profile, summary) {
 
             // Prüfen, ob die Regel im Profil aktiv ist (Limit nicht null/undefined)
             if (((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-                 (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) && summary[summaryKey])
-            {
+                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) && summary[summaryKey]) {
                 // HIER IST DER UNTERSCHIED: Wir holen den geblendeten Status
                 const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
                 activeRuleStati.push(blendedRuleStatus);

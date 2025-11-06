@@ -2,6 +2,7 @@
 // (Version 1.1: Erweitert um Chart-Optionen)
 
 import * as formatter from './formatter.js';
+import { WEATHER_MODELS } from './config.js';
 
 export const METRICS_CONFIG = {
 
@@ -173,36 +174,103 @@ export const METRICS_CONFIG = {
         }
     },
 
+'cloudBase': {        
+        // 1. Die Basis-Variablen, die wir brauchen
+        apiName: [ 
+            'cloud_cover', 
+            'relative_humidity', 
+            'geopotential_height'
+        ],
+        
+        // 2. Die Druckstufen, die wir *anfragen* wollen
+        //    (Wir fragen einfach alle an, die API liefert, was sie hat)
+        pressureLevels: [ 
+            1000, 975, 950, 925, 900, 875, 850, 825, 800, 
+            775, 750, 725, 700, 650, 600, 550, 500, 475, 450,
+            425, 400, 375, 350, 325, 300, 275, 250, 200
+        ],
+
+        paramType: 'derived_pressure', // <-- KORREKTER TYP
+        ruleName: 'minCloudBase', 
+        summaryKey: 'cloudBase',  
+        checkType: 'min',         
+
+        // --- UI & Anzeige ---
+        uiUnitId: 'unit-minCloudBase',
+        displayName: 'Wolkenuntergrenze',
+        formatter: formatter.formatAltitude,
+        chartColor: '#1abc9c',
+        chartOptions: {
+            axisId: 'yAltitude',
+            axisPosition: 'right',
+            axisLabel: 'Sicht/Wolkenbasis',
+            type: 'line'
+        }
+    }
+
 };
 
 /**
  * Hilfsfunktion: Gibt alle API-Parameter als String zurück
- * (Unverändert)
+ * (FINALE VERSION, die 'hourly_per_level' nutzt)
  */
-export const getApiParams = (metrics) => {
+export const getApiParams = (metrics, modelInfo) => {
     const groups = {
         hourly: new Set(),
         daily: new Set(),
+        pressure: new Set() // (Wird nicht mehr an die URL übergeben, aber intern genutzt)
     };
+    
+    // 1. Bestimme die erlaubten Levels für das aktuelle Modell
+    let allowedLevels = null;
+    if (modelInfo && modelInfo.apiName !== 'auto') {
+        const modelMetaId = WEATHER_MODELS.API_MAP[modelInfo.apiName];
+        const modelProps = modelMetaId ? WEATHER_MODELS.MODEL_PROPERTIES[modelMetaId] : null;
+        if (modelProps) {
+            allowedLevels = new Set(modelProps.pressureLevels);
+        }
+    }
 
     for (const metric of metrics) {
+        const apiNames = Array.isArray(metric.apiName) ? metric.apiName : [metric.apiName];
 
-        if (metric.paramType === 'hourly') {
-            groups.hourly.add(metric.apiName);
+        for (const name of apiNames) {
+            
+            if (metric.paramType === 'hourly') {
+                groups.hourly.add(name);
+            } 
+            else if (metric.paramType === 'daily') {
+                groups.daily.add(name);
+            } 
+            else if (metric.paramType === 'derived') {
+                groups.hourly.add(name);
+            } 
+            else if (metric.paramType === 'derived_pressure') {
+                
+                // (z.B. 'cloud_cover' - ist speziell, da es kein Druckstufen-Parameter ist)
+                if (name === 'cloud_cover') {
+                    groups.hourly.add(name);
+                    continue; // Gehe zum nächsten apiName (z.B. 'relative_humidity')
+                }
 
-        } else if (metric.paramType === 'daily') {
-            groups.daily.add(metric.apiName);
+                // (z.B. 'relative_humidity')
+                const requestedLevels = metric.pressureLevels || [];
 
-        } else if (metric.paramType === 'derived') {
-            // NEU: Füge alle Abhängigkeiten zur 'hourly'-Liste hinzu
-            if (Array.isArray(metric.apiName)) {
-                metric.apiName.forEach(dep => groups.hourly.add(dep));
+                requestedLevels.forEach(level => {
+                    // Füge das Level *nur* hinzu, wenn wir im "auto"-Modus sind
+                    // ODER wenn das Modell dieses Level explizit erlaubt
+                    if (!allowedLevels || allowedLevels.has(level)) {
+                        // Baue den String, den die API will (z.B. "relative_humidity_900hPa")
+                        groups.hourly.add(`${name}_${level}hPa`);
+                    }
+                });
             }
         }
     }
 
     return {
-        hourly: Array.from(groups.hourly).join(','),
-        daily: Array.from(groups.daily).join(',')
+        hourly: Array.from(groups.hourly).join(','), // Enthält jetzt "param_900hPa" etc.
+        daily: Array.from(groups.daily).join(','),
+        pressure: '' // WICHTIG: Immer leer zurückgeben!
     };
 };
