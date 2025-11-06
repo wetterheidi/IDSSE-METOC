@@ -137,6 +137,12 @@ async function handleManualCheck(profileData) {
 
     await clearAllManualOverrides();
     
+    // 1. Lade die Regeln des angeklickten Profils in die Sidebar-Inputs
+    ui.applyRulesToInputs(profileData.rules, profileData.name);
+    
+    // 2. Öffne das Sidebar-Panel, damit der Nutzer die Regeln sieht
+    ui.openProfileEditorAccordion();
+    
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
 

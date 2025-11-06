@@ -74,7 +74,7 @@ export const initUI = (handlers) => {
 
     // NEU: Regel-Inputs dynamisch generieren
     generateDynamicRuleInputs();
-    
+
     // Die alten uiElements.ruleInputs und uiElements.unitSpans werden NICHT MEHR benötigt,
     // da die Funktionen (z.B. getRulesFromInputs) jetzt dynamisch auf das DOM zugreifen.
 
@@ -220,7 +220,7 @@ export const initUI = (handlers) => {
 // --- 3. UI-Update-Funktionen (von main.js aufgerufen) ---
 
 // Footer-Resize-Logik (Unverändert)
-export function initResizeHandle() { 
+export function initResizeHandle() {
     const handle = document.getElementById('footer-resize-handle');
     const pageContainer = document.querySelector('.page-container');
     const minFooterHeight = 100;
@@ -279,19 +279,19 @@ export const displayAutoWarnings = (alarmResults) => {
         for (const metric of Object.values(METRICS_CONFIG)) {
             const ruleName = metric.ruleName;
             const summaryKey = metric.summaryKey;
-            
+
             // Prüfen, ob die Regel im Profil (r) aktiv ist UND ob ein Summary (s) dafür existiert
             if (r[ruleName] !== null && r[ruleName] !== undefined && s[summaryKey]) {
-                
+
                 const blendedStatus = createBlendedStatus(s, summaryKey);
                 // Prüfen, ob für diese Metrik ein Alarm/Warnung vorliegt
                 if (Object.values(blendedStatus).some(status => status !== 'ok' && status !== 'no-data')) {
-                    
+
                     // Verwende den Formatter aus der Config
                     const { value, unit } = metric.formatter(s[summaryKey].value, p);
                     const { value: limit } = metric.formatter(r[ruleName], p);
                     const range = getAlarmTimeRange(blendedStatus);
-                    
+
                     html += `<span style="color: ${metric.chartColor};">&#9658; ${metric.displayName} (Limit: ${limit}${unit}): ${range}</span><br>`;
                 }
             }
@@ -358,11 +358,11 @@ export const displayManualWarning = (profile, summary) => {
         // --- NEUE DYNAMISCHE SCHLEIFE ---
         // Einzel-Parameter (nutzt die globale, override-fähige buildRow)
         for (const metric of Object.values(METRICS_CONFIG)) {
-             const ruleName = metric.ruleName;
-             // Zeile nur bauen, wenn Regel im Profil aktiv ist
-             if (rules[ruleName] !== null && rules[ruleName] !== undefined) {
-                 tableHtml += buildRow(metric.displayName, summary[metric.summaryKey].hourlyStatus, hours, metric.summaryKey);
-             }
+            const ruleName = metric.ruleName;
+            // Zeile nur bauen, wenn Regel im Profil aktiv ist
+            if (rules[ruleName] !== null && rules[ruleName] !== undefined) {
+                tableHtml += buildRow(metric.displayName, summary[metric.summaryKey].hourlyStatus, hours, metric.summaryKey);
+            }
         }
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
@@ -396,9 +396,9 @@ export const displayProfileList = (profiles, handlers) => {
         const testButton = document.createElement('button');
         testButton.textContent = 'Prüfen & Laden';
         testButton.className = 'check-profile-button';
-        
+
         // ALT: testButton.style.marginLeft = '10px'; (Wird jetzt von CSS gehandhabt)
-        
+
         testButton.onclick = async () => {
             setProfileButtonsDisabled(true);
             const profileData = {
@@ -414,16 +414,16 @@ export const displayProfileList = (profiles, handlers) => {
 
         // "Löschen"-Button (als Icon)
         const deleteButton = document.createElement('button');
-        
+
         // ALT: deleteButton.textContent = 'Löschen';
         deleteButton.innerHTML = '&#128465;'; // NEU: Unicode Papierkorb-Symbol
-        
+
         // ALT: deleteButton.style.marginLeft = '5px';
         // ALT: deleteButton.style.color = 'red';
         deleteButton.className = 'delete-profile-button'; // NEU: Styling über CSS
-        
+
         deleteButton.title = `Profil '${profile.name}' löschen`; // NEU: Tooltip
-        
+
         deleteButton.onclick = () => {
             handlers.onDelete(profile);
         };
@@ -431,7 +431,7 @@ export const displayProfileList = (profiles, handlers) => {
 
         // NEU: Den Button-Container zur li hinzufügen
         li.appendChild(buttonContainer);
-        
+
         uiElements.profileList.appendChild(li);
     });
 };
@@ -452,14 +452,15 @@ export const displayTemplateList = (templates) => {
 };
 
 /**
- * Füllt die Input-Felder basierend auf einer Vorlage.
- * NEU: Dynamisch.
+ * NEU: Füllt die Eingabefelder (Regeln, Name, Modus)
+ * basierend auf einem übergebenen Regel-Objekt.
+ * @param {object} rules - Das 'rules'-Objekt (aus Profil oder Vorlage)
+ * @param {string | null} profileName - Der Name des Profils (oder null, wenn Vorlage)
  */
-export const applyTemplateToInputs = (template) => {
-    if (!template) return;
-    const rules = template.rules;
+export const applyRulesToInputs = (rules, profileName) => {
+    if (!rules) return;
 
-    // Setze die Input-Werte dynamisch
+    // 1. Setze die Input-Werte dynamisch
     for (const metric of Object.values(METRICS_CONFIG)) {
         const element = document.getElementById(metric.uiInputId);
         if (element) {
@@ -469,15 +470,41 @@ export const applyTemplateToInputs = (template) => {
         }
     }
 
-    // Setze den Radio-Button
+    // 2. Setze den Einheiten-Radio-Button
     if (rules.unitMode === 'aviation') {
         uiElements.unitModeAviation.checked = true;
     } else {
         uiElements.unitModeMetric.checked = true;
     }
 
-    uiElements.templateNameInput.value = template.name;
+    // 3. NEU: Setze den Logik-Modus Radio-Button
+    const logicModeRadio = document.querySelector(`input[name="logicMode"][value="${rules.logicMode || 'OR'}"]`);
+    if (logicModeRadio) {
+        logicModeRadio.checked = true;
+    }
+
+    // 4. Setze den Profil-Namen (wenn übergeben)
+    if (uiElements.profileNameInput && profileName) {
+        uiElements.profileNameInput.value = profileName;
+    }
+
+    // 5. Labels (m/ft, etc.) aktualisieren
     updateRuleInputLabels();
+};
+
+
+/**
+ * Füllt die Input-Felder basierend auf einer Vorlage.
+ * (Angepasst: Nutzt jetzt die neue Helfer-Funktion)
+ */
+export const applyTemplateToInputs = (template) => {
+    if (!template) return;
+
+    // 1. Lade die Regeln (setzt *nicht* den Profil-Namen)
+    applyRulesToInputs(template.rules, null);
+
+    // 2. Setze den *Vorlagen*-Namen
+    uiElements.templateNameInput.value = template.name;
 };
 
 // --- 4. Interne Hilfsfunktionen ---
@@ -582,9 +609,9 @@ function updateRuleInputLabels() {
     for (const metric of Object.values(METRICS_CONFIG)) {
         const span = document.getElementById(metric.uiUnitId);
         if (!span) continue;
-        
+
         let unit = 'N/A'; // Fallback
-        
+
         // Leite die Einheit aus der zugewiesenen Formatierungsfunktion ab
         if (metric.formatter === formatter.formatSpeed) {
             unit = unitConfig.speed;
@@ -598,7 +625,7 @@ function updateRuleInputLabels() {
             // (Vorbereitung für den finalen Umbau)
             unit = 'mm';
         }
-        
+
         span.textContent = unit;
     }
 }
@@ -750,9 +777,6 @@ function getBlendedStatus(summary, summaryKey, hour) { // <-- Nimmt jetzt summar
     return manual || autoStatus;
 }
 
-
-// src/ui.js
-
 /**
  * Berechnet den finalen, kombinierten Status (Auto + Overrides) für jede Stunde.
  * NEU: Berücksichtigt den "AND" / "OR" Logik-Modus aus dem Profil.
@@ -760,7 +784,7 @@ function getBlendedStatus(summary, summaryKey, hour) { // <-- Nimmt jetzt summar
 function getBlendedCombinedStatus(profile, summary) {
     const rules = profile.rules;
     const combinedStatus = {};
-    
+
     // NEU: Logik-Modus aus dem Profil holen, Standard ist 'OR'
     const logicMode = rules.logicMode || 'OR';
 
@@ -796,7 +820,7 @@ function getBlendedCombinedStatus(profile, summary) {
             // --- "UND"-Logik ---
             // Alarm, wenn ALLE 'alarm' oder 'warn' sind
             // OK, wenn auch nur EINE 'ok' ist
-            
+
             if (activeRuleStati.some(s => s === 'ok')) {
                 combinedStatusForHour = 'ok';
             } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
@@ -804,7 +828,7 @@ function getBlendedCombinedStatus(profile, summary) {
                 combinedStatusForHour = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
             } else {
                 // Mix aus 'no-data', 'warn', 'alarm', aber nicht alle sind ausgelöst
-                combinedStatusForHour = 'no-data'; 
+                combinedStatusForHour = 'no-data';
             }
 
         } else {
@@ -815,9 +839,37 @@ function getBlendedCombinedStatus(profile, summary) {
             });
             combinedStatusForHour = orStatus;
         }
-        
+
         combinedStatus[hour] = combinedStatusForHour;
     });
 
     return combinedStatus;
 }
+
+/**
+ * NEU: Exportierte Funktion, um das "Profil erstellen"-Panel
+ * per Code zu öffnen.
+ */
+export const openProfileEditorAccordion = () => {
+    // Finde den richtigen Header (Annahme: Es ist der 2. Header, Index 1)
+    // 0 = 🚨 Automatischer Alarm-Monitor
+    // 1 = ✍️ Profil erstellen / Regeln definieren
+    if (!uiElements.accordions || uiElements.accordions.length < 2) return;
+    
+    const editorHeader = uiElements.accordions[1]; 
+    if (editorHeader) {
+        const panel = editorHeader.nextElementSibling;
+        const isOpen = panel.classList.contains('open');
+
+        if (!isOpen) {
+            // Alle anderen schließen
+            uiElements.accordions.forEach(otherAcc => {
+                otherAcc.classList.remove('active');
+                otherAcc.nextElementSibling.classList.remove('open');
+            });
+            // Dieses öffnen
+            editorHeader.classList.add('active');
+            panel.classList.add('open');
+        }
+    }
+};

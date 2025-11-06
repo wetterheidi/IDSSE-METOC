@@ -205,10 +205,10 @@ function checkThresholds_Sampling(profile, locationsData) {
     timeStamps.forEach((hour, h) => {
         metrics.forEach(metric => {
             const key = metric.summaryKey;
-            
-            const initialStatus = 'no-data'; 
-            
-            summary[key].hourlyStatus[hour] = initialStatus; 
+
+            const initialStatus = 'no-data';
+
+            summary[key].hourlyStatus[hour] = initialStatus;
             summary[key].hourlyAlarms[hour] = new Set(); // <-- HIER IST DIE INITIALISIERUNG
 
             summary[key].hourlyData[h] = (metric.checkType === 'min') ? Infinity : -Infinity;
@@ -283,10 +283,11 @@ function checkThresholds_Sampling(profile, locationsData) {
                     value = hasData ? hourly[apiName][h] : null;
 
                 } else if (metric.paramType === 'daily') {
-                    // NEUES VERHALTEN: Nimm den vorgeladenen Tageswert
                     value = dailyValueCache[summaryKey];
-                    // Dieser EINE Wert (z.B. 10°C Max-Temp) wird jetzt für
-                    // die Stunde 'h' verwendet und mit dem Limit verglichen.
+
+                } else if (metric.paramType === 'derived') {
+                    // --- HIER IST DIE ÄNDERUNG ---
+                    value = calculateDerivedValue(metric.summaryKey, hourly, h);
                 }
 
                 // Graph-Aggregation (Aggregiere nur gültige Zahlen)
@@ -358,7 +359,7 @@ function checkThresholds_Sampling(profile, locationsData) {
 
     // --- Kombi-Zeile berechnen (Vollständig) ---
     timeStamps.forEach((hour, h) => {
-        
+
         const logicMode = rules.logicMode || 'OR';
         let combinedStatus = 'no-data';
         let activeRuleStati = []; // Speichert den Status aller *aktiven* Regeln
@@ -367,18 +368,18 @@ function checkThresholds_Sampling(profile, locationsData) {
         metrics.forEach(metric => {
             const ruleName = metric.ruleName;
             const limit = rules[ruleName];
-            
+
             // (Wir prüfen auf null/undefined, damit Regeln mit Limit 0 funktionieren)
             if (limit !== null && limit !== undefined) {
-                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
+                activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
-             // Sonderfall: minTemp (wo 0 gültig ist)
+            // Sonderfall: minTemp (wo 0 gültig ist)
             else if (ruleName === 'minTemp' && limit !== null) {
-                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
+                activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
-             // Sonderfall: maxPrecipProb (wo 0 gültig ist)
+            // Sonderfall: maxPrecipProb (wo 0 gültig ist)
             else if (ruleName === 'maxPrecipProb' && limit !== null) {
-                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
+                activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
         });
 
@@ -394,7 +395,7 @@ function checkThresholds_Sampling(profile, locationsData) {
             } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
                 combinedStatus = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
             } else {
-                combinedStatus = 'no-data'; 
+                combinedStatus = 'no-data';
             }
 
         } else {
@@ -420,4 +421,48 @@ function checkThresholds_Sampling(profile, locationsData) {
     });
 
     return summary;
+}
+
+/**
+ * Berechnet abgeleitete Metriken.
+ * @param {string} summaryKey - Der Schlüssel der Metrik (z.B. 'windchill')
+ * @param {object} hourly - Das Open-Meteo 'hourly'-Objekt für EINEN Punkt
+ * @param {int} h - Der Index der Stunde (0-23)
+ * @returns {number | null} - Der berechnete Wert oder null
+ */
+function calculateDerivedValue(summaryKey, hourly, h) {
+    try {
+        switch (summaryKey) {
+            case 'windchill':
+                const temp = hourly['temperature_2m'][h];
+                const wind = hourly['wind_speed_10m'][h]; // Muss in m/s umgerechnet werden, API liefert km/h
+
+                // Wenn Daten fehlen, keine Berechnung
+                if (temp === null || wind === null) return null;
+
+                // (Beispiel-Formel für Windchill, API braucht m/s)
+                const wind_ms = wind / 3.6;
+                if (temp > 10 || wind_ms < 1.3) {
+                    return temp; // Windchill wird nur bei Kälte/Wind berechnet
+                }
+
+                // (Vereinfachte Windchill-Formel, nur als Beispiel)
+                const v_pow = Math.pow(wind_ms, 0.16);
+                const chill = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * temp * v_pow;
+
+                return chill;
+
+            // --- Hier könnten andere 'case' für zukünftige Metriken hin ---
+            // case 'luftdichte':
+            //    const pressure = hourly['surface_pressure'][h];
+            //    ...
+            //    return density;
+
+            default:
+                return null;
+        }
+    } catch (e) {
+        console.error(`Fehler bei Berechnung von '${summaryKey}':`, e);
+        return null;
+    }
 }

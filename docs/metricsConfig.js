@@ -144,6 +144,7 @@ export const METRICS_CONFIG = {
         // --- API & Daten ---
         apiName: 'snow_depth',              // API-Name
         ruleName: 'maxSnowDepth',           // Regel-Name (für DB)
+        paramType: 'hourly',
         summaryKey: 'snow',                 // Interner Schlüssel
         checkType: 'max',                   // Wir prüfen auf eine maximale Höhe
         warnFactorKey: 'snow',              // Verwendet den neuen Key aus config.js
@@ -163,7 +164,31 @@ export const METRICS_CONFIG = {
             type: 'line',
             fill: true // Als Flächendiagramm (wie Wolken)
         }
-    }
+    },
+    'windchill': {
+        // --- API & Daten ---
+        apiName: ['temperature_2m', 'wind_speed_10m'], // <-- Array der Abhängigkeiten
+        paramType: 'derived',               // <-- NEUER TYP
+        ruleName: 'minWindchill',           // Regel-Name (für DB)
+        summaryKey: 'windchill',            // Interner Schlüssel
+        checkType: 'min',                   // Wir prüfen auf eine minimale Temp.
+        warnFactorKey: 'temp',              // Wir nutzen den 2°C Warnfaktor
+
+        // --- UI & Anzeige ---
+        uiInputId: 'minWindchill',          // ID für das <input>
+        uiUnitId: 'unit-minWindchill',      // ID für das <span> (Einheit)
+        displayName: 'Gefühlte Temp.',      // Name für UI-Label
+        formatter: formatter.formatTemp,    // Nutzt den normalen Temperatur-Formatter
+        chartColor: '#9b59b6', // Ein Violett
+
+        // --- Chart-Infos ---
+        chartOptions: {
+            axisId: 'yTemp',                // Nutzt dieselbe Y-Achse wie Temp.
+            axisPosition: 'left',
+            axisLabel: 'Temp.',
+            type: 'line'
+        }
+    },
 
 };
 
@@ -175,22 +200,22 @@ export const getApiParams = (metrics) => {
     const groups = {
         hourly: new Set(),
         daily: new Set(),
-        // (Vorbereitung für die Zukunft)
-        // pressure_850: new Set(), 
     };
 
     for (const metric of metrics) {
-        const apiName = metric.apiName;
 
         if (metric.paramType === 'hourly') {
-            groups.hourly.add(apiName);
+            groups.hourly.add(metric.apiName);
+
         } else if (metric.paramType === 'daily') {
-            groups.daily.add(apiName);
+            groups.daily.add(metric.apiName);
+
+        } else if (metric.paramType === 'derived') {
+            // NEU: Füge alle Abhängigkeiten zur 'hourly'-Liste hinzu
+            if (Array.isArray(metric.apiName)) {
+                metric.apiName.forEach(dep => groups.hourly.add(dep));
+            }
         }
-        // Zukünftige Erweiterung:
-        // else if (metric.paramType === 'pressure' && metric.pressureLevel === 850) {
-        //    groups.pressure_850.add(apiName);
-        // }
     }
 
     return {
