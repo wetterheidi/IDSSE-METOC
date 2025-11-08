@@ -13,7 +13,7 @@ import { STANDARD_PRESSURE_LEVELS } from './utils.js'; // <-- NEU
  * @param {int} h - Der Index der Stunde (0-23)
  * @returns {number | null} - Der berechnete Wert oder null
  */
-function calculateDerivedValue(metric, hourly, h) { // <-- Akzeptiert 'metric'
+function calculateDerivedValue(metric, hourly, h, elevation) {
     const summaryKey = metric.summaryKey; // Holen wir uns aus dem Objekt
     try {
         switch (summaryKey) {
@@ -27,49 +27,76 @@ function calculateDerivedValue(metric, hourly, h) { // <-- Akzeptiert 'metric'
                 const v_pow = Math.pow(wind_kmh, 0.16);
                 const chill = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * temp * v_pow;
                 return chill;
-
-            case 'cloudBase':
-                if (!metric.pressureLevels) {
-                    console.error("Config für cloudBase/pressureLevels fehlt!");
+            case 'cloudBase': { // (in einen Block geklammert)
+                
+                // 1. Analysiere die Schwellenwerte für diesen Punkt
+                const cloudThresholds = analyzeCloudLayers(hourly);
+                if (!cloudThresholds || !cloudThresholds[h]) {
+                    console.warn(`[CloudBase] Analyse der Schwellenwerte für Stunde ${h} fehlgeschlagen.`);
                     return null;
                 }
+                const currentThresholds = cloudThresholds[h];
 
-                const cc = hourly['cloud_cover'] ? hourly['cloud_cover'][h] : null;
-                // (Wir ignorieren 'cc' für den Test)
+                // 2. Hole Basis-Daten
+                const baseHeight_m = elevation; 
+                if (baseHeight_m === null || baseHeight_m === undefined) {
+                    console.warn(`[CloudBase] 'elevation' fehlt. Nutze 0m als Fallback.`);
+                }
+                
+                const heightUnit = 'm'; 
+                const interpStep = 50; 
 
-                let verticalProfile = [];
+                // --- START DEBUG LOG (Stunde 0) ---
+                if (h === 0) {
+                    console.groupCollapsed(`[CloudBase DEBUG] Stunde 0 (BaseHeight: ${baseHeight_m}m)`);
+                    console.log("1. Dynamische Schwellen (von analyzeCloudLayers):", currentThresholds);
+                }
+                // --- ENDE DEBUG LOG ---
 
-                // ALT: for (const level of metricConfig.pressureLevels) {
-                // NEU:
-                for (const level of metric.pressureLevels) {
-                    const rh_key = `relative_humidity_${level}hPa`;
-                    const h_key = `geopotential_height_${level}hPa`;
+                // 3. Interpolieren
+                const interpolatedData = interpolateWeatherData(
+                    hourly, 
+                    h, 
+                    interpStep, 
+                    baseHeight_m || 0, // (Nutze 0 als Fallback)
+                    heightUnit,
+                    currentThresholds
+                );
+                
+                // --- START DEBUG LOG (Stunde 0) ---
+                if (h === 0) {
+                    console.log("2. Interpolierte Daten (von interpolateWeatherData):", interpolatedData);
+                }
+                // --- ENDE DEBUG LOG ---
 
-                    if (hourly[rh_key] && hourly[h_key]) {
-                        const rh = hourly[rh_key][h];
-                        const height = hourly[h_key][h];
+                // 4. Wolkenschichten finden
+                const layers = findCloudLayers(interpolatedData);
 
-                        if (rh !== null && height !== null) {
-                            verticalProfile.push({ level: level, rh: rh, height: height });
-                        }
+                // --- START DEBUG LOG (Stunde 0) ---
+                if (h === 0) {
+                    console.log("3. Gefundene Schichten (von findCloudLayers):", layers);
+                }
+                // --- ENDE DEBUG LOG ---
+
+                // 5. Niedrigste Basis zurückgeben
+                if (layers.length > 0) {
+                    const base_in_meters = layers[0].base;
+                    if(h === 0) { 
+                        console.log(`4. Ergebnis: Niedrigste Basis = ${base_in_meters}m`);
+                        console.groupEnd(); // Schließt die Log-Gruppe
                     }
+                    return base_in_meters;
                 }
-
-                if (verticalProfile.length < 1) {
-                    console.warn(`[Test CloudBase] Konnte keine gültigen Druckstufen-Daten für Stunde ${h} finden.`);
-                    return null;
+                
+                // --- START DEBUG LOG (Stunde 0) ---
+                if (h === 0) {
+                    console.log("4. Ergebnis: Keine Schichten gefunden (SKC).");
+                    console.groupEnd(); // Schließt die Log-Gruppe
                 }
-
-                verticalProfile.sort((a, b) => b.level - a.level); // 1000hPa zuerst
-
-                const testValue = verticalProfile[0].height;
-
-                if (h === 0) { // Logge nur einmal pro Prüfung
-                    console.log(`[Test CloudBase] Rohdaten (Stunde 0): ${verticalProfile[0].level}hPa -> ${testValue}m`);
-                }
-
-                return testValue;
-
+                // --- ENDE DEBUG LOG ---
+                
+                return null; // Keine Wolkenschicht gefunden (SKC)
+            }
             default:
                 return null;
         }
@@ -317,6 +344,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
         const hourly = locationData.hourly;
         const daily = locationData.daily; // <-- NEU
         const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
+        const elevation = locationData.elevation;
 
         // --- NEU: Tages-Werte "vorladen" ---
         // Wir müssen den richtigen Tages-Index finden (0 = heute, 1 = morgen)
@@ -369,7 +397,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                     // apiName ist ein Array (wird in der Funktion verwendet)
                     value = calculateDerivedValue(metric.summaryKey, hourly, h);
                 } else if (metric.paramType === 'derived_pressure') {
-                    value = calculateDerivedValue(metric, hourly, h); // Übergebe die *gesamte* Metrik-Config
+                    value = calculateDerivedValue(metric, hourly, h, elevation);
                 }
                 // --- 2. GRAPH-AGGREGATION ---
                 if (value !== null && isFinite(value)) {
@@ -419,7 +447,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                     }
 
                 } else {
-                    if (ruleName === 'minTemp') {
+                    if (ruleName === 'minTemp' || ruleName === 'minCloudBase') {
                         currentStatus = 'ok';
                     } else {
                         currentStatus = 'no-data';
@@ -551,7 +579,8 @@ export function analyzeCloudLayers(weatherData) {
  * @param {number} sliderIndex - Der Index des Zeitschiebereglers.
  * @returns {object[]} Ein Array von Objekten mit den Wetterdaten für jede Höhenstufe.
  */
-function interpolateWeatherData(weatherData, sliderIndex, interpStep, baseHeight, heightUnit, currentThresholds) {    if (!weatherData || !weatherData.time || sliderIndex >= weatherData.time.length) {
+function interpolateWeatherData(weatherData, sliderIndex, interpStep, baseHeight, heightUnit, currentThresholds) {
+    if (!weatherData || !weatherData.time || sliderIndex >= weatherData.time.length) {
         console.warn('No weather data provided or index out of bounds for interpolation');
         return [];
     }
@@ -683,8 +712,7 @@ function interpolateWeatherData(weatherData, sliderIndex, interpStep, baseHeight
         }
 
         if (heightAGLInMeters === 0) {
-            const lowestAltitudePressureLevel = Math.max(...validPressureLevels);
-            const surfaceCloudCover = weatherData[`cloud_cover_${lowestAltitudePressureLevel}hPa`]?.[sliderIndex] ?? 'N/A';
+            const surfaceCloudCover = weatherData['cloud_cover']?.[sliderIndex] ?? 0; // Fallback auf 0
 
             dataPoint = {
                 height: heightASLInMeters,
@@ -742,11 +770,6 @@ function interpolateWeatherData(weatherData, sliderIndex, interpStep, baseHeight
                     rhThreshold = currentThresholds.high;
                 }
             }
-
-            // Finale Entscheidung: Wolke ja oder nein?
-            if (rh < rhThreshold) {
-                dataPoint.cc = 0; // Setze Bedeckung auf 0, wenn die Luft zu trocken ist.
-            }
         }
 
         dataPoint.displayHeight = height;
@@ -779,8 +802,10 @@ function findCloudLayers(interpolatedData) {
         if (cc <= 87) return 'BKN';
         return 'OVC';
     };
-
-    for (const point of interpolatedData) {
+    
+    // NEU: Überspringe den ersten Punkt (Index 0 = Bodenniveau)
+    for (const point of interpolatedData.slice(1)) {
+        
         const currentCategory = getMetarCategory(point.cc);
         if (!currentCategory || reportedLayers.length >= 3) {
             continue;

@@ -174,26 +174,37 @@ export const METRICS_CONFIG = {
         }
     },
 
-'cloudBase': {        
+    'cloudBase': {
         // 1. Die Basis-Variablen, die wir brauchen
-        apiName: [ 
-            'cloud_cover', 
-            'relative_humidity', 
-            'geopotential_height'
+        apiName: [
+            // 1. Parameter für Druckstufen
+            'relative_humidity',
+            'geopotential_height',
+            'temperature',              // Benötigt von analyzeCloudLayers
+            'cloud_cover',              // Benötigt von interpolateWeatherData
+            'wind_speed',               // Benötigt von interpolateWeatherData
+            'wind_direction',           // Benötigt von interpolateWeatherData
+
+            // 2. Oberflächen-Parameter (Abhängigkeiten)
+            'surface_pressure',         // Benötigt von interpolateWeatherData
+            'wind_speed_10m',           // Benötigt von interpolateWeatherData
+            'wind_direction_10m',       // Benötigt von interpolateWeatherData
+            'temperature_2m',           // Benötigt von analyzeCloudLayers
+            'relative_humidity_2m'      // Benötigt von interpolateWeatherData
         ],
-        
+
         // 2. Die Druckstufen, die wir *anfragen* wollen
         //    (Wir fragen einfach alle an, die API liefert, was sie hat)
-        pressureLevels: [ 
-            1000, 975, 950, 925, 900, 875, 850, 825, 800, 
+        pressureLevels: [
+            1000, 975, 950, 925, 900, 875, 850, 825, 800,
             775, 750, 725, 700, 650, 600, 550, 500, 475, 450,
             425, 400, 375, 350, 325, 300, 275, 250, 200
         ],
 
         paramType: 'derived_pressure', // <-- KORREKTER TYP
-        ruleName: 'minCloudBase', 
-        summaryKey: 'cloudBase',  
-        checkType: 'min',         
+        ruleName: 'minCloudBase',
+        summaryKey: 'cloudBase',
+        checkType: 'min',
 
         // --- UI & Anzeige ---
         uiUnitId: 'unit-minCloudBase',
@@ -220,13 +231,16 @@ export const getApiParams = (metrics, modelInfo) => {
         daily: new Set(),
         pressure: new Set() // (Wird nicht mehr an die URL übergeben, aber intern genutzt)
     };
-    
+
     // 1. Bestimme die erlaubten Levels für das aktuelle Modell
     let allowedLevels = null;
     if (modelInfo && modelInfo.apiName !== 'auto') {
+        // Finde die Meta-ID (z.B. 'dwd_icon')
         const modelMetaId = WEATHER_MODELS.API_MAP[modelInfo.apiName];
+        // Finde die Eigenschaften (z.B. die erlaubten Levels)
         const modelProps = modelMetaId ? WEATHER_MODELS.MODEL_PROPERTIES[modelMetaId] : null;
-        if (modelProps) {
+
+        if (modelProps && modelProps.pressureLevels) {
             allowedLevels = new Set(modelProps.pressureLevels);
         }
     }
@@ -235,35 +249,40 @@ export const getApiParams = (metrics, modelInfo) => {
         const apiNames = Array.isArray(metric.apiName) ? metric.apiName : [metric.apiName];
 
         for (const name of apiNames) {
-            
+
             if (metric.paramType === 'hourly') {
                 groups.hourly.add(name);
-            } 
+            }
             else if (metric.paramType === 'daily') {
                 groups.daily.add(name);
-            } 
+            }
             else if (metric.paramType === 'derived') {
                 groups.hourly.add(name);
-            } 
+            }
             else if (metric.paramType === 'derived_pressure') {
                 
-                // (z.B. 'cloud_cover' - ist speziell, da es kein Druckstufen-Parameter ist)
-                if (name === 'cloud_cover') {
-                    groups.hourly.add(name);
-                    continue; // Gehe zum nächsten apiName (z.B. 'relative_humidity')
-                }
-
-                // (z.B. 'relative_humidity')
                 const requestedLevels = metric.pressureLevels || [];
+                
+                // --- KORREKTUR: Behandle Oberflächen- und Druckstufen-Parameter ---
+                // (Der 'name' ist z.B. 'temperature_2m' oder 'relative_humidity')
+                
+                if (name.includes('_2m') || name.includes('_10m') || name.includes('surface_')) {
+                    // Dies ist ein Oberflächen-Parameter, füge ihn 1:1 hinzu
+                    groups.hourly.add(name);
+                } else {
+                    // Dies ist ein Druckstufen-Parameter (z.B. 'relative_humidity' ODER 'cloud_cover')
+                    
+                    // Finde die gültigen Levels
+                    const validLevels = (modelInfo && modelInfo.apiName !== 'auto' && allowedLevels) 
+                        ? requestedLevels.filter(lvl => allowedLevels.has(lvl))
+                        : requestedLevels; // Im "auto" Modus, frage alle an
 
-                requestedLevels.forEach(level => {
-                    // Füge das Level *nur* hinzu, wenn wir im "auto"-Modus sind
-                    // ODER wenn das Modell dieses Level explizit erlaubt
-                    if (!allowedLevels || allowedLevels.has(level)) {
-                        // Baue den String, den die API will (z.B. "relative_humidity_900hPa")
+                    validLevels.forEach(level => {
+                        // Baue den String (z.B. "relative_humidity_900hPa" oder "cloud_cover_900hPa")
                         groups.hourly.add(`${name}_${level}hPa`);
-                    }
-                });
+                    });
+                }
+                // --- ENDE KORREKTUR ---
             }
         }
     }
