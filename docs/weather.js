@@ -3,6 +3,8 @@ import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
 // Importiere das NEUE "Gehirn"
 import { METRICS_CONFIG, getApiParams } from './metricsConfig.js';
 import { WEATHER_MODELS } from './config.js';
+import * as Utils from './utils.js'; // <-- NEU
+import { STANDARD_PRESSURE_LEVELS } from './utils.js'; // <-- NEU
 
 /**
  * Berechnet abgeleitete Metriken.
@@ -259,7 +261,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     return finalSummary;
 }
 
-
+// --- Cloud Layer Funktionen ---
 /**
  * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
  * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
@@ -487,3 +489,337 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
     return summary;
 }
 
+/**
+ * Analysiert die Roh-Wetterdaten, um für jeden Zeitpunkt dynamische
+ * Feuchtigkeitsschwellenwerte für die Wolkenerkennung zu bestimmen.
+ * @param {object} weatherData - Das 'hourly' Objekt aus der API-Antwort.
+ * @returns {object[]} Ein Array von Schwellenwert-Objekten für jeden Zeitpunkt.
+ */
+export function analyzeCloudLayers(weatherData) {
+    if (!weatherData || !weatherData.time || weatherData.time.length === 0) {
+        return [];
+    }
+
+    const thresholds = [];
+    const pressureLevels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200];
+
+    for (let i = 0; i < weatherData.time.length; i++) {
+        const groundTemp = weatherData.temperature_2m[i];
+        let stockwerke = { low: [], mid: [], high: [] };
+
+        // 1. Druckstufen den Stockwerken zuordnen
+        for (const p of pressureLevels) {
+            const temp = weatherData[`temperature_${p}hPa`]?.[i];
+            const height = weatherData[`geopotential_height_${p}hPa`]?.[i];
+
+            if (temp === null || height === null || temp === undefined || height === undefined) continue;
+
+            if (groundTemp <= 0) { // Sonderfall Kaltluft
+                if (height <= 2000) stockwerke.low.push(p);
+                else if (temp > -30) stockwerke.mid.push(p);
+                else stockwerke.high.push(p);
+            } else { // Normalfall
+                if (temp > 0) stockwerke.low.push(p);
+                else if (temp > -30) stockwerke.mid.push(p);
+                else stockwerke.high.push(p);
+            }
+        }
+
+        // 2. maxCC und RH-Schwelle pro Stockwerk berechnen
+        const getThreshold = (pLevels, defaultHigh, defaultLow) => {
+            if (pLevels.length === 0) return 95; // Konservativer Fallback
+            const maxCC = Math.max(...pLevels.map(p => weatherData[`cloud_cover_${p}hPa`]?.[i] || 0));
+            return maxCC > 50 ? defaultHigh : defaultLow;
+        };
+
+        thresholds.push({
+            low: getThreshold(stockwerke.low, 90, 75),
+            mid: getThreshold(stockwerke.mid, 85, 70),
+            high: 65 // Fester Wert für hohe Wolken
+        });
+    }
+
+    console.log('[WeatherManager] Cloud layer thresholds analyzed for all timesteps.');
+    return thresholds;
+}
+
+/**
+ * Interpoliert die Roh-Wetterdaten für einen bestimmten Zeitpunkt, um eine detaillierte,
+ * höhenabhängige Wettertabelle zu erstellen.
+ * HINWEIS (ToDo): Diese Funktion ist stark vom globalen `AppState` abhängig. Zukünftig
+ * könnte sie so umgestaltet werden, dass sie alle benötigten Daten als Parameter erhält.
+ * @param {number} sliderIndex - Der Index des Zeitschiebereglers.
+ * @returns {object[]} Ein Array von Objekten mit den Wetterdaten für jede Höhenstufe.
+ */
+function interpolateWeatherData(weatherData, sliderIndex, interpStep, baseHeight, heightUnit, currentThresholds) {    if (!weatherData || !weatherData.time || sliderIndex >= weatherData.time.length) {
+        console.warn('No weather data provided or index out of bounds for interpolation');
+        return [];
+    }
+
+    const allPressureLevels = STANDARD_PRESSURE_LEVELS;
+
+    // Filtere Drucklevel nur, wenn ALLE benötigten Daten für diesen Level vorhanden sind.
+    const validPressureLevels = allPressureLevels.filter(hPa => {
+        const height = weatherData[`geopotential_height_${hPa}hPa`]?.[sliderIndex];
+        // temp und rh werden für die Validierung nicht mehr benötigt
+        const speed = weatherData[`wind_speed_${hPa}hPa`]?.[sliderIndex];
+        const dir = weatherData[`wind_direction_${hPa}hPa`]?.[sliderIndex];
+
+        // Es werden nur noch die für die Sprungberechnung kritischen Werte geprüft.
+        return [height, speed, dir].every(val => val != null);
+    });
+
+    const ccPressureLevels = allPressureLevels.filter(hPa => {
+        const height = weatherData[`geopotential_height_${hPa}hPa`]?.[sliderIndex];
+        const cc = weatherData[`cloud_cover_${hPa}hPa`]?.[sliderIndex];
+        return height != null && cc != null;
+    });
+
+    const ccHeightData = ccPressureLevels.map(hPa => weatherData[`geopotential_height_${hPa}hPa`][sliderIndex]);
+    const ccValueData = ccPressureLevels.map(hPa => weatherData[`cloud_cover_${hPa}hPa`][sliderIndex]);
+
+    if (validPressureLevels.length < 2) {
+        console.warn('Insufficient valid pressure level data for interpolation:', validPressureLevels);
+        return [];
+    }
+
+    // Sammle die Daten der validen Drucklevel
+    let heightData = validPressureLevels.map(hPa => weatherData[`geopotential_height_${hPa}hPa`][sliderIndex]);
+    let tempData = validPressureLevels.map(hPa => weatherData[`temperature_${hPa}hPa`][sliderIndex]);
+    let rhData = validPressureLevels.map(hPa => weatherData[`relative_humidity_${hPa}hPa`][sliderIndex]);
+    let ccData = validPressureLevels.map(hPa => weatherData[`cloud_cover_${hPa}hPa`]?.[sliderIndex]);
+    let spdData = validPressureLevels.map(hPa => weatherData[`wind_speed_${hPa}hPa`][sliderIndex]);
+    let dirData = validPressureLevels.map(hPa => weatherData[`wind_direction_${hPa}hPa`][sliderIndex]);
+
+    // Füge Bodendaten hinzu, um die Interpolation nach unten hin zu verbessern
+    const surfacePressure = weatherData.surface_pressure[sliderIndex];
+    if (surfacePressure === null || surfacePressure === undefined) {
+        console.warn('Surface pressure missing');
+        return [];
+    }
+
+    let uComponents = spdData.map((spd, i) => -spd * Math.sin(dirData[i] * Math.PI / 180));
+    let vComponents = spdData.map((spd, i) => -spd * Math.cos(dirData[i] * Math.PI / 180));
+    const lowestPressureLevel = Math.max(...validPressureLevels);
+    const hLowest = weatherData[`geopotential_height_${lowestPressureLevel}hPa`][sliderIndex];
+    if (surfacePressure > lowestPressureLevel && Number.isFinite(hLowest)) {
+        const stepsBetween = Math.floor((hLowest - baseHeight) / interpStep);
+
+        const uSurface = -weatherData.wind_speed_10m[sliderIndex] * Math.sin(weatherData.wind_direction_10m[sliderIndex] * Math.PI / 180);
+        const vSurface = -weatherData.wind_speed_10m[sliderIndex] * Math.cos(weatherData.wind_direction_10m[sliderIndex] * Math.PI / 180);
+        const uLowest = uComponents[validPressureLevels.indexOf(lowestPressureLevel)];
+        const vLowest = vComponents[validPressureLevels.indexOf(lowestPressureLevel)];
+
+        for (let i = stepsBetween - 1; i >= 1; i--) {
+            const h = baseHeight + i * interpStep;
+            if (h >= hLowest) continue;
+            const fraction = (h - baseHeight) / (hLowest - baseHeight);
+            const logPSurface = Math.log(surfacePressure);
+            const logPLowest = Math.log(lowestPressureLevel);
+            const logP = logPSurface + fraction * (logPLowest - logPSurface);
+            const p = Math.exp(logP);
+
+            const logHeight = Math.log(h - baseHeight + 1);
+            const logH0 = Math.log(1);
+            const logH1 = Math.log(hLowest - baseHeight);
+            const u = Utils.linearInterpolate([logH0, logH1], [uSurface, uLowest], logHeight);
+            const v = Utils.linearInterpolate([logH0, logH1], [vSurface, vLowest], logHeight);
+            const spd = Utils.windSpeed(u, v);
+            const dir = Utils.windDirection(u, v);
+
+            heightData.unshift(h);
+            validPressureLevels.unshift(p);
+            tempData.unshift(Utils.linearInterpolate([baseHeight, hLowest], [weatherData.temperature_2m[sliderIndex], weatherData[`temperature_${lowestPressureLevel}hPa`][sliderIndex]], h));
+            rhData.unshift(Utils.linearInterpolate([baseHeight, hLowest], [weatherData.relative_humidity_2m[sliderIndex], weatherData[`relative_humidity_${lowestPressureLevel}hPa`][sliderIndex]], h));
+            spdData.unshift(spd);
+            dirData.unshift(dir);
+            uComponents.unshift(u);
+            vComponents.unshift(v);
+        }
+
+        heightData.unshift(baseHeight);
+        validPressureLevels.unshift(surfacePressure);
+        tempData.unshift(weatherData.temperature_2m[sliderIndex]);
+        rhData.unshift(weatherData.relative_humidity_2m[sliderIndex]);
+        spdData.unshift(weatherData.wind_speed_10m[sliderIndex]);
+        dirData.unshift(weatherData.wind_direction_10m[sliderIndex]);
+        uComponents.unshift(uSurface);
+        vComponents.unshift(vSurface);
+    }
+
+    const minPressureIndex = validPressureLevels.indexOf(Math.min(...validPressureLevels));
+    const maxHeightASL = heightData[minPressureIndex];
+    const maxHeightAGL = maxHeightASL - baseHeight;
+    if (maxHeightAGL <= 0 || isNaN(maxHeightAGL)) {
+        console.warn('Invalid max height at lowest pressure level:', { maxHeightASL, baseHeight, minPressure: validPressureLevels[minPressureIndex] });
+        return [];
+    }
+
+    const maxHeightInUnit = heightUnit === 'ft' ? maxHeightAGL * 3.28084 : maxHeightAGL;
+    const steps = Math.floor(maxHeightInUnit / interpStep);
+    const heightsInUnit = Array.from({ length: steps + 1 }, (_, i) => i * interpStep);
+
+    const interpolatedData = [];
+    heightsInUnit.forEach(height => {
+        const heightAGLInMeters = heightUnit === 'ft' ? height / 3.28084 : height;
+        const heightASLInMeters = baseHeight + heightAGLInMeters;
+
+        let dataPoint;
+
+        let cc = 0; // Standardwert ist 0
+        if (ccHeightData.length > 0) {
+            // Finde den Index des nächstgelegenen realen Datenpunktes
+            let closestPressureLevelIndex = 0;
+            let minDistance = Infinity;
+
+            ccHeightData.forEach((h, index) => {
+                const distance = Math.abs(heightASLInMeters - h);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestPressureLevelIndex = index;
+                }
+            });
+            cc = ccValueData[closestPressureLevelIndex]; // Weise den Wert zu
+        }
+
+        if (heightAGLInMeters === 0) {
+            const lowestAltitudePressureLevel = Math.max(...validPressureLevels);
+            const surfaceCloudCover = weatherData[`cloud_cover_${lowestAltitudePressureLevel}hPa`]?.[sliderIndex] ?? 'N/A';
+
+            dataPoint = {
+                height: heightASLInMeters,
+                pressure: surfacePressure,
+                temp: weatherData.temperature_2m[sliderIndex],
+                rh: weatherData.relative_humidity_2m[sliderIndex],
+                cc: surfaceCloudCover,
+                spd: weatherData.wind_speed_10m[sliderIndex],
+                dir: weatherData.wind_direction_10m[sliderIndex],
+                dew: Utils.calculateDewpoint(weatherData.temperature_2m[sliderIndex], weatherData.relative_humidity_2m[sliderIndex])
+            };
+        } else {
+            const pressure = Utils.interpolatePressure(heightASLInMeters, validPressureLevels, heightData);
+            const windComponents = Utils.interpolateWindAtAltitude(heightASLInMeters, validPressureLevels, heightData, uComponents, vComponents);
+            const spd = Utils.windSpeed(windComponents.u, windComponents.v);
+            const dir = Utils.windDirection(windComponents.u, windComponents.v);
+            const temp = Utils.linearInterpolate(heightData, tempData, heightASLInMeters);
+            const rh = Utils.linearInterpolate(heightData, rhData, heightASLInMeters);
+            const dew = Utils.calculateDewpoint(temp, rh);
+
+            dataPoint = {
+                height: heightASLInMeters,
+                pressure: Number.isFinite(pressure) ? Number(pressure.toFixed(1)) : 'N/A',
+                temp: Number.isFinite(temp) ? Number(temp.toFixed(1)) : 'N/A',
+                rh: Number.isFinite(rh) ? Number(rh.toFixed(0)) : 'N/A',
+                cc: Number.isFinite(cc) ? Number(cc.toFixed(0)) : 'N/A',
+                spd: Number.isFinite(spd) ? Number(spd.toFixed(1)) : 'N/A',
+                dir: Number.isFinite(dir) ? Number(dir.toFixed(0)) : 'N/A',
+                dew: Number.isFinite(dew) ? Number(dew.toFixed(1)) : 'N/A'
+            };
+        }
+
+        if (Number.isFinite(dataPoint.temp) && Number.isFinite(dataPoint.rh)) {
+            const temp = dataPoint.temp;
+            const rh = dataPoint.rh;
+            let rhThreshold;
+
+            const groundTemp = weatherData.temperature_2m[sliderIndex];
+
+            // Bestimme das Stockwerk und den passenden Schwellenwert
+            if (groundTemp <= 0) { // Sonderfall Kaltluft
+                if (heightAGLInMeters <= 2000) {
+                    rhThreshold = currentThresholds.low;
+                } else if (temp > -30) {
+                    rhThreshold = currentThresholds.mid;
+                } else {
+                    rhThreshold = currentThresholds.high;
+                }
+            } else { // Normalfall
+                if (temp > 0) {
+                    rhThreshold = currentThresholds.low;
+                } else if (temp > -30) {
+                    rhThreshold = currentThresholds.mid;
+                } else {
+                    rhThreshold = currentThresholds.high;
+                }
+            }
+
+            // Finale Entscheidung: Wolke ja oder nein?
+            if (rh < rhThreshold) {
+                dataPoint.cc = 0; // Setze Bedeckung auf 0, wenn die Luft zu trocken ist.
+            }
+        }
+
+        dataPoint.displayHeight = height;
+        interpolatedData.push(dataPoint);
+    });
+
+    console.log(`[DEBUG] interpolateWeatherData finished. baseHeight: ${baseHeight}, Returning ${interpolatedData.length} data points. First point:`, interpolatedData[0]);
+    return interpolatedData;
+}
+
+/**
+     * NEUE FUNKTION: Findet signifikante Wolkenschichten und gibt sie als strukturiertes Array zurück.
+     * @param {object[]} interpolatedData - Die interpolierten Wetterdaten.
+     * @returns {Array<{cover: string, base: number}>} Ein Array von Wolkenschicht-Objekten.
+     * @private
+     */
+function findCloudLayers(interpolatedData) {
+    if (!interpolatedData || interpolatedData.length === 0) {
+        return [];
+    }
+
+    const reportedLayers = [];
+    let lastReportedCategory = null;
+    const categoryOrder = { 'FEW': 1, 'SCT': 2, 'BKN': 3, 'OVC': 4 };
+
+    const getMetarCategory = (cc) => {
+        if (cc <= 5) return null;
+        if (cc <= 25) return 'FEW';
+        if (cc <= 50) return 'SCT';
+        if (cc <= 87) return 'BKN';
+        return 'OVC';
+    };
+
+    for (const point of interpolatedData) {
+        const currentCategory = getMetarCategory(point.cc);
+        if (!currentCategory || reportedLayers.length >= 3) {
+            continue;
+        }
+
+        const isNewLayer = !lastReportedCategory || categoryOrder[currentCategory] > categoryOrder[lastReportedCategory];
+        if (isNewLayer) {
+            reportedLayers.push({
+                cover: currentCategory,
+                base: point.displayHeight // Höhe AGL in Metern
+            });
+            lastReportedCategory = currentCategory;
+        }
+    }
+    return reportedLayers;
+}
+
+/**
+ * KORRIGIERTE FUNKTION: Nutzt nun findCloudLayers und kümmert sich nur noch um die Formatierung.
+ */
+function getCloudLayersForMetar(interpolatedData, heightUnit) {
+    const layers = Utils.findCloudLayers(interpolatedData);
+
+    if (layers.length === 0) {
+        return 'SKC'; // Sky Clear
+    }
+
+    return layers.map(layer => {
+        const heightInMeters = layer.base;
+        let formattedHeight;
+        let displayUnit;
+
+        if (heightUnit === 'ft') {
+            formattedHeight = Math.round(Utils.convertHeight(heightInMeters, 'ft') / 100) * 100;
+            displayUnit = 'ft';
+        } else {
+            formattedHeight = Math.round(heightInMeters / 50) * 50;
+            displayUnit = 'm';
+        }
+        return `${layer.cover} ${formattedHeight}${displayUnit}`;
+    }).join(', ');
+}
