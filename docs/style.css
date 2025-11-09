@@ -227,15 +227,6 @@ body {
 }
 
 /* --- STYLING DER INHALTE (Buttons, Inputs etc.) --- */
-#autoWarnDashboard {
-    background: #fff;
-    border: 1px solid #ccc;
-    padding: 5px;
-    min-height: 100px;
-    max-height: 600px;
-    overflow-y: auto;
-    margin-top: 10px;
-}
 
 #profileList {
     padding-left: 15px;

@@ -286,7 +286,7 @@ export function initResizeHandle() {
  * NEU: Dynamisch basierend auf METRICS_CONFIG
  */
 export const displayAutoWarnings = (alarmResults) => {
-    const monitor = uiElements.autoWarnDashboard;
+    const monitor = uiElements.manualWarningMonitor;
     monitor.innerHTML = '';
 
     if (alarmResults.length === 0) {
@@ -562,8 +562,16 @@ export const applyTemplateToInputs = (template) => {
 
 // --- 4. Interne Hilfsfunktionen ---
 
-export const setDashboardMessage = (html) => { uiElements.autoWarnDashboard.innerHTML = html; };
-export const setManualMonitorMessage = (html) => { uiElements.manualWarningMonitor.innerHTML = html; };
+export const setDashboardMessage = (html) => {
+    if (uiElements.manualWarningMonitor) {
+        uiElements.manualWarningMonitor.innerHTML = html;
+    }
+};
+export const setManualMonitorMessage = (html) => {
+    if (uiElements.manualWarningMonitor) {
+        uiElements.manualWarningMonitor.innerHTML = html;
+    }
+};
 
 export const enableSaveButton = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
