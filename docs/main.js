@@ -158,6 +158,8 @@ async function handleManualCheck(profileData) {
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
 
+    map.drawProfileBoundary(profileData.geojson);
+
     // --- DEBUG 2 ---
     console.log("--- DEBUG [main.js]: Rufe getGridPoints auf...");
 
@@ -226,21 +228,38 @@ async function handleSaveProfile(profileData) {
         return;
     }
 
+    // Das GeoJSON-Objekt zwischenspeichern, bevor wir 'currentLayer' löschen
+    const geojson = currentLayer.toGeoJSON();
+
     const profile = {
         name: profileData.name,
         rules: profileData.rules,
-        geojsonString: JSON.stringify(currentLayer.toGeoJSON())
+        geojsonString: JSON.stringify(geojson)
     };
 
     await db.saveProfile(profile);
+    // 'profile' hat jetzt eine 'id' von der Datenbank
 
-    // Aufräumen
+    // Aufräumen (wie bisher)
     currentLayer.pm.disable();
     currentLayer = null;
     ui.resetProfileInputs();
 
-    // UI aktualisieren
+    // UI aktualisieren (wie bisher)
     await updateProfileList();
+
+    // --- NEU: Profil sofort laden und prüfen ---
+    // Wir bauen das Objekt, das handleManualCheck erwartet:
+    const newProfileData = {
+        id: profile.id, // Die neue ID aus der DB
+        name: profile.name,
+        rules: profile.rules,
+        geojson: geojson // Das geparste GeoJSON-Objekt
+    };
+
+    // Rufen wir die Funktion auf, die auch "Prüfen & Laden" nutzt
+    await handleManualCheck(newProfileData);
+    // --- ENDE NEU ---
 }
 
 /**

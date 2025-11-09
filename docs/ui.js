@@ -701,12 +701,12 @@ function setProfileButtonsDisabled(disabled) {
 }
 
 /**
- * Aktualisiert die Labels (km/h, kts, m, ft) neben den Input-Feldern.
+ * Aktualisiert die Labels (km/h, kt, m, ft) neben den Input-Feldern.
  * NEU: Dynamisch, liest den Formatter-Typ aus der Config.
  */
 function updateRuleInputLabels() {
     const mode = uiElements.unitModeAviation.checked ? 'aviation' : 'metric';
-    const unitConfig = UNITS[mode]; // { speed: 'kts', altitude: 'ft', temp: '°C' }
+    const unitConfig = UNITS[mode]; // { speed: 'kt', altitude: 'ft', temp: '°C' }
 
     for (const metric of Object.values(METRICS_CONFIG)) {
         const span = document.getElementById(metric.uiUnitId);

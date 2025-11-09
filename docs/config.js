@@ -22,7 +22,7 @@ export const UNITS = {
         temp: '°C'
     },
     aviation: {
-        speed: 'kts',
+        speed: 'kt',
         altitude: 'ft',
         temp: '°C' // (Wir bleiben bei °C, °F ist zu viel Aufwand)
     }

@@ -7,6 +7,7 @@ import { METRICS_CONFIG } from './metricsConfig.js';
 let map;
 let warningAreasLayer;
 let samplePointsLayer;
+let profileBoundaryLayer;
 
 /**
  * Initialisiert die Leaflet-Karte und die Layer-Gruppen.
@@ -20,6 +21,7 @@ export const initMap = () => {
     }).addTo(map);
     warningAreasLayer = L.layerGroup().addTo(map);
     samplePointsLayer = L.layerGroup().addTo(map);
+    profileBoundaryLayer = L.layerGroup().addTo(map);
     return map;
 };
 
@@ -196,6 +198,26 @@ export const drawSamplePoints = (gridPoints, geojson) => {
 export const clearMapLayers = () => {
     warningAreasLayer.clearLayers();
     samplePointsLayer.clearLayers();
+    profileBoundaryLayer.clearLayers();
+};
+
+/**
+ * NEU: Zeichnet den blauen Umriss des geladenen Profils
+ */
+export const drawProfileBoundary = (geojson) => {
+    if (!geojson) return;
+
+    const style = {
+        color: '#007bff', // Ein klares Blau
+        weight: 3,
+        opacity: 0.9,
+        fill: false, // Wichtig: Keine Füllung
+        dashArray: '5, 5' // Gestrichelt
+    };
+
+    L.geoJSON(geojson, { style: style })
+        .bindTooltip("Aktives Profil-Gebiet")
+        .addTo(profileBoundaryLayer);
 };
 
 /**
