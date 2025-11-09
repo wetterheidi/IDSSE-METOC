@@ -212,9 +212,9 @@ export const METRICS_CONFIG = {
         formatter: formatter.formatAltitude,
         chartColor: '#1abc9c',
         chartOptions: {
-            axisId: 'yAltitude',
+            axisId: 'yCloudBase',
             axisPosition: 'right',
-            axisLabel: 'Sicht/Wolkenbasis',
+            axisLabel: 'Wolkenbasis',
             type: 'line'
         }
     }
