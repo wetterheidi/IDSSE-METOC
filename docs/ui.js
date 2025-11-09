@@ -436,9 +436,9 @@ export const displayProfileList = (profiles, handlers) => {
         const buttonContainer = document.createElement('div');
         buttonContainer.className = 'profile-button-container';
 
-        // "Prüfen & Laden"-Button
+        // "Laden & Prüfen"-Button
         const testButton = document.createElement('button');
-        testButton.textContent = 'Prüfen & Laden';
+        testButton.textContent = 'Laden & Prüfen';
         testButton.className = 'check-profile-button';
 
         // ALT: testButton.style.marginLeft = '10px'; (Wird jetzt von CSS gehandhabt)
@@ -689,14 +689,14 @@ const handleFileImport = (event, onImportCallback) => {
 };
 
 /**
- * Sperrt oder entsperrt alle "Prüfen & Laden"-Knöpfe.
+ * Sperrt oder entsperrt alle "Laden & Prüfen"-Knöpfe.
  * (Unverändert)
  */
 function setProfileButtonsDisabled(disabled) {
     const buttons = document.querySelectorAll('.check-profile-button');
     buttons.forEach(button => {
         button.disabled = disabled;
-        button.textContent = disabled ? 'Prüfe...' : 'Prüfen & Laden';
+        button.textContent = disabled ? 'Prüfe...' : 'Laden & Prüfen';
     });
 }
 

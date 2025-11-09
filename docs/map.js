@@ -14,7 +14,7 @@ let profileBoundaryLayer;
  * (Unverändert)
  */
 export const initMap = () => {
-    map = L.map('map').setView([52.52, 13.405], 6);
+    map = L.map('map').setView([48.711, 8.78], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         minZoom: 3,
@@ -35,7 +35,7 @@ export const initGeoman = (leafletMap) => {
         drawPolyline: false,
         drawPolygon: true,
         drawRectangle: true,
-        drawCircle: true,
+        drawCircle: false,
         drawMarker: false,
         drawCircleMarker: false,
         drawText: false,

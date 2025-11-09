@@ -64,7 +64,7 @@ async function handleModelChange(apiName, runTimeISO) {
     if (currentManualProfile) {
         console.log(`[Modell-Wechsel] Führe manuelle Prüfung für "${currentManualProfile.name}" mit neuem Modell aus.`);
 
-        // Wir rufen dieselbe Funktion auf, die auch der "Prüfen & Laden"-Button nutzt.
+        // Wir rufen dieselbe Funktion auf, die auch der "Laden & Prüfen"-Button nutzt.
         // 'await' stellt sicher, dass alles der Reihe nach passiert.
         await handleManualCheck(currentManualProfile);
     }
@@ -257,7 +257,7 @@ async function handleSaveProfile(profileData) {
         geojson: geojson // Das geparste GeoJSON-Objekt
     };
 
-    // Rufen wir die Funktion auf, die auch "Prüfen & Laden" nutzt
+    // Rufen wir die Funktion auf, die auch "Laden & Prüfen" nutzt
     await handleManualCheck(newProfileData);
     // --- ENDE NEU ---
 }
