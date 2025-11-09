@@ -10,30 +10,93 @@ export const STANDARD_PRESSURE_LEVELS = [
 ];
 
 /**
- * Führt eine lineare Interpolation durch.
- * @param {number[]} x - Array mit zwei X-Werten (z.B. [Höhe1, Höhe2])
- * @param {number[]} y - Array mit zwei Y-Werten (z.B. [Temp1, Temp2])
- * @param {number} x_target - Der X-Wert, für den der Y-Wert gefunden werden soll
- * @returns {number} Der interpolierte Y-Wert
+ * Führt eine lineare Interpolation für einen gegebenen Wert durch.
+ * ROBUSTE VERSION: Diese Funktion kann sowohl mit aufsteigenden (z.B. Höhe)
+ * als auch mit absteigenden (z.B. Druck) Vektoren umgehen.
+ *
+ * @param {number[]} xVector - Der Vektor der Stützstellen (Höhen oder Drücke).
+ * @param {number[]} yVector - Der Vektor der zu interpolierenden Werte (Temps, etc.).
+ * @param {number} xValue - Der Wert, für den ein y-Wert gefunden werden soll.
+ * @returns {number|null} Der interpolierte y-Wert oder null bei Fehler/Extrapolation.
  */
-export function linearInterpolate(x, y, x_target) {
-    const [x0, x1] = x;
-    const [y0, y1] = y;
-    return y0 + (y1 - y0) * (x_target - x0) / (x1 - x0);
+export function linearInterpolate(xVector, yVector, xValue) {
+    if (!xVector?.length || !yVector?.length || xVector.length !== yVector.length) {
+        return null;
+    }
+
+    const n = xVector.length;
+    if (n < 2) return null; // Brauchen mindestens zwei Punkte
+
+    // Prüfe die Sortierrichtung (aufsteigend oder absteigend)
+    const isAscending = xVector[1] > xVector[0];
+
+    // 1. Prüfe auf Extrapolation (außerhalb der Grenzen)
+    if (isAscending) {
+        if (xValue < xVector[0] || xValue > xVector[n - 1]) {
+            return null; // Keine Extrapolation
+        }
+    } else {
+        if (xValue > xVector[0] || xValue < xVector[n - 1]) {
+            return null; // Keine Extrapolation
+        }
+    }
+
+    // 2. Finde das korrekte Segment
+    try {
+        if (isAscending) {
+            // Behandle aufsteigende Vektoren (z.B. Höhe)
+            for (let i = 1; i < n; i++) {
+                if (xValue <= xVector[i]) {
+                    // xValue liegt zwischen [i-1] und [i]
+                    const [x0, x1] = [xVector[i - 1], xVector[i]];
+                    const [y0, y1] = [yVector[i - 1], yVector[i]];
+                    return y0 + (y1 - y0) * (xValue - x0) / (x1 - x0);
+                }
+            }
+        } else { // Absteigend
+            // Behandle absteigende Vektoren (z.B. Druck)
+            for (let i = 1; i < n; i++) {
+                if (xValue >= xVector[i]) {
+                    // xValue liegt zwischen [i-1] und [i]
+                    const [x0, x1] = [xVector[i - 1], xVector[i]];
+                    const [y0, y1] = [yVector[i - 1], yVector[i]];
+                    return y0 + (y1 - y0) * (xValue - x0) / (x1 - x0);
+                }
+            }
+        }
+    } catch (error) {
+        return null; // Fehler bei der Berechnung (z.B. Division durch 0)
+    }
+
+    // Fallback, wenn xValue exakt dem letzten Punkt entspricht (bei aufsteigend)
+    if (isAscending && xValue === xVector[n - 1]) return yVector[n - 1];
+    // Fallback, wenn xValue exakt dem letzten Punkt entspricht (bei absteigend)
+    if (!isAscending && xValue === xVector[n - 1]) return yVector[n - 1];
+
+    return null; // Sollte nicht erreicht werden
 }
 
 /**
- * Berechnet den Taupunkt aus Temperatur und Relativer Feuchte.
- * @param {number} temp_c - Temperatur in Celsius
- * @param {number} rh_perc - Relative Feuchte in %
- * @returns {number} Taupunkt in Celsius
+ * Berechnet den Taupunkt anhand von Temperatur und relativer Luftfeuchtigkeit.
+ * @param {number} temp - Die Temperatur in Grad Celsius.
+ * @param {number} rh - Die relative Luftfeuchtigkeit in Prozent (z.B. 75).
+ * @returns {number|null} Der berechnete Taupunkt in Grad Celsius.
  */
-export function calculateDewpoint(temp_c, rh_perc) {
-    if (temp_c === null || rh_perc === null) return null;
-    const a = 17.625;
-    const b = 243.04;
-    const alpha = Math.log(rh_perc / 100) + (a * temp_c) / (b + temp_c);
-    return (b * alpha) / (a - alpha);
+export function calculateDewpoint(temp, rh) {
+    const aLiquid = 17.27;
+    const bLiquid = 237.7;
+    const aIce = 21.87;
+    const bIce = 265.5;
+
+    let alpha, dewpoint;
+    if (temp >= 0) {
+        alpha = (aLiquid * temp) / (bLiquid + temp) + Math.log(rh / 100);
+        dewpoint = (bLiquid * alpha) / (aLiquid - alpha);
+    } else {
+        alpha = (aIce * temp) / (bIce + temp) + Math.log(rh / 100);
+        dewpoint = (bIce * alpha) / (aIce - alpha);
+    }
+    return isNaN(dewpoint) ? null : dewpoint; // Return number or null if invalid
 }
 
 /**
@@ -44,7 +107,8 @@ export function calculateDewpoint(temp_c, rh_perc) {
  */
 export function windDirection(u, v) {
     if (u === null || v === null) return null;
-    return (270 - Math.atan2(v, u) * (180 / Math.PI)) % 360;
+    let dir = Math.atan2(-u, -v) * 180 / Math.PI;
+    return (dir + 360) % 360;
 }
 
 /**
@@ -59,34 +123,61 @@ export function windSpeed(u, v) {
 }
 
 /**
- * Interpoliert den Druck für eine gegebene Höhe (vereinfacht).
- * Geht davon aus, dass 'levels' (hPa) und 'heights' (Meter) sortiert sind.
+ * Interpoliert den Luftdruck für eine gegebene Höhe basierend auf bekannten Druckleveln.
+ * (Deine erprobte Version)
+ * @param {number} height - Die Zielhöhe in Metern.
+ * @param {number[]} pressureLevels - Array der bekannten Druckstufen in hPa.
+ * @param {number[]} heights - Array der zugehörigen Höhen in Metern.
+ * @returns {number|string} Der interpolierte Druck in hPa oder 'N/A'.
  */
-export function interpolatePressure(targetHeight, levels, heights) {
-    for (let i = 0; i < heights.length - 1; i++) {
-        if (targetHeight >= heights[i] && targetHeight <= heights[i+1]) {
-            return linearInterpolate([heights[i], heights[i+1]], [levels[i], levels[i+1]], targetHeight);
-        }
+export function interpolatePressure(height, pressureLevels, heights) {
+    if (!pressureLevels || !heights || pressureLevels.length !== heights.length || pressureLevels.length < 2) {
+        return null;
     }
-    // Fallback: Wenn außerhalb des Bereichs, gib den nächsten Wert zurück
-    return targetHeight < heights[0] ? levels[0] : levels[levels.length - 1];
-}
 
-/**
- * Interpoliert die U/V-Windkomponenten für eine gegebene Höhe.
- */
-export function interpolateWindAtAltitude(targetHeight, levels, heights, uComps, vComps) {
-    let u = null, v = null;
+    // Assume pressures and heights are already paired correctly (heights ascending, pressures ascending)
+    if (height < heights[0] || height > heights[heights.length - 1]) {
+        return null; // No extrapolation
+    }
+
     for (let i = 0; i < heights.length - 1; i++) {
-        if (targetHeight >= heights[i] && targetHeight <= heights[i+1]) {
-            u = linearInterpolate([heights[i], heights[i+1]], [uComps[i], uComps[i+1]], targetHeight);
-            v = linearInterpolate([heights[i], heights[i+1]], [vComps[i], vComps[i+1]], targetHeight);
-            break;
+        if (height >= heights[i] && height <= heights[i + 1]) {
+            const h0 = heights[i], h1 = heights[i + 1];
+            const p0 = pressureLevels[i], p1 = pressureLevels[i + 1];
+            return p0 + (p1 - p0) * (height - h0) / (h1 - h0);
         }
     }
-    if (u === null) { // Fallback
-        u = targetHeight < heights[0] ? uComps[0] : uComps[uComps.length - 1];
-        v = targetHeight < heights[0] ? vComps[0] : vComps[vComps.length - 1];
+    return null;
+};
+
+export function interpolateWindAtAltitude(z, pressureLevels, heights, uComponents, vComponents) {
+    if (pressureLevels.length != heights.length || pressureLevels.length != uComponents.length || pressureLevels.length != vComponents.length) {
+        return { u: null, v: null };
     }
-    return { u, v };
+
+    // Annahme: pressureLevels ist absteigend (1000, 950...).
+    // Annahme: heights ist aufsteigend (500, 1000...).
+    
+    const log_pressureLevels = pressureLevels.map(p => Math.log(p));
+    // Erstelle eine aufsteigende Version von log(P) für die H-vs-log(P)-Interpolation
+    const log_pressureLevels_reversed = [...log_pressureLevels].reverse();
+
+    // Schritt 1: Finde p(z) durch Interpolation von Höhe (aufsteigend) gegen log(P) (aufsteigend)
+    const log_p_z = linearInterpolate(heights, log_pressureLevels_reversed, z);
+    
+    if (log_p_z === null) {
+        return { u: null, v: null };
+    }
+    const p_z = Math.exp(log_p_z);
+
+    // Schritt 2: Interpoliere u und v bei p(z) mittels log(p) (absteigend)
+    const u_z = linearInterpolate(log_pressureLevels, uComponents, Math.log(p_z));
+    const v_z = linearInterpolate(log_pressureLevels, vComponents, Math.log(p_z));
+    
+    if (u_z === null || v_z === null) {
+        return { u: null, v: null };
+    }
+
+    // KORREKTUR: Der Tippfehler ist hier behoben.
+    return { u: u_z, v: v_z };
 }

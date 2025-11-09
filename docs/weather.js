@@ -28,7 +28,7 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
                 const chill = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * temp * v_pow;
                 return chill;
             case 'cloudBase': { // (in einen Block geklammert)
-                
+
                 // 1. Analysiere die Schwellenwerte für diesen Punkt
                 const cloudThresholds = analyzeCloudLayers(hourly);
                 if (!cloudThresholds || !cloudThresholds[h]) {
@@ -38,13 +38,13 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
                 const currentThresholds = cloudThresholds[h];
 
                 // 2. Hole Basis-Daten
-                const baseHeight_m = elevation; 
+                const baseHeight_m = elevation;
                 if (baseHeight_m === null || baseHeight_m === undefined) {
                     console.warn(`[CloudBase] 'elevation' fehlt. Nutze 0m als Fallback.`);
                 }
-                
-                const heightUnit = 'm'; 
-                const interpStep = 50; 
+
+                const heightUnit = 'm';
+                const interpStep = 50;
 
                 // --- START DEBUG LOG (Stunde 0) ---
                 if (h === 0) {
@@ -55,14 +55,14 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
 
                 // 3. Interpolieren
                 const interpolatedData = interpolateWeatherData(
-                    hourly, 
-                    h, 
-                    interpStep, 
+                    hourly,
+                    h,
+                    interpStep,
                     baseHeight_m || 0, // (Nutze 0 als Fallback)
                     heightUnit,
                     currentThresholds
                 );
-                
+
                 // --- START DEBUG LOG (Stunde 0) ---
                 if (h === 0) {
                     console.log("2. Interpolierte Daten (von interpolateWeatherData):", interpolatedData);
@@ -81,20 +81,20 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
                 // 5. Niedrigste Basis zurückgeben
                 if (layers.length > 0) {
                     const base_in_meters = layers[0].base;
-                    if(h === 0) { 
+                    if (h === 0) {
                         console.log(`4. Ergebnis: Niedrigste Basis = ${base_in_meters}m`);
                         console.groupEnd(); // Schließt die Log-Gruppe
                     }
                     return base_in_meters;
                 }
-                
+
                 // --- START DEBUG LOG (Stunde 0) ---
                 if (h === 0) {
                     console.log("4. Ergebnis: Keine Schichten gefunden (SKC).");
                     console.groupEnd(); // Schließt die Log-Gruppe
                 }
                 // --- ENDE DEBUG LOG ---
-                
+
                 return null; // Keine Wolkenschicht gefunden (SKC)
             }
             default:
@@ -604,8 +604,13 @@ function interpolateWeatherData(weatherData, sliderIndex, interpStep, baseHeight
         return height != null && cc != null;
     });
 
+    console.log(`[interpolateWeatherData] DEBUG: Gefilterte Wolken-Levels (ccPressureLevels):`, ccPressureLevels);
+
     const ccHeightData = ccPressureLevels.map(hPa => weatherData[`geopotential_height_${hPa}hPa`][sliderIndex]);
     const ccValueData = ccPressureLevels.map(hPa => weatherData[`cloud_cover_${hPa}hPa`][sliderIndex]);
+
+    console.log(`[interpolateWeatherData] DEBUG: Zugehörige Höhen (ccHeightData):`, ccHeightData);
+    console.log(`[interpolateWeatherData] DEBUG: Zugehörige Wolkenwerte (ccValueData):`, ccValueData);
 
     if (validPressureLevels.length < 2) {
         console.warn('Insufficient valid pressure level data for interpolation:', validPressureLevels);
@@ -796,23 +801,41 @@ function findCloudLayers(interpolatedData) {
     const categoryOrder = { 'FEW': 1, 'SCT': 2, 'BKN': 3, 'OVC': 4 };
 
     const getMetarCategory = (cc) => {
+        /* Alle Bedeckungsgrade
         if (cc <= 5) return null;
         if (cc <= 25) return 'FEW';
         if (cc <= 50) return 'SCT';
         if (cc <= 87) return 'BKN';
+        return 'OVC';*/
+
+        // Nur Ceiling: 
+        if (cc <= 50) return null; // Ignoriert SKC, FEW und SCT
+        if (cc <= 87) return 'BKN';
         return 'OVC';
     };
-    
+
     // NEU: Überspringe den ersten Punkt (Index 0 = Bodenniveau)
     for (const point of interpolatedData.slice(1)) {
-        
+
         const currentCategory = getMetarCategory(point.cc);
+
+        // --- NEUES DEBUG-LOG ---
+        if (point.cc > 5 && point.cc <= 50) { // Wir loggen Wolken, die wir jetzt ignorieren (FEW/SCT)
+            //console.log(`[findCloudLayers] IGNORIERT: Höhe ${point.displayHeight}m, Bedeckung: ${point.cc}% (FEW/SCT)`);
+        }
+        // --- ENDE DEBUG-LOG ---
+
         if (!currentCategory || reportedLayers.length >= 3) {
             continue;
         }
 
         const isNewLayer = !lastReportedCategory || categoryOrder[currentCategory] > categoryOrder[lastReportedCategory];
         if (isNewLayer) {
+
+            // --- NEUES DEBUG-LOG ---
+            console.log(`%c[findCloudLayers] GEFUNDEN: Höhe ${point.displayHeight}m, Bedeckung: ${point.cc}% (${currentCategory})`, "color: green; font-weight: bold;");
+            // --- ENDE DEBUG-LOG ---
+
             reportedLayers.push({
                 cover: currentCategory,
                 base: point.displayHeight // Höhe AGL in Metern

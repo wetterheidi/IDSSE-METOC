@@ -116,8 +116,8 @@ export const WEATHER_MODELS = {
         },
 
         // (Andere Modelle - wir weisen ihnen Standard-Level zu, bis wir es besser wissen)
-        'arome_france0025': { 
-            pressureLevels: [1000, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200]
+        'arome_france': { 
+            pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200]
         },
         'gem_hrdps_continental': { 
             pressureLevels: [1015, 1000, 985, 970, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200]
