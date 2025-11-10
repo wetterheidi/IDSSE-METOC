@@ -47,8 +47,8 @@ function generateDynamicRuleInputs() {
             <div class="rule-input-group">
                 <label>${metric.displayName}:</label>
                 <div class="rule-input-fields">
-                    <input type="number" id="${metric.ruleName}_alarm" placeholder="Rot (z.B. < 50)">
-                    <input type="number" id="${metric.ruleName}_warn" placeholder="Gelb (z.B. < 200)">
+                    <input type="number" id="${metric.ruleName}_alarm" placeholder="Alarmschwelle" style="padding: 5px; border: 2px solid var(--color-danger);">
+                    <input type="number" id="${metric.ruleName}_warn" placeholder="Warnschwelle" style="padding: 5px; border: 2px solid var(--color-warning);">
                     <span id="${metric.uiUnitId}">${initialUnit}</span>
                 </div>
             </div>
@@ -69,17 +69,18 @@ function generateDynamicRuleInputs() {
             }
 
             html += `
-                <div class.rule-input-group">
+                <div class="rule-input-group">
                     <label>${metric.displayName}:</label>
                     <div class="rule-input-fields">
-                        <select multiple id="${metric.ruleName}_alarm" size="6" style="width: 48%; height: 100px; padding: 5px; border: 2px solid var(--color-danger);">
-                            <option value="" disabled>-- ROTER ALARM --</option>
+                        <select multiple id="${metric.ruleName}_alarm" size="6" style="padding: 5px; border: 2px solid var(--color-danger);">
+                            <option value="" disabled>-- ALARM --</option>
                             ${optionsHtml}
                         </select>
-                        <select multiple id="${metric.ruleName}_warn" size="6" style="width: 48%; height: 100px; padding: 5px; border: 2px solid var(--color-warning);">
-                            <option value="" disabled>-- GELBE WARNUNG --</option>
+                        <select multiple id="${metric.ruleName}_warn" size="6" style="padding: 5px; border: 2px solid var(--color-warning);">
+                            <option value="" disabled>-- WARNUNG --</option>
                             ${optionsHtml}
                         </select>
+                        <span id="${metric.uiUnitId}">(WMO)</span>
                     </div>
                     <small style="font-size: 0.8em; color: #6c757d;">(Mehrfachauswahl mit Strg/Cmd + Klick)</small>
                 </div>
