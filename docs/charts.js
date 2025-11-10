@@ -73,10 +73,25 @@ export function updateWeatherChart(profile, summary) {
     const rules = profile.rules;
 
     // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
-    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
-        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
-        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
-    );
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(metric => {
+        const ruleName = metric.ruleName; // Helfer-Variable
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
+            const hasAlarm = rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined;
+            const hasWarn = rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined;
+            return hasAlarm || hasWarn;
+        }
+        else if (metric.checkType === 'code_match') {
+            // DIESER TEIL IST ENTSCHEIDEND:
+            const hasAlarm = rules[ruleName + '_alarm'] !== null &&
+                rules[ruleName + '_alarm'] !== undefined &&
+                rules[ruleName + '_alarm'].length > 0;
+            const hasWarn = rules[ruleName + '_warn'] !== null &&
+                rules[ruleName + '_warn'] !== undefined &&
+                rules[ruleName + '_warn'].length > 0;
+            return hasAlarm || hasWarn;
+        }
+        return false;
+    });
 
     if (activeMetrics.length === 0) {
         return; // Keine Regeln aktiv, nichts zu zeichnen
@@ -121,63 +136,103 @@ export function updateWeatherChart(profile, summary) {
         const summaryKey = metric.summaryKey;
         const opts = metric.chartOptions;
 
+        let isRuleActive = false;
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
+            isRuleActive = (rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
+                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined);
+        } else if (metric.checkType === 'code_match') {
+            const hasAlarm = rules[ruleName + '_alarm'] !== null &&
+                rules[ruleName + '_alarm'] !== undefined &&
+                rules[ruleName + '_alarm'].length > 0;
+            const hasWarn = rules[ruleName + '_warn'] !== null &&
+                rules[ruleName + '_warn'] !== undefined &&
+                rules[ruleName + '_warn'].length > 0;
+            isRuleActive = hasAlarm || hasWarn;
+        }
+
         // Nur fortfahren, wenn die Regel im Profil aktiv ist
-        if ((rules[ruleName + '_alarm'] === null || rules[ruleName + '_alarm'] === undefined) &&
-            (rules[ruleName + '_warn'] === null || rules[ruleName + '_warn'] === undefined)) {
+        if (!isRuleActive) {
             continue;
         }
 
-        // Formatter anwenden, um Daten und Einheiten zu erhalten
-        const formattedData = summary[summaryKey].hourlyData.map(val => metric.formatter(val, profile));
-        const data = formattedData.map(fd => {
-            return (fd.value === 'N/A') ? null : fd.value;
-        });
+        let data;
+        let unit;
+        const pointStyles = []; // Array für unsere Symbole
 
-        const unit = formattedData.length > 0 ? formattedData[0].unit : '';
-        const label = `${metric.displayName} (${unit})`;
+        if (summaryKey === 'sigWx') {
+            // Für sigWx: Daten sind die Roh-Codes, aber an y=90 positioniert
+            data = summary[summaryKey].hourlyData.map((code, index) => {
+                if (code === null || code === 0 || code === undefined) { // 0 ist 'NSW'
+                    pointStyles[index] = false; // Kein Symbol
+                    return null; // Kein Datenpunkt
+                }
 
-        console.log(`[charts.js DEBUG 1] Prüfe Metrik: '${metric.summaryKey}'`, {
-            label: label,
-            data: data // Zeigt uns, ob hier Text ('RA') oder Zahlen ('63') stehen
-        });
+                // Erstelle das Bild-Objekt
+                const img = new Image(20, 20); // Größe festlegen (z.B. 20x20)
 
-        // A. Datensatz erstellen
-        if (metric.summaryKey !== 'sigWx') {
-            console.log("SIGWX Test:", metric.summaryKey);
-            datasets.push({
-                label: label,
-                data: data,
-                borderColor: metric.chartColor,
-                backgroundColor: hexToRgba(metric.chartColor, 0.1),
-                fill: opts.fill || false,
-                yAxisID: opts.axisId,
-                type: opts.type,
-                summaryKey: metric.summaryKey
+                const codeString = code.toString().padStart(2, '0');
+
+                // WICHTIG: Passen Sie diesen Pfad an, falls Ihre Bilder woanders liegen
+                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
+
+                pointStyles[index] = img; // Speichere das Bild-Objekt
+
+                // Positioniere auf der 0-100 Skala (wie zuvor)
+                return { x: index, y: 90 };
             });
+
+            unit = 'WMO'; // Einheit für die Legende
+
+        } else {
+            // Normaler Pfad für alle anderen Metriken
+            const formattedData = summary[summaryKey].hourlyData.map(val => metric.formatter(val, profile));
+            // 'N/A' zu 'null' konvertieren, um Abstürze zu verhindern
+            data = formattedData.map(fd => (fd.value === 'N/A') ? null : fd.value);
+            unit = formattedData.length > 0 ? formattedData[0].unit : '';
         }
 
-        // B. Achse (Scale) erstellen (nur, wenn sie noch nicht existiert)
+        const label = `${metric.displayName} (${unit})`;
+
+        // A. Datensatz erstellen
+        // (Der 'if (summaryKey !== 'sigWx')' Filter ist entfernt)
+        datasets.push({
+            label: label,
+            data: data,
+            borderColor: metric.chartColor,
+            backgroundColor: hexToRgba(metric.chartColor, 0.1),
+            fill: (summaryKey === 'sigWx') ? false : (opts.fill || false), // sigWx nicht füllen
+            yAxisID: opts.axisId,
+            type: opts.type,
+            summaryKey: summaryKey,
+
+            // --- HIER KOMMT DIE MAGIE FÜR 'sigWx' ---
+            pointStyle: (summaryKey === 'sigWx') ? pointStyles : 'circle',
+            radius: (summaryKey === 'sigWx') ? 10 : 3, // Radius für Hover/Klick
+            showLine: (summaryKey === 'sigWx') ? false : true // Keine Linie für sigWx
+        });
+
+        // B. Achse (Scale) erstellen
+        // (Dieser Code ist von der letzten Iteration, er ist korrekt)
         if (!scales[opts.axisId]) {
             scales[opts.axisId] = {
                 type: 'linear',
-                display: (opts.axisId === 'ySigWx') ? false : true,
+                display: (opts.axisId === 'ySigWx') ? false : true, // sigWx-Achse ausblenden
                 position: opts.axisPosition,
                 title: { display: true, text: `${opts.axisLabel} (${unit})` },
-                // Nur die erste Achse (oder Achsen auf der 'linken' Seite) zeichnet Gitterlinien
                 grid: {
                     drawOnChartArea: (opts.axisPosition === 'left' || axisGridCounter === 0)
                 }
             };
 
-            // Sonderfall: Prozent-Achse (für Wolken/Niederschlag)
             if (opts.axisId === 'yPercent') {
                 scales[opts.axisId].min = 0;
                 scales[opts.axisId].max = 100;
             }
 
+            // WICHTIG: Skala für sigWx-Achse (von letzter Iteration)
             if (opts.axisId === 'ySigWx') {
-                scales[opts.axisId].min = 0;   // Setze den Boden
-                scales[opts.axisId].max = 100; // Setze die Decke
+                scales[opts.axisId].min = 0;
+                scales[opts.axisId].max = 100;
             }
 
             axisGridCounter++;
@@ -219,33 +274,6 @@ export function updateWeatherChart(profile, summary) {
         } // <-- ENDE des neuen if-Blocks
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
-
-    // --- NEU: sigWx-Labels als Annotationen hinzufügen ---
-    if (summary.sigWx && summary.sigWx.hourlyData) {
-        summary.sigWx.hourlyData.forEach((code, hour) => {
-            // Nur zeichnen, wenn es nicht 'NSW' (Code 0) ist
-            if (code > 0) {
-                // Holen Sie den TAF-Code (z.B. 'FG', 'TS')
-                const tafCode = (formatter.WMO_TAF_MAP[code] || `Code ${code}`);
-
-                annotationLimits.push({
-                    type: 'label',
-                    xValue: hour, // Die Stunde (0-23)
-                    yValue: 90,   // Vertikale Position (50% auf der unsichtbaren Achse)
-                    yScaleID: 'ySigWx', // Binden an unsere unsichtbare Achse
-                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                    borderColor: METRICS_CONFIG.sigWx.chartColor,
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    content: tafCode,
-                    color: METRICS_CONFIG.sigWx.chartColor,
-                    font: {
-                        weight: 'bold'
-                    }
-                });
-            }
-        });
-    }
 
     // --- 3. Override-Blending für Hintergrund-Bänder ---
     const combinedBlendedStatus = Array.from({ length: 24 }, (_, h) => {

@@ -378,25 +378,67 @@ export const displayAutoWarnings = (alarmResults) => {
             if (isRuleActive && s[summaryKey]) {
                 const blendedStatus = createBlendedStatus(s, summaryKey);
                 // Prüfen, ob für diese Metrik ein Alarm/Warnung vorliegt
-                if (Object.values(blendedStatus).some(status => status !== 'ok' && status !== 'no-data')) {
+                const hours = Object.keys(blendedStatus).sort((a, b) => parseInt(a) - parseInt(b));
 
-                    // Verwende den Formatter aus der Config
-                    const { value, unit } = metric.formatter(s[summaryKey].value, p);
+                // --- 1. BLOCK: ALARME (rot) ---
+                const alarmHours = hours.filter(h => blendedStatus[h] === 'alarm');
+                if (alarmHours.length > 0) {
+                    // Finde den "schlimmsten" Wert (z.B. höchsten Code) NUR aus den Alarm-Stunden
+                    let worstValue = (metric.checkType === 'min') ? Infinity : -Infinity;
+                    alarmHours.forEach(h_str => {
+                        const h_idx = parseInt(h_str, 10); // Stunde als Index für hourlyData
+                        if (h_idx >= s[summaryKey].hourlyData.length) return; // Sicherheitscheck
+                        const val = s[summaryKey].hourlyData[h_idx];
 
-                    // --- KORREKTUR HIER (Alte Logik entfernt) ---
-                    // NEU: Zeige einfach den Wert, der den Alarm ausgelöst hat
-                    const range = getAlarmTimeRange(blendedStatus);
-                    html += `<span style="color: ${metric.chartColor};">&#9658; ${metric.displayName} (Alarm: ${value}${unit}): ${range}</span><br>`;
-                    // --- ENDE KORREKTUR ---
+                        if (val === null || val === undefined) return;
+
+                        if (metric.checkType === 'min') {
+                            if (val < worstValue) worstValue = val;
+                        } else { // max oder code_match
+                            if (val > worstValue) worstValue = val;
+                        }
+                    });
+
+                    const { value, unit } = metric.formatter(worstValue, p);
+                    const range = getAlarmTimeRange(blendedStatus, 'alarm'); // <-- Neuer Aufruf
+
+                    // Nutze die harte Alarmfarbe (rot)
+                    html += `<span style="color: #dc3545;">&#9658; ${metric.displayName} (ALARM: ${value}${unit}): ${range}</span><br>`;
+                }
+
+                // --- 2. BLOCK: WARNUNGEN (gelb) ---
+                const warnHours = hours.filter(h => blendedStatus[h] === 'warn');
+                if (warnHours.length > 0) {
+                    // Finde den "schlimmsten" Wert NUR aus den Warn-Stunden
+                    let worstValue = (metric.checkType === 'min') ? Infinity : -Infinity;
+                    warnHours.forEach(h_str => {
+                        const h_idx = parseInt(h_str, 10);
+                        if (h_idx >= s[summaryKey].hourlyData.length) return;
+                        const val = s[summaryKey].hourlyData[h_idx];
+
+                        if (val === null || val === undefined) return;
+
+                        if (metric.checkType === 'min') {
+                            if (val < worstValue) worstValue = val;
+                        } else { // max oder code_match
+                            if (val > worstValue) worstValue = val;
+                        }
+                    });
+
+                    const { value, unit } = metric.formatter(worstValue, p);
+                    const range = getAlarmTimeRange(blendedStatus, 'warn'); // <-- Neuer Aufruf
+
+                    // Nutze die harte Warnfarbe (gelb)
+                    html += `<span style="color: #ffc107;">&#9658; ${metric.displayName} (Warnung: ${value}${unit}): ${range}</span><br>`;
                 }
             }
         }
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
         if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
-        html += `</div>`;
-    });
-    monitor.innerHTML = html;
+    html += `</div>`;
+});
+monitor.innerHTML = html;
 };
 
 /**
@@ -881,10 +923,11 @@ function updateRuleInputLabels() {
  * Berechnet die konsolidierte Zeitspanne, in der ein Alarm aktiv ist.
  * (Unverändert)
  */
-function getAlarmTimeRange(hourlyStatus) {
+function getAlarmTimeRange(hourlyStatus, specificStatus) { // <-- 1. Parameter hinzugefügt
     if (!hourlyStatus) return 'N/A';
     const hours = Object.keys(hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b)).map(h => parseInt(h));
-    const alarmHours = hours.filter(h => hourlyStatus[h] === 'alarm' || hourlyStatus[h] === 'warn');
+    // 2. Filter auf den spezifischen Status angepasst:
+    const alarmHours = hours.filter(h => hourlyStatus[h] === specificStatus);
     if (alarmHours.length === 0) return 'N/A';
     let resultRanges = [];
     let startHour = null;

@@ -306,44 +306,32 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
     const summary = getEmptySummary();
     const metrics = activeMetrics || Object.values(METRICS_CONFIG);
 
-    // --- NEUES DEBUG (Ganz oben) ---
-    console.log("--- DEBUG: checkThresholds_Sampling GESTARTET ---");
-    console.log(`1. Profil: ${profile.name}`);
-    console.log(`2. Anzahl Locations (API-Punkte): ${locationsData ? locationsData.length : 'null'}`);
-    console.log(`3. Anzahl Metriken (aus Config): ${metrics ? metrics.length : 'null'}`);
-    // --- ENDE NEUES DEBUG ---
-
     if (!locationsData || locationsData.length === 0) {
         return Object.assign(getEmptySummary(), { error: "Keine API-Daten empfangen." });
     }
 
-    // Finde den ersten Eintrag, der gültige 'hourly.time' Daten hat
     const firstValidEntry = locationsData.find(loc => loc && loc.hourly && loc.hourly.time);
 
     if (!firstValidEntry) {
-        // Wenn NIEMAND 'hourly.time' hat, DANN ist die Antwort ungültig.
         console.error("API-Antwort ist ungültig, 'hourly.time' fehlt in *allen* Einträgen.", locationsData);
         return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort (keine Zeitstempel)." });
     }
 
-    // Benutze das 'time'-Array des ersten GÜLTIGEN Eintrags
-    const timeStamps = firstValidEntry.hourly.time.map(t => new Date(t).getUTCHours());
+    const timeStamps = firstValidEntry.hourly.time.map(t => new Date(t + 'Z').getUTCHours());
 
+    // Schritt 1: Initialisiere alle hourlyStatus-Objekte (wichtig für die UI-Stunden-Header)
     timeStamps.slice(0, 24).forEach((hour, h) => {
         Object.values(METRICS_CONFIG).forEach(metric => {
             const key = metric.summaryKey;
+            summary[key].hourlyStatus[hour] = 'no-data'; // Platzhalter
+            summary[key].hourlyAlarms[hour] = new Set();
 
-            const initialStatus = 'no-data';
-
-            summary[key].hourlyStatus[hour] = initialStatus;
-            summary[key].hourlyAlarms[hour] = new Set(); // <-- HIER IST DIE INITIALISIERUNG
-
+            // Setze Startwert für Graph-Aggregation
             summary[key].hourlyData[h] = (metric.checkType === 'min') ? Infinity : -Infinity;
         });
         summary.combined.hourlyStatus[hour] = 'no-data';
     });
 
-    // Status-Aggregator-Funktion
     const getWorseStatus = (s1, s2) => {
         if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
         if (s1 === 'warn' || s2 === 'warn') return 'warn';
@@ -351,58 +339,37 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
         return 'no-data';
     };
 
-    // 2. Durch alle Standorte (Punkte) iterieren
+    // Schritt 2: Aggregiere die Graph-Daten (Finde den "schlimmsten" Wert für jede Stunde)
     locationsData.forEach(locationData => {
         if (!locationData || locationData.latitude === null) {
             return; // Überspringe fehlerhafte Datenpunkte
         }
 
         const hourly = locationData.hourly;
-        const daily = locationData.daily; // <-- NEU
-        const locationId = `${locationData.latitude.toFixed(2)},${locationData.longitude.toFixed(2)}`;
+        const daily = locationData.daily;
         const elevation = locationData.elevation;
-
-        // --- NEU: Tages-Werte "vorladen" ---
-        // Wir müssen den richtigen Tages-Index finden (0 = heute, 1 = morgen)
-        // Wir nehmen an, dass die 'hourly'-Zeitstempel bestimmen, welchen Tag wir betrachten.
-        // (Einfache Annahme für jetzt: Wir nehmen Index 0 für den ersten Tag)
-        const dayIndex = 0; // (Diese Logik muss ggf. verfeinert werden, falls Modell-Läufe über Mitternacht gehen)
 
         const dailyValueCache = {};
         if (daily) {
             for (const metric of metrics.filter(m => m.paramType === 'daily')) {
-                if (daily[metric.apiName] && daily[metric.apiName].length > dayIndex) {
-                    dailyValueCache[metric.summaryKey] = daily[metric.apiName][dayIndex];
+                if (daily[metric.apiName] && daily[metric.apiName].length > 0) {
+                    dailyValueCache[metric.summaryKey] = daily[metric.apiName][0];
                 } else {
-                    dailyValueCache[metric.summaryKey] = null; // Kein Wert verfügbar
+                    dailyValueCache[metric.summaryKey] = null;
                 }
             }
         }
-        // ------------------------------------
 
-        // Iteriere durch die Stunden (0-23)
         for (let h = 0; h < 24; h++) {
             if (h >= timeStamps.length) return;
-            const time = hourly.time[h];
-            const hour = timeStamps[h];
 
-            // --- DEBUG (Vor der Schleife) ---
-            if (h === 0 && locationData === locationsData[0]) { // Logge nur einmal
-                console.log("4. Betrete jetzt die 'metrics.forEach'-Schleife...");
-            }
-            // --- ENDE DEBUG ---
-
-            // --- NEUE DYNAMISCHE SCHLEIFE ---
-            // Iteriere durch alle konfigurierten Metriken
             metrics.forEach(metric => {
-                const ruleName = metric.ruleName;
                 const summaryKey = metric.summaryKey;
-
-                // --- 1. WERT ZUWEISEN (BASIEREND AUF TYP) ---
                 let value = null;
 
+                // 1. WERT ZUWEISEN
                 if (metric.paramType === 'hourly') {
-                    const apiName = metric.apiName; // apiName ist ein String
+                    const apiName = metric.apiName;
                     const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
                     value = hasData ? hourly[apiName][h] : null;
 
@@ -410,133 +377,109 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                     value = dailyValueCache[summaryKey];
 
                 } else if (metric.paramType === 'derived') {
-                    // apiName ist ein Array (wird in der Funktion verwendet)
                     value = calculateDerivedValue(metric.summaryKey, hourly, h);
                 } else if (metric.paramType === 'derived_pressure') {
                     value = calculateDerivedValue(metric, hourly, h, elevation);
                 }
-                // --- 2. GRAPH-AGGREGATION ---
+
+                // 2. GRAPH-AGGREGATION (Maximalwert finden)
                 if (value !== null && isFinite(value)) {
                     if (metric.checkType === 'min') {
                         if (value < summary[summaryKey].hourlyData[h]) summary[summaryKey].hourlyData[h] = value;
-                    } else if (metric.checkType === 'max') { // 'max'
+                    } else { // 'max' ODER 'code_match'
                         if (value > summary[summaryKey].hourlyData[h]) summary[summaryKey].hourlyData[h] = value;
-                    } else if (metric.checkType === 'code_match') {
-                        // KORREKTUR: Speichere den Wetter-Code (Zahl) in den hourlyData
-                        summary[summaryKey].hourlyData[h] = value;
                     }
                 }
 
-                // --- 3. REGEL-CHECK ---
-                let currentStatus = 'no-data';
-
-                if (value !== null && isFinite(value)) {
-                    if (metric.checkType === 'min' || metric.checkType === 'max') {
-
-                        const limit_alarm = rules[metric.ruleName + '_alarm'];
-                        const limit_warn = rules[metric.ruleName + '_warn'];
-
-                        if (limit_alarm !== null || limit_warn !== null) {
-                            currentStatus = 'ok';
-                        } else {
-                            currentStatus = 'no-data'; // (Kein Limit = keine Prüfung)
-                        }
-
-                        if (metric.checkType === 'min') {
-                            if (limit_alarm !== null && value < limit_alarm) {
-                                currentStatus = 'alarm';
-                            }
-                            else if (limit_warn !== null && value < limit_warn) {
-                                currentStatus = 'warn';
-                            }
-                        } else {
-                            if (limit_alarm !== null && value > limit_alarm) {
-                                currentStatus = 'alarm';
-                            }
-                            else if (limit_warn !== null && value > limit_warn) {
-                                currentStatus = 'warn';
-                            }
-                        }
-
-                        if (metric.checkType === 'min' && value < summary[summaryKey].value) summary[summaryKey].value = value;
-                        if (metric.checkType === 'max' && value > summary[summaryKey].value) summary[summaryKey].value = value;
-                    }
-                    else if (metric.checkType === 'code_match') {
-                        // --- NEUE Logik für Rot/Gelb-Prüfung ---
-                        const forbiddenCodes_alarm = rules[metric.ruleName + '_alarm']; // z.B. ['48']
-                        const forbiddenCodes_warn = rules[metric.ruleName + '_warn'];  // z.B. ['45']
-
-                        // Prüfe, ob überhaupt Regeln gesetzt sind
-                        if (forbiddenCodes_alarm || forbiddenCodes_warn) {
-
-                            const valueStr = value.toString();
-
-                            // WICHTIG: Alarm hat Vorrang
-                            if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
-                                currentStatus = 'alarm';
-                            }
-                            // Nur wenn kein Alarm, prüfe Warnung
-                            else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
-                                currentStatus = 'warn';
-                            }
-                            // Code ist nicht in den Listen, also OK
-                            else {
-                                currentStatus = 'ok';
-                            }
-
-                            // Speichere den Code-Wert, wenn er einen Alarm/Warnung auslöst
-                            if (currentStatus !== 'ok' && value > summary[summaryKey].value) {
-                                summary[summaryKey].value = value;
-                            }
-
-                        } else {
-                            currentStatus = 'no-data'; // Keine Codes zum Prüfen ausgewählt
-                        }
-                    }
-
-                    if (currentStatus === 'alarm') {
-                        summary[summaryKey].triggered = true;
-                        summary[summaryKey].hourlyAlarms[hour].add(locationId);
-                    }
-
-                } else {
-                    if (ruleName === 'minTemp' || ruleName === 'minCloudBase') {
-                        currentStatus = 'ok';
-                    } else {
-                        currentStatus = 'no-data';
-                    }
-                }
-
-                summary[summaryKey].hourlyStatus[hour] = getWorseStatus(summary[summaryKey].hourlyStatus[hour], currentStatus);
-
+                // HINWEIS: Der fehlerhafte REGEL-CHECK-Block (der hier war) ist ENTFERNT.
             });
-            // --- ENDE DYNAMISCHE SCHLEIFE ---
         }
     });
 
-    // --- Kombi-Zeile berechnen (Vollständig) ---
+    // Schritt 3: Status (Ampel/Autowarn) aus den (jetzt korrekten) Graph-Daten ableiten
     timeStamps.slice(0, 24).forEach((hour, h) => {
+        metrics.forEach(metric => { // Iteriere nur über aktive Metriken
+            const summaryKey = metric.summaryKey;
 
+            // 1. Hole den korrekten Max-Wert (z.B. 95) aus den Graph-Daten
+            const value = summary[summaryKey].hourlyData[h];
+
+            if (value === null || !isFinite(value) || value === -Infinity || value === Infinity) {
+                summary[summaryKey].hourlyStatus[hour] = 'no-data';
+                return;
+            }
+
+            let currentStatus = 'ok'; // Standard
+            const ruleName = metric.ruleName;
+
+            // 2. Status für Ampel ermitteln
+            if (metric.checkType === 'min' || metric.checkType === 'max') {
+                const limit_alarm = rules[ruleName + '_alarm'];
+                const limit_warn = rules[ruleName + '_warn'];
+
+                if (limit_alarm === null && limit_warn === null) {
+                    currentStatus = 'no-data';
+                } else if (metric.checkType === 'min') {
+                    if (limit_alarm !== null && value < limit_alarm) currentStatus = 'alarm';
+                    else if (limit_warn !== null && value < limit_warn) currentStatus = 'warn';
+                } else { // max
+                    if (limit_alarm !== null && value > limit_alarm) currentStatus = 'alarm';
+                    else if (limit_warn !== null && value > limit_warn) currentStatus = 'warn';
+                }
+            }
+            else if (metric.checkType === 'code_match') {
+                const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
+                const forbiddenCodes_warn = rules[ruleName + '_warn'];
+                const valueStr = value.toString();
+
+                if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
+                    (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
+                    currentStatus = 'no-data';
+                } else {
+                    if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
+                        currentStatus = 'alarm';
+                    } else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
+                        currentStatus = 'warn';
+                    }
+                }
+            }
+
+            // 3. Status in Ampel setzen
+            summary[summaryKey].hourlyStatus[hour] = currentStatus;
+
+            // 4. Header-Wert (für Auto-Warn) und Trigger (für Filter) setzen
+            if (currentStatus === 'alarm' || currentStatus === 'warn') {
+                summary[summaryKey].triggered = true;
+
+                // Aktualisiere den 'schlimmsten' Wert (für den "Alarm: 95" Text)
+                if (metric.checkType === 'min') {
+                    if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                } else { // max oder code_match
+                    if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                }
+            }
+        });
+    });
+
+    // Schritt 4: Kombi-Zeile (wie bisher, nutzt jetzt korrekten Status)
+    timeStamps.slice(0, 24).forEach((hour, h) => {
         const logicMode = rules.logicMode || 'OR';
         let combinedStatus = 'no-data';
-        let activeRuleStati = []; // Speichert den Status aller *aktiven* Regeln
+        let activeRuleStati = [];
 
-        // 1. Sammle den Status aller Regeln, die für dieses Profil aktiv sind
         metrics.forEach(metric => {
             const ruleName = metric.ruleName;
             if ((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) {
+                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined) ||
+                (rules[ruleName + '_alarm'] && rules[ruleName + '_alarm'].length > 0) || // Für code_match
+                (rules[ruleName + '_warn'] && rules[ruleName + '_warn'].length > 0)) { // Für code_match
                 activeRuleStati.push(summary[metric.summaryKey].hourlyStatus[hour]);
             }
         });
 
-        // 2. Wende die "UND" / "ODER" Logik an
         if (activeRuleStati.length === 0) {
-            // Keine Regeln aktiv
             combinedStatus = 'no-data';
-
         } else if (logicMode === 'AND') {
-            // --- "UND"-Logik ---
             if (activeRuleStati.some(s => s === 'ok')) {
                 combinedStatus = 'ok';
             } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
@@ -544,9 +487,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
             } else {
                 combinedStatus = 'no-data';
             }
-
-        } else {
-            // --- "ODER"-Logik (wie bisher) ---
+        } else { // OR
             let orStatus = 'no-data';
             activeRuleStati.forEach(status => {
                 orStatus = getWorseStatus(orStatus, status);
@@ -558,7 +499,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
         if (combinedStatus !== 'ok' && combinedStatus !== 'no-data') summary.combined.triggered = true;
     });
 
-    // Abwärtskompatibilität für .min / .max
+    // Abwärtskompatibilität (bleibt)
     Object.values(METRICS_CONFIG).forEach(metric => {
         if (metric.checkType === 'min') {
             summary[metric.summaryKey].min = summary[metric.summaryKey].value;
