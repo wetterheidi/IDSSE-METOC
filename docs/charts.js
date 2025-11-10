@@ -173,12 +173,16 @@ export function updateWeatherChart(profile, summary) {
                 const codeString = code.toString().padStart(2, '0');
 
                 // WICHTIG: Passen Sie diesen Pfad an, falls Ihre Bilder woanders liegen
-                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
+                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`; 
 
                 pointStyles[index] = img; // Speichere das Bild-Objekt
 
                 // Positioniere auf der 0-100 Skala (wie zuvor)
-                return { x: index, y: 90 };
+                return { 
+                    x: index, 
+                    y: 90,    // Position für die Anzeige
+                    code: code  // <-- HIER MERKEN WIR UNS DEN ROHWERT (z.B. 80)
+                };
             });
 
             unit = 'WMO'; // Einheit für die Legende
@@ -327,7 +331,37 @@ export function updateWeatherChart(profile, summary) {
             plugins: {
                 tooltip: {
                     mode: 'index',
-                    intersect: false
+                    intersect: false,
+                    
+                    // --- ANPASSUNG FÜR TOOLTIP-INHALT ---
+                    callbacks: {
+                        label: function(context) {
+                            const datasetLabel = context.dataset.label || '';
+
+                            // --- Spezialbehandlung für sigWx ---
+                            if (context.dataset.summaryKey === 'sigWx') {
+                                // context.raw ist das Objekt, das wir oben erstellt haben:
+                                // {x: 5, y: 90, code: 80}
+                                const dataPoint = context.raw; 
+                                
+                                if (dataPoint && dataPoint.code !== undefined) {
+                                    // Wir rufen den Formatter (der oben importiert ist)
+                                    // mit dem Roh-Code auf
+                                    const formatted = formatter.formatSigWx(dataPoint.code, profile);
+                                    
+                                    // Gibt z.B. "Signifikantes Wetter (WMO): SHRA (80)" zurück
+                                    return `${datasetLabel}: ${formatted.value}${formatted.unit}`;
+                                }
+                                return `${datasetLabel}: N/A`; // Fallback
+                            }
+
+                            // --- Standard-Verhalten für alle anderen (Wind, Temp etc.) ---
+                            // (z.B. "Windböe (km/h): 50.0")
+                            return `${datasetLabel}: ${context.formattedValue}`;
+                        }
+                    }
+                    // --- ENDE ANPASSUNG ---
+
                 },
                 legend: {
                     position: 'bottom',
