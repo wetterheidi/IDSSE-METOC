@@ -18,6 +18,16 @@ console.log("Lokale Dexie-Datenbank initialisiert (Version " + db.verno + ").");
 export const getProfiles = () => db.profiles.toArray();
 export const getProfileCount = () => db.profiles.count();
 export const getProfile = (id) => db.profiles.get(id);
+
+/**
+ * NEU: Sucht ein Profil anhand seines Namens (Groß/Kleinschreibung egal).
+ */
+export const findProfileByName = (name) => {
+    if (!name) return null;
+    // .where('name') nutzt den Index, .equalsIgnoreCase ist robust gegen Tippfehler
+    return db.profiles.where('name').equalsIgnoreCase(name).first();
+};
+
 export const saveProfile = (profile) => db.profiles.add(profile);
 export const deleteProfile = (id) => db.profiles.delete(id);
 export const bulkAddProfiles = (profiles) => db.profiles.bulkAdd(profiles);

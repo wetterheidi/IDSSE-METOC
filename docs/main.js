@@ -155,6 +155,8 @@ async function handleManualCheck(profileData) {
     // 2. Öffne das Sidebar-Panel, damit der Nutzer die Regeln sieht
     ui.openProfileEditorAccordion();
 
+    ui.activateManualMonitorTab();
+
     ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
     map.clearMapLayers();
 
@@ -226,6 +228,16 @@ async function handleSaveProfile(profileData) {
     if (!currentLayer) {
         alert("Bitte zuerst eine Fläche auf der Karte zeichnen.");
         return;
+    }
+
+    // --- NEU: Prüfen auf doppelten Namen ---
+    // (Wir rufen die neue Funktion aus db.js auf)
+    const existingProfile = await db.findProfileByName(profileData.name);
+
+    if (existingProfile) {
+        // Wenn ein Profil gefunden wurde, zeige Fehler und brich ab.
+        alert(`Fehler: Ein Profil mit dem Namen "${profileData.name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
+        return; // Stoppt die Funktion hier.
     }
 
     // Das GeoJSON-Objekt zwischenspeichern, bevor wir 'currentLayer' löschen

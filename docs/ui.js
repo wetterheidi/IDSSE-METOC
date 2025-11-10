@@ -222,20 +222,37 @@ export const initUI = (handlers) => {
     if (uiElements.importFile) uiElements.importFile.addEventListener('change', (e) => handleFileImport(e, handlers.onImport));
 
     // Footer-Tabs
+    const showAutoTab = document.getElementById('showAutoTab'); // <-- NEU
+    const autoContent = uiElements.autoWarnDashboard;           // <-- NEU
     const showMatrixTab = document.getElementById('showMatrixTab');
     const showGraphTab = document.getElementById('showGraphTab');
     const matrixContent = document.getElementById('manualWarningMonitor');
     const graphContent = document.getElementById('graphContainer');
     if (showMatrixTab && showGraphTab && matrixContent && graphContent) {
+        showAutoTab.addEventListener('click', () => {
+            autoContent.classList.add('active');
+            matrixContent.classList.remove('active');
+            graphContent.classList.remove('active');
+
+            showAutoTab.classList.add('active');
+            showMatrixTab.classList.remove('active');
+            showGraphTab.classList.remove('active');
+        });
         showMatrixTab.addEventListener('click', () => {
+            autoContent.classList.remove('active');
             matrixContent.classList.add('active');
             graphContent.classList.remove('active');
+
+            showAutoTab.classList.remove('active');
             showMatrixTab.classList.add('active');
             showGraphTab.classList.remove('active');
         });
         showGraphTab.addEventListener('click', () => {
+            autoContent.classList.remove('active');
             matrixContent.classList.remove('active');
             graphContent.classList.add('active');
+
+            showAutoTab.classList.remove('active');
             showMatrixTab.classList.remove('active');
             showGraphTab.classList.add('active');
         });
@@ -286,7 +303,8 @@ export function initResizeHandle() {
  * NEU: Dynamisch basierend auf METRICS_CONFIG
  */
 export const displayAutoWarnings = (alarmResults) => {
-    const monitor = uiElements.manualWarningMonitor;
+    const monitor = uiElements.autoWarnDashboard;
+    if (!monitor) return;
     monitor.innerHTML = '';
 
     if (alarmResults.length === 0) {
@@ -563,8 +581,8 @@ export const applyTemplateToInputs = (template) => {
 // --- 4. Interne Hilfsfunktionen ---
 
 export const setDashboardMessage = (html) => {
-    if (uiElements.manualWarningMonitor) {
-        uiElements.manualWarningMonitor.innerHTML = html;
+    if (uiElements.autoWarnDashboard) {
+        uiElements.autoWarnDashboard.innerHTML = html;
     }
 };
 export const setManualMonitorMessage = (html) => {
@@ -984,4 +1002,26 @@ export const openProfileEditorAccordion = () => {
             panel.classList.add('open');
         }
     }
+};
+
+/**
+ * NEU: Erzwingt die Aktivierung des "Detail-Prüfung" (Matrix)-Tabs.
+ * Wird von main.js aufgerufen, wenn 'handleManualCheck' startet.
+ */
+export const activateManualMonitorTab = () => {
+    // Finde die Elemente (nur die, die wir brauchen)
+    const showAutoTab = document.getElementById('showAutoTab');
+    const autoContent = document.getElementById('autoWarnDashboard');
+    const showMatrixTab = document.getElementById('showMatrixTab');
+    const matrixContent = document.getElementById('manualWarningMonitor');
+    const showGraphTab = document.getElementById('showGraphTab');
+
+    // Inhalte umschalten
+    if (autoContent) autoContent.classList.remove('active');
+    if (matrixContent) matrixContent.classList.add('active');
+    
+    // Tabs umschalten
+    if (showAutoTab) showAutoTab.classList.remove('active');
+    if (showMatrixTab) showMatrixTab.classList.add('active');
+    if (showGraphTab) showGraphTab.classList.remove('active');
 };
