@@ -1,7 +1,7 @@
 // ui.js (Version 2.0 - Config-Driven)
 import * as db from './db.js';
 import * as formatter from './formatter.js';
-import { UNITS } from './config.js';
+import { UNITS, CONVERSIONS } from './config.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
 // NEU: Importiere das "Gehirn"
 import { METRICS_CONFIG } from './metricsConfig.js';
@@ -437,9 +437,9 @@ export const displayAutoWarnings = (alarmResults) => {
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
         if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
-    html += `</div>`;
-});
-monitor.innerHTML = html;
+        html += `</div>`;
+    });
+    monitor.innerHTML = html;
 };
 
 /**
@@ -641,20 +641,25 @@ export const applyRulesToInputs = (rules, profileName) => {
 
         if (metric.checkType === 'min' || metric.checkType === 'max') {
 
-            // Finde die ZWEI neuen Input-Felder
+           // 0. Finde die ZWEI neuen Input-Felder
             const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
             const elem_warn = document.getElementById(metric.ruleName + '_warn');
-
-            // Lese die Werte aus dem Profil
+            
+            // 1. Lese den gespeicherten *metrischen* Wert (z.B. 22.2 km/h)
             const value_alarm = rules[metric.ruleName + '_alarm'];
             const value_warn = rules[metric.ruleName + '_warn'];
 
-            // Setze den Wert (oder leer, wenn null/undefined)
+            // 2. Konvertiere ihn zurück in den "Display"-Wert (z.B. 12 kt)
+            // (Das 'rules'-Objekt enthält den 'unitMode')
+            const display_alarm = fromMetric(value_alarm, metric, rules.unitMode);
+            const display_warn = fromMetric(value_warn, metric, rules.unitMode);
+
+            // 3. Zeige den "Display"-Wert an
             if (elem_alarm) {
-                elem_alarm.value = (value_alarm !== null && value_alarm !== undefined) ? value_alarm : '';
+                elem_alarm.value = (display_alarm !== null && display_alarm !== undefined) ? display_alarm : '';
             }
             if (elem_warn) {
-                elem_warn.value = (value_warn !== null && value_warn !== undefined) ? value_warn : '';
+                elem_warn.value = (display_warn !== null && display_warn !== undefined) ? display_warn : '';
             }
         }
         else if (metric.checkType === 'code_match') {
@@ -817,10 +822,14 @@ const getRulesFromInputs = () => {
             // (Wir nutzen parseFloat, damit auch 0 als Wert gespeichert wird)
 
             const parsed_alarm = parseFloat(rawVal_alarm);
-            rules[metric.ruleName + '_alarm'] = isNaN(parsed_alarm) ? null : parsed_alarm;
+            // Konvertiere den gelesenen Wert (z.B. 12) in metrisch (z.B. 22.2)
+            const metric_alarm = isNaN(parsed_alarm) ? null : toMetric(parsed_alarm, metric, unitMode);
+            rules[metric.ruleName + '_alarm'] = metric_alarm; // Speichere metrischen Wert
 
             const parsed_warn = parseFloat(rawVal_warn);
-            rules[metric.ruleName + '_warn'] = isNaN(parsed_warn) ? null : parsed_warn;
+            // Konvertiere den gelesenen Wert (z.B. 10) in metrisch (z.B. 18.5)
+            const metric_warn = isNaN(parsed_warn) ? null : toMetric(parsed_warn, metric, unitMode);
+            rules[metric.ruleName + '_warn'] = metric_warn; // Speichere metrischen Wert
         }
         else if (metric.checkType === 'code_match') {
             // --- NEUE Logik (Liest ZWEI Dropdowns) ---
@@ -1197,3 +1206,47 @@ export const activateManualMonitorTab = () => {
     if (showMatrixTab) showMatrixTab.classList.add('active');
     if (showGraphTab) showGraphTab.classList.remove('active');
 };
+
+/**
+ * Konvertiert einen "Display"-Wert (z.B. 12 kt) in den "Engine"-Wert (z.B. 22.2 km/h)
+ * (Wird VOR dem Speichern genutzt)
+ */
+function toMetric(displayValue, metricConfig, unitMode) {
+    if (displayValue === null || isNaN(displayValue) || unitMode === 'metric') {
+        return displayValue; // Ist schon metrisch oder null
+    }
+
+    // (Aviation Mode)
+    if (metricConfig.formatter === formatter.formatSpeed) {
+        // Von kt -> km/h
+        return displayValue / CONVERSIONS.KMH_TO_KTS;
+    }
+    if (metricConfig.formatter === formatter.formatAltitude) {
+        // Von ft -> m
+        return displayValue / CONVERSIONS.METER_TO_FEET;
+    }
+    return displayValue; // (z.B. Temp, Percent)
+}
+
+/**
+ * Konvertiert einen "Engine"-Wert (z.B. 22.2 km/h) in den "Display"-Wert (z.B. 12 kt)
+ * (Wird VOR dem Anzeigen genutzt)
+ */
+function fromMetric(metricValue, metricConfig, unitMode) {
+    if (metricValue === null || isNaN(metricValue) || unitMode === 'metric') {
+        return metricValue; // Ist schon metrisch oder null
+    }
+
+    // (Aviation Mode)
+    if (metricConfig.formatter === formatter.formatSpeed) {
+        // Von km/h -> kt (und runden, wie der Formatter es tun würde)
+        const val = metricValue * CONVERSIONS.KMH_TO_KTS;
+        return Math.round(val);
+    }
+    if (metricConfig.formatter === formatter.formatAltitude) {
+        // Von m -> ft (und runden auf 100ft, wie der Formatter)
+        const val = metricValue * CONVERSIONS.METER_TO_FEET;
+        return Math.round(val / 100) * 100;
+    }
+    return metricValue; // (z.B. Temp, Percent)
+}
