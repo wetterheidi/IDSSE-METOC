@@ -83,3 +83,48 @@ export function formatPrecipMM(value_mm, profile) {
     // Zeigt eine Dezimalstelle an (z.B. 0.5 mm)
     return { value: value_mm.toFixed(1), unit: 'mm' };
 }
+
+// --- NEU: WMO Code-Definitionen ---
+export const WMO_TAF_MAP = {
+    0: 'NSW', // No Significant Weather
+    1: 'NSW', // (Leicht bewölkt)
+    2: 'NSW', // (Teilweise bewölkt)
+    3: 'NSW', // (Stark bewölkt)
+    45: 'FG',  // Nebel
+    48: 'FZFG',// Gefrierender Nebel
+    51: '-DZ', // Leichter Sprühregen
+    53: 'DZ',  // Mäßiger Sprühregen
+    55: '+DZ', // Starker Sprühregen
+    56: '-FZDZ',// Leichter gefrierender Sprühregen
+    57: 'FZDZ',// Mäßiger/Starker gefrierender Sprühregen
+    61: '-RA', // Leichter Regen
+    63: 'RA',  // Mäßiger Regen
+    65: '+RA', // Starker Regen
+    66: '-FZRA',// Leichter gefrierender Regen
+    67: 'FZRA',// Mäßiger/Starker gefrierender Regen
+    71: '-SN', // Leichter Schneefall
+    73: 'SN',  // Mäßiger Schneefall
+    75: '+SN', // Starker Schneefall
+    77: 'SG',  // Griesel
+    80: '-SHRA',// Leichte Regenschauer
+    81: 'SHRA',// Mäßige Regenschauer
+    82: '+SHRA',// Starke Regenschauer
+    83: '-SHRASN',// Leichte Regen-/Schneeschauer
+    85: '-SHSN',// Leichte Schneeschauer
+    86: 'SHSN',// Mäßige/Starke Schneeschauer
+    95: 'TS',  // Gewitter
+    96: 'TSGR',// Gewitter mit Hagel
+    99: '+TSGR'// Starkes Gewitter mit Hagel
+};
+
+/**
+ * NEU: Formatiert einen WMO-Code in einen TAF-String.
+ */
+export function formatSigWx(value_code, profile) {
+    const codeNum = parseInt(value_code, 10);
+    if (isNaN(codeNum)) {
+        return { value: 'N/A', unit: '' };
+    }
+    const tafCode = WMO_TAF_MAP[codeNum] || 'N/A';
+    return { value: tafCode, unit: ` (${codeNum})` };
+}

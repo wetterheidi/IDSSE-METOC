@@ -55,7 +55,7 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
     metrics.forEach(metric => {
         const key = metric.summaryKey;
         const ruleName = metric.ruleName;
-        
+
         // --- KORREKTUR ---
         // ALT: const limit = rules[ruleName];
         // NEU: Nimm den Alarm-Wert als Referenz für den Mock
@@ -66,14 +66,28 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
             if (key === 'temp') {
                 summary.temp.hourlyData = [...fakeDataTemplates.lowMorning];
                 // Alarm auslösen, falls Regel gesetzt
-                if (limit !== null && limit !== undefined) summary.temp.hourlyData[6] = limit - 1; 
+                if (limit !== null && limit !== undefined) summary.temp.hourlyData[6] = limit - 1;
             } else if (key === 'vis') {
                 summary.vis.hourlyData = [...fakeDataTemplates.lowForenoon];
                 if (limit !== null && limit !== undefined) summary.vis.hourlyData[10] = limit - 500;
             }
         } else { // 'max'
-             summary[key].hourlyData = [...fakeDataTemplates.peakAfternoon];
-             if (limit !== null && limit !== undefined) summary[key].hourlyData[14] = limit + 10; // Alarm um 14h
+            summary[key].hourlyData = [...fakeDataTemplates.peakAfternoon];
+            if (limit !== null && limit !== undefined) summary[key].hourlyData[14] = limit + 10; // Alarm um 14h
+        }
+
+        if (metric.checkType === 'code_match') {
+            const key = metric.summaryKey;
+            // Erzeuge eine Basis-Reihe (alles 0 = NSW)
+            summary[key].hourlyData = new Array(24).fill(0);
+
+            // Löse einen Alarm aus (z.B. Nebel um 10h)
+            const alarmCode = 45; // 'FG'
+            summary[key].hourlyData[10] = alarmCode;
+
+            // Löse einen zweiten Alarm aus (z.B. Schnee um 14h)
+            const alarmCode2 = 73; // 'SN'
+            summary[key].hourlyData[14] = alarmCode2;
         }
     });
 
@@ -118,7 +132,7 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
                 else if (limit_warn !== null && value < limit_warn) {
                     currentStatus = 'warn';
                 }
-            } else {
+            } else if (metric.checkType === 'max') {
                 // MAX-Check (wind, cloud, precip)
                 // Alarm-Regel hat Vorrang
                 if (limit_alarm !== null && value > limit_alarm) {
@@ -128,6 +142,31 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
                 else if (limit_warn !== null && value > limit_warn) {
                     currentStatus = 'warn';
                 }
+            } else if (metric.checkType === 'code_match') {
+                // --- KORRIGIERTE Mock-Prüf-Logik ---
+                const forbiddenCodes_alarm = rules[metric.ruleName + '_alarm'];
+                const forbiddenCodes_warn = rules[metric.ruleName + '_warn'];
+
+                // Prüfen, ob überhaupt Regeln gesetzt sind
+                if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
+                    (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
+                    currentStatus = 'no-data'; // Keine Regeln definiert
+                } else {
+                    const valueStr = value.toString();
+
+                    // WICHTIG: Alarm (rot) hat Vorrang
+                    if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
+                        currentStatus = 'alarm';
+                    }
+                    // Nur wenn kein Alarm, prüfe Warnung (gelb)
+                    else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
+                        currentStatus = 'warn';
+                    }
+                    // Code ist nicht in den Listen, also OK
+                    else {
+                        currentStatus = 'ok';
+                    }
+                }
             }
 
             // Setze Trigger-Status (nur bei Alarm)
@@ -135,6 +174,9 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
                 summary[summaryKey].triggered = true;
                 if (metric.checkType === 'min' && value < summary[summaryKey].value) summary[summaryKey].value = value;
                 if (metric.checkType === 'max' && value > summary[summaryKey].value) summary[summaryKey].value = value;
+                if (metric.checkType === 'code_match' && value > summary[summaryKey].value) {
+                    summary[summaryKey].value = value;
+                }
                 if (!summary[summaryKey].hourlyAlarms[h]) summary[TsummaryKey].hourlyAlarms[h] = new Set();
                 summary[summaryKey].hourlyAlarms[h].add(fakeLocationId);
             }

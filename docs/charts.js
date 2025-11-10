@@ -2,6 +2,7 @@
 import { getManualOverrides, handleChartVisibilityUpdate } from './main.js';
 // NEU: Importiere das "Gehirn"
 import { METRICS_CONFIG } from './metricsConfig.js';
+import * as formatter from './formatter.js';
 
 let weatherChart = null; // Globale Chart-Instanz
 
@@ -133,11 +134,24 @@ export function updateWeatherChart(profile, summary) {
         const label = `${metric.displayName} (${unit})`;
 
         // A. Datensatz erstellen
+        if (metric.summaryKey !== 'sigWx') {
+            datasets.push({
+                label: label,
+                data: data,
+                borderColor: metric.chartColor,
+                backgroundColor: hexToRgba(metric.chartColor, 0.1),
+                fill: opts.fill || false,
+                yAxisID: opts.axisId,
+                type: opts.type,
+                summaryKey: metric.summaryKey
+            });
+        }
+
         datasets.push({
             label: label,
             data: data,
             borderColor: metric.chartColor,
-            backgroundColor: hexToRgba(metric.chartColor, 0.1), 
+            backgroundColor: hexToRgba(metric.chartColor, 0.1),
             fill: opts.fill || false,
             yAxisID: opts.axisId,
             type: opts.type,
@@ -148,7 +162,7 @@ export function updateWeatherChart(profile, summary) {
         if (!scales[opts.axisId]) {
             scales[opts.axisId] = {
                 type: 'linear',
-                display: true,
+                display: (opts.axisId === 'ySigWx') ? false : true,
                 position: opts.axisPosition,
                 title: { display: true, text: `${opts.axisLabel} (${unit})` },
                 // Nur die erste Achse (oder Achsen auf der 'linken' Seite) zeichnet Gitterlinien
@@ -199,6 +213,33 @@ export function updateWeatherChart(profile, summary) {
         }
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
+
+    // --- NEU: sigWx-Labels als Annotationen hinzufügen ---
+    if (summary.sigWx && summary.sigWx.hourlyData) {
+        summary.sigWx.hourlyData.forEach((code, hour) => {
+            // Nur zeichnen, wenn es nicht 'NSW' (Code 0) ist
+            if (code > 0) {
+                // Holen Sie den TAF-Code (z.B. 'FG', 'TS')
+                const tafCode = (formatter.WMO_TAF_MAP[code] || `Code ${code}`);
+                
+                annotationLimits.push({
+                    type: 'label',
+                    xValue: hour, // Die Stunde (0-23)
+                    yValue: 50,   // Vertikale Position (50% auf der unsichtbaren Achse)
+                    yScaleID: 'ySigWx', // Binden an unsere unsichtbare Achse
+                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                    borderColor: METRICS_CONFIG.sigWx.chartColor,
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    content: tafCode,
+                    color: METRICS_CONFIG.sigWx.chartColor,
+                    font: {
+                        weight: 'bold'
+                    }
+                });
+            }
+        });
+    }
 
     // --- 3. Override-Blending für Hintergrund-Bänder ---
     const combinedBlendedStatus = Array.from({ length: 24 }, (_, h) => {
@@ -254,7 +295,7 @@ export function updateWeatherChart(profile, summary) {
                     onClick: (e, legendItem, legend) => {
                         // 1. Führe das Standard-Verhalten aus (blendet den Graphen aus)
                         Chart.defaults.plugins.legend.onClick(e, legendItem, legend);
-                        
+
                         // 2. Rufe unseren neuen Handler in main.js auf, um die Karte zu aktualisieren
                         handleChartVisibilityUpdate(legend.chart);
                     }

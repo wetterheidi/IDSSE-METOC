@@ -193,6 +193,7 @@ async function handleManualCheck(profileData) {
     const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics);
 
     // --- DEBUG 5 ---
+    console.log("%c[main.js] Summary-Objekt VOR Übergabe an UI:", "color: blue; font-weight: bold;", summary);
     console.log("--- DEBUG [main.js]: fetchAndCheckProfile BEENDET.");
     console.log("Summary-Ergebnis:", summary);
 
@@ -420,9 +421,23 @@ export function handleChartVisibilityUpdate(chart) {
  */
 function getActiveMetrics(rules) {
     return Object.values(METRICS_CONFIG).filter(metric => {
-        const hasAlarm = rules[metric.ruleName + '_alarm'] !== null && rules[metric.ruleName + '_alarm'] !== undefined;
-        const hasWarn = rules[metric.ruleName + '_warn'] !== null && rules[metric.ruleName + '_warn'] !== undefined;
-        return hasAlarm || hasWarn;
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
+            // Bisherige Logik für Min/Max
+            const hasAlarm = rules[metric.ruleName + '_alarm'] !== null && rules[metric.ruleName + '_alarm'] !== undefined;
+            const hasWarn = rules[metric.ruleName + '_warn'] !== null && rules[metric.ruleName + '_warn'] !== undefined;
+            return hasAlarm || hasWarn;
+        }
+        else if (metric.checkType === 'code_match') {
+            // KORREKTUR: Prüfe die _alarm und _warn Arrays, die von ui.js gespeichert werden
+            const hasAlarm = rules[metric.ruleName + '_alarm'] !== null &&
+                rules[metric.ruleName + '_alarm'] !== undefined &&
+                rules[metric.ruleName + '_alarm'].length > 0;
+            const hasWarn = rules[metric.ruleName + '_warn'] !== null &&
+                rules[metric.ruleName + '_warn'] !== undefined &&
+                rules[metric.ruleName + '_warn'].length > 0;
+            return hasAlarm || hasWarn;
+        }
+        return false; // Fallback für unbekannte Typen
     });
 }
 

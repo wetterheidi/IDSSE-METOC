@@ -145,6 +145,9 @@ export function getEmptySummary() {
             if (metric.checkType === 'min') {
                 if (key === 'temp') summary[key].value = 999;
                 if (key === 'vis') summary[key].value = 99999;
+            } else if (metric.checkType === 'code_match') {
+                // NEU: Startwert für SigWx (0 = 'NSW')
+                summary[key].value = 0;
             } else {
                 summary[key].value = 0;
             }
@@ -264,6 +267,11 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             const data = await response.json();
 
             const locationsData = Array.isArray(data) ? data : [data];
+
+            if (locationsData[0] && locationsData[0].error) {
+                console.error("Open-Meteo API-Fehler:", locationsData[0].reason, apiUrl);
+                throw new Error(`Open-Meteo API-Fehler: ${locationsData[0].reason}`);
+            }
             allApiResponses.push(...locationsData);
 
         } catch (err) {
@@ -305,16 +313,24 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
     console.log(`3. Anzahl Metriken (aus Config): ${metrics ? metrics.length : 'null'}`);
     // --- ENDE NEUES DEBUG ---
 
-    if (!locationsData || locationsData.length === 0 || !locationsData[0] || !locationsData[0].hourly || !locationsData[0].hourly.time) {
-        console.error("API-Antwort ist ungültig, 'hourly.time' fehlt.", locationsData);
-        return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort." });
+    if (!locationsData || locationsData.length === 0) {
+        return Object.assign(getEmptySummary(), { error: "Keine API-Daten empfangen." });
     }
 
-    // 1. Stunden-Header initialisieren
-    const timeStamps = locationsData[0].hourly.time.map(t => new Date(t).getUTCHours());
+    // Finde den ersten Eintrag, der gültige 'hourly.time' Daten hat
+    const firstValidEntry = locationsData.find(loc => loc && loc.hourly && loc.hourly.time);
+
+    if (!firstValidEntry) {
+        // Wenn NIEMAND 'hourly.time' hat, DANN ist die Antwort ungültig.
+        console.error("API-Antwort ist ungültig, 'hourly.time' fehlt in *allen* Einträgen.", locationsData);
+        return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort (keine Zeitstempel)." });
+    }
+    
+    // Benutze das 'time'-Array des ersten GÜLTIGEN Eintrags
+    const timeStamps = firstValidEntry.hourly.time.map(t => new Date(t).getUTCHours());
 
     timeStamps.slice(0, 24).forEach((hour, h) => {
-        metrics.forEach(metric => {
+        Object.values(METRICS_CONFIG).forEach(metric => { 
             const key = metric.summaryKey;
 
             const initialStatus = 'no-data';
@@ -412,34 +428,68 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                 let currentStatus = 'no-data';
 
                 if (value !== null && isFinite(value)) {
+                    if (metric.checkType === 'min' || metric.checkType === 'max') {
 
-                    const limit_alarm = rules[metric.ruleName + '_alarm'];
-                    const limit_warn = rules[metric.ruleName + '_warn'];
+                        const limit_alarm = rules[metric.ruleName + '_alarm'];
+                        const limit_warn = rules[metric.ruleName + '_warn'];
 
-                    if (limit_alarm !== null || limit_warn !== null) {
-                        currentStatus = 'ok';
-                    } else {
-                        currentStatus = 'no-data'; // (Kein Limit = keine Prüfung)
+                        if (limit_alarm !== null || limit_warn !== null) {
+                            currentStatus = 'ok';
+                        } else {
+                            currentStatus = 'no-data'; // (Kein Limit = keine Prüfung)
+                        }
+
+                        if (metric.checkType === 'min') {
+                            if (limit_alarm !== null && value < limit_alarm) {
+                                currentStatus = 'alarm';
+                            }
+                            else if (limit_warn !== null && value < limit_warn) {
+                                currentStatus = 'warn';
+                            }
+                        } else {
+                            if (limit_alarm !== null && value > limit_alarm) {
+                                currentStatus = 'alarm';
+                            }
+                            else if (limit_warn !== null && value > limit_warn) {
+                                currentStatus = 'warn';
+                            }
+                        }
+
+                        if (metric.checkType === 'min' && value < summary[summaryKey].value) summary[summaryKey].value = value;
+                        if (metric.checkType === 'max' && value > summary[summaryKey].value) summary[summaryKey].value = value;
                     }
+                    else if (metric.checkType === 'code_match') {
+                        // --- NEUE Logik für Rot/Gelb-Prüfung ---
+                        const forbiddenCodes_alarm = rules[metric.ruleName + '_alarm']; // z.B. ['48']
+                        const forbiddenCodes_warn = rules[metric.ruleName + '_warn'];  // z.B. ['45']
 
-                    if (metric.checkType === 'min') {
-                        if (limit_alarm !== null && value < limit_alarm) {
-                            currentStatus = 'alarm';
-                        }
-                        else if (limit_warn !== null && value < limit_warn) {
-                            currentStatus = 'warn';
-                        }
-                    } else {
-                        if (limit_alarm !== null && value > limit_alarm) {
-                            currentStatus = 'alarm';
-                        }
-                        else if (limit_warn !== null && value > limit_warn) {
-                            currentStatus = 'warn';
+                        // Prüfe, ob überhaupt Regeln gesetzt sind
+                        if (forbiddenCodes_alarm || forbiddenCodes_warn) {
+                            
+                            const valueStr = value.toString();
+                            
+                            // WICHTIG: Alarm hat Vorrang
+                            if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
+                                currentStatus = 'alarm';
+                            }
+                            // Nur wenn kein Alarm, prüfe Warnung
+                            else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
+                                currentStatus = 'warn';
+                            }
+                            // Code ist nicht in den Listen, also OK
+                            else {
+                                currentStatus = 'ok'; 
+                            }
+                            
+                            // Speichere den Code-Wert, wenn er einen Alarm/Warnung auslöst
+                            if (currentStatus !== 'ok' && value > summary[summaryKey].value) {
+                                summary[summaryKey].value = value;
+                            }
+                            
+                        } else {
+                            currentStatus = 'no-data'; // Keine Codes zum Prüfen ausgewählt
                         }
                     }
-
-                    if (metric.checkType === 'min' && value < summary[summaryKey].value) summary[summaryKey].value = value;
-                    if (metric.checkType === 'max' && value > summary[summaryKey].value) summary[summaryKey].value = value;
 
                     if (currentStatus === 'alarm') {
                         summary[summaryKey].triggered = true;

@@ -26,23 +26,24 @@ function generateDynamicRuleInputs() {
     let html = '';
     for (const metric of Object.values(METRICS_CONFIG)) {
         // Hole den Standard-Label-Text (z.B. km/h oder %)
-        let initialUnit = 'N/A'; // Sicherer Fallback
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
+            let initialUnit = 'N/A'; // Sicherer Fallback
 
-        // NEU: Dynamische Zuweisung basierend auf dem Formatter
-        if (metric.formatter === formatter.formatSpeed) {
-            initialUnit = UNITS.metric.speed;
-        } else if (metric.formatter === formatter.formatAltitude) {
-            initialUnit = UNITS.metric.altitude;
-        } else if (metric.formatter === formatter.formatTemp) {
-            initialUnit = UNITS.metric.temp;
-        } else if (metric.formatter === formatter.formatPercent) {
-            initialUnit = '%';
-        } else if (metric.formatter === formatter.formatPrecipMM) {
-            initialUnit = 'mm'; // <-- DIE FEHLENDE PRÜFUNG
-        }
+            // NEU: Dynamische Zuweisung basierend auf dem Formatter
+            if (metric.formatter === formatter.formatSpeed) {
+                initialUnit = UNITS.metric.speed;
+            } else if (metric.formatter === formatter.formatAltitude) {
+                initialUnit = UNITS.metric.altitude;
+            } else if (metric.formatter === formatter.formatTemp) {
+                initialUnit = UNITS.metric.temp;
+            } else if (metric.formatter === formatter.formatPercent) {
+                initialUnit = '%';
+            } else if (metric.formatter === formatter.formatPrecipMM) {
+                initialUnit = 'mm'; // <-- DIE FEHLENDE PRÜFUNG
+            }
 
-        // Erzeuge das HTML für diese Regel
-        html += `
+            // Erzeuge das HTML für diese Regel
+            html += `
             <div class="rule-input-group">
                 <label>${metric.displayName}:</label>
                 <div class="rule-input-fields">
@@ -52,6 +53,38 @@ function generateDynamicRuleInputs() {
                 </div>
             </div>
         `;
+        }
+        else if (metric.checkType === 'code_match') {
+            // --- NEUE Logik für Code-Auswahl (Dropdown) ---
+
+            // Baue die <option> Liste aus der Config
+            let optionsHtml = '';
+            if (metric.options) {
+                for (const [code, taf] of Object.entries(metric.options)) {
+                    // Wir ignorieren 'NSW', da es keinen Alarm auslösen soll
+                    if (taf !== 'NSW') {
+                        optionsHtml += `<option value="${code}">${taf} (${code})</option>`;
+                    }
+                }
+            }
+
+            html += `
+                <div class.rule-input-group">
+                    <label>${metric.displayName}:</label>
+                    <div class="rule-input-fields">
+                        <select multiple id="${metric.ruleName}_alarm" size="6" style="width: 48%; height: 100px; padding: 5px; border: 2px solid var(--color-danger);">
+                            <option value="" disabled>-- ROTER ALARM --</option>
+                            ${optionsHtml}
+                        </select>
+                        <select multiple id="${metric.ruleName}_warn" size="6" style="width: 48%; height: 100px; padding: 5px; border: 2px solid var(--color-warning);">
+                            <option value="" disabled>-- GELBE WARNUNG --</option>
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                    <small style="font-size: 0.8em; color: #6c757d;">(Mehrfachauswahl mit Strg/Cmd + Klick)</small>
+                </div>
+            `;
+        }
     }
     container.innerHTML = html;
 }
@@ -326,9 +359,23 @@ export const displayAutoWarnings = (alarmResults) => {
             const ruleName = metric.ruleName;
             const summaryKey = metric.summaryKey;
 
+            let isRuleActive = false;
+            if (metric.checkType === 'min' || metric.checkType === 'max') {
+                isRuleActive = (r[ruleName + '_alarm'] !== null && r[ruleName + '_alarm'] !== undefined) ||
+                    (r[ruleName + '_warn'] !== null && r[ruleName + '_warn'] !== undefined);
+            } else if (metric.checkType === 'code_match') {
+                // KORREKTUR: Verwende 'r' statt 'rules'
+                const hasAlarm = r[metric.ruleName + '_alarm'] !== null &&
+                    r[metric.ruleName + '_alarm'] !== undefined &&
+                    r[metric.ruleName + '_alarm'].length > 0;
+                const hasWarn = r[metric.ruleName + '_warn'] !== null &&
+                    r[metric.ruleName + '_warn'] !== undefined &&
+                    r[metric.ruleName + '_warn'].length > 0;
+                isRuleActive = hasAlarm || hasWarn;
+            }
+
             // Prüfen, ob die Regel im Profil (r) aktiv ist UND ob ein Summary (s) dafür existiert
-            if (((r[ruleName + '_alarm'] !== null && r[ruleName + '_alarm'] !== undefined) ||
-                (r[ruleName + '_warn'] !== null && r[ruleName + '_warn'] !== undefined)) && s[summaryKey]) {
+            if (isRuleActive && s[summaryKey]) {
                 const blendedStatus = createBlendedStatus(s, summaryKey);
                 // Prüfen, ob für diese Metrik ein Alarm/Warnung vorliegt
                 if (Object.values(blendedStatus).some(status => status !== 'ok' && status !== 'no-data')) {
@@ -336,17 +383,11 @@ export const displayAutoWarnings = (alarmResults) => {
                     // Verwende den Formatter aus der Config
                     const { value, unit } = metric.formatter(s[summaryKey].value, p);
 
-                    // --- KORREKTUR HIER ---
-                    // ALT:
-                    // const { value: limit } = metric.formatter(r[ruleName], p);
-
-                    // NEU: (Zeige das Alarm-Limit als Referenz)
-                    const { value: limit } = metric.formatter(r[ruleName + '_alarm'], p);
-                    // --- ENDE KORREKTUR ---
-
+                    // --- KORREKTUR HIER (Alte Logik entfernt) ---
+                    // NEU: Zeige einfach den Wert, der den Alarm ausgelöst hat
                     const range = getAlarmTimeRange(blendedStatus);
-
-                    html += `<span style="color: ${metric.chartColor};">&#9658; ${metric.displayName} (Limit: ${limit}${unit}): ${range}</span><br>`;
+                    html += `<span style="color: ${metric.chartColor};">&#9658; ${metric.displayName} (Alarm: ${value}${unit}): ${range}</span><br>`;
+                    // --- ENDE KORREKTUR ---
                 }
             }
         }
@@ -377,6 +418,8 @@ export const displayManualWarning = (profile, summary) => {
     const monitor = uiElements.manualWarningMonitor;
     monitor.innerHTML = '';
 
+    console.log("%c[ui.js] displayManualWarning GESTARTET", "color: blue; font-weight: bold;", { profile, summary });
+
     if (!summary || !profile || !profile.rules) {
         monitor.innerHTML = `<p>Fehler beim Laden der Daten.</p>`;
         return;
@@ -395,16 +438,28 @@ export const displayManualWarning = (profile, summary) => {
 
     const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
         (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
-        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
+        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined) ||
+        // (Sicherstellen, dass sigWx auch hier geprüft wird)
+        (m.checkType === 'code_match' &&
+            ((rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined && rules[m.ruleName + '_alarm'].length > 0) ||
+                (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined && rules[m.ruleName + '_warn'].length > 0))
+        )
     );
 
+    console.log("[ui.js] Gefilterte 'activeMetrics':", activeMetrics);
+
     if (activeMetrics.length === 0) {
-        return combinedStatus; // (bleibt leer, was korrekt ist)
+        console.warn("[ui.js] ABBRUCH: 'activeMetrics' ist leer. Es sind keine Regeln aktiv.");
+
+        return; // Nichts zu tun, wenn keine Regeln aktiv sind
     }
     const firstMetricKey = activeMetrics[0].summaryKey;
+    console.log("[ui.js] 'firstMetricKey' (für Stunden-Header):", firstMetricKey);
+    console.log("[ui.js] Abfrage-Objekt für Stunden:", summary[firstMetricKey]?.hourlyStatus);
     const hours = (summary[firstMetricKey] && summary[firstMetricKey].hourlyStatus)
         ? Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
         : [];
+    console.log("[ui.js] Berechnetes 'hours'-Array:", hours);
 
     if (hours.length > 0) {
         tableHtml = `<table class="ampel-table" id="trafficLightMatrix"><thead><tr><th>Parameter</th>`;
@@ -418,11 +473,28 @@ export const displayManualWarning = (profile, summary) => {
 
         // --- NEUE DYNAMISCHE SCHLEIFE ---
         // Einzel-Parameter (nutzt die globale, override-fähige buildRow)
-        for (const metric of Object.values(METRICS_CONFIG)) {
+        for (const metric of Object.values(METRICS_CONFIG)) { // ALT: activeMetrics
             const ruleName = metric.ruleName;
+
+            let isRuleActive = false;
+            if (metric.checkType === 'min' || metric.checkType === 'max') {
+                isRuleActive = (rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
+                    (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined);
+            }
+            // DIESER BLOCK IST ENTSCHEIDEND:
+            else if (metric.checkType === 'code_match') {
+                // KORREKTUR: Prüfe die _alarm und _warn Arrays
+                const hasAlarm = rules[ruleName + '_alarm'] !== null &&
+                    rules[ruleName + '_alarm'] !== undefined &&
+                    rules[ruleName + '_alarm'].length > 0;
+                const hasWarn = rules[ruleName + '_warn'] !== null &&
+                    rules[ruleName + '_warn'] !== undefined &&
+                    rules[ruleName + '_warn'].length > 0;
+                isRuleActive = hasAlarm || hasWarn;
+            }
+
             // Zeile nur bauen, wenn Regel im Profil aktiv ist
-            if ((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) {
+            if (isRuleActive) {
                 tableHtml += buildRow(metric.displayName, summary[metric.summaryKey].hourlyStatus, hours, metric.summaryKey);
             }
         }
@@ -524,20 +596,44 @@ export const applyRulesToInputs = (rules, profileName) => {
     // 1. Setze die Input-Werte dynamisch
     for (const metric of Object.values(METRICS_CONFIG)) {
 
-        // Finde die ZWEI neuen Input-Felder
-        const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
-        const elem_warn = document.getElementById(metric.ruleName + '_warn');
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
 
-        // Lese die Werte aus dem Profil
-        const value_alarm = rules[metric.ruleName + '_alarm'];
-        const value_warn = rules[metric.ruleName + '_warn'];
+            // Finde die ZWEI neuen Input-Felder
+            const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
+            const elem_warn = document.getElementById(metric.ruleName + '_warn');
 
-        // Setze den Wert (oder leer, wenn null/undefined)
-        if (elem_alarm) {
-            elem_alarm.value = (value_alarm !== null && value_alarm !== undefined) ? value_alarm : '';
+            // Lese die Werte aus dem Profil
+            const value_alarm = rules[metric.ruleName + '_alarm'];
+            const value_warn = rules[metric.ruleName + '_warn'];
+
+            // Setze den Wert (oder leer, wenn null/undefined)
+            if (elem_alarm) {
+                elem_alarm.value = (value_alarm !== null && value_alarm !== undefined) ? value_alarm : '';
+            }
+            if (elem_warn) {
+                elem_warn.value = (value_warn !== null && value_warn !== undefined) ? value_warn : '';
+            }
         }
-        if (elem_warn) {
-            elem_warn.value = (value_warn !== null && value_warn !== undefined) ? value_warn : '';
+        else if (metric.checkType === 'code_match') {
+            // --- NEUE Logik (Setzt ZWEI Dropdowns) ---
+            const selectElement_alarm = document.getElementById(metric.ruleName + '_alarm');
+            const selectElement_warn = document.getElementById(metric.ruleName + '_warn');
+            const savedValues_alarm = rules[metric.ruleName + '_alarm']; // z.B. ['48']
+            const savedValues_warn = rules[metric.ruleName + '_warn'];  // z.B. ['45']
+
+            // Helper-Funktion zum Setzen der Auswahl
+            const setSelection = (element, values) => {
+                if (element && values) {
+                    Array.from(element.options).forEach(option => {
+                        option.selected = values.includes(option.value);
+                    });
+                } else if (element) {
+                    element.selectedIndex = -1;
+                }
+            };
+
+            setSelection(selectElement_alarm, savedValues_alarm);
+            setSelection(selectElement_warn, savedValues_warn);
         }
     }
 
@@ -604,10 +700,20 @@ export const resetProfileInputs = () => {
     // --- KORREKTUR ---
     // Lösche die dynamischen _alarm und _warn Input-Felder
     for (const metric of Object.values(METRICS_CONFIG)) {
-        const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
-        const elem_warn = document.getElementById(metric.ruleName + '_warn');
-        if (elem_alarm) elem_alarm.value = '';
-        if (elem_warn) elem_warn.value = '';
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
+
+            const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
+            const elem_warn = document.getElementById(metric.ruleName + '_warn');
+            if (elem_alarm) elem_alarm.value = '';
+            if (elem_warn) elem_warn.value = '';
+        }
+        else if (metric.checkType === 'code_match') {
+            // --- NEUE Logik (Reset ZWEI Dropdowns) ---
+            const selectElement_alarm = document.getElementById(metric.ruleName + '_alarm');
+            const selectElement_warn = document.getElementById(metric.ruleName + '_warn');
+            if (selectElement_alarm) selectElement_alarm.selectedIndex = -1;
+            if (selectElement_warn) selectElement_warn.selectedIndex = -1;
+        }
     }
     initMapStatusPlaceholder();
 };
@@ -654,23 +760,43 @@ const getRulesFromInputs = () => {
     const rules = { unitMode: unitMode, logicMode: logicMode };
 
     for (const metric of Object.values(METRICS_CONFIG)) {
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
 
-        // Finde die ZWEI neuen Input-Felder
-        const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
-        const elem_warn = document.getElementById(metric.ruleName + '_warn');
+            // Finde die ZWEI neuen Input-Felder
+            const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
+            const elem_warn = document.getElementById(metric.ruleName + '_warn');
 
-        // Lese die Rohwerte (oder leer, falls nicht gefunden)
-        const rawVal_alarm = elem_alarm ? elem_alarm.value : "";
-        const rawVal_warn = elem_warn ? elem_warn.value : "";
+            // Lese die Rohwerte (oder leer, falls nicht gefunden)
+            const rawVal_alarm = elem_alarm ? elem_alarm.value : "";
+            const rawVal_warn = elem_warn ? elem_warn.value : "";
 
-        // Verarbeite die Werte: "" wird null, Text wird Zahl
-        // (Wir nutzen parseFloat, damit auch 0 als Wert gespeichert wird)
+            // Verarbeite die Werte: "" wird null, Text wird Zahl
+            // (Wir nutzen parseFloat, damit auch 0 als Wert gespeichert wird)
 
-        const parsed_alarm = parseFloat(rawVal_alarm);
-        rules[metric.ruleName + '_alarm'] = isNaN(parsed_alarm) ? null : parsed_alarm;
+            const parsed_alarm = parseFloat(rawVal_alarm);
+            rules[metric.ruleName + '_alarm'] = isNaN(parsed_alarm) ? null : parsed_alarm;
 
-        const parsed_warn = parseFloat(rawVal_warn);
-        rules[metric.ruleName + '_warn'] = isNaN(parsed_warn) ? null : parsed_warn;
+            const parsed_warn = parseFloat(rawVal_warn);
+            rules[metric.ruleName + '_warn'] = isNaN(parsed_warn) ? null : parsed_warn;
+        }
+        else if (metric.checkType === 'code_match') {
+            // --- NEUE Logik (Liest ZWEI Dropdowns) ---
+            const selectElement_alarm = document.getElementById(metric.ruleName + '_alarm');
+            const selectElement_warn = document.getElementById(metric.ruleName + '_warn');
+
+            if (selectElement_alarm) {
+                const selectedValues_alarm = Array.from(selectElement_alarm.selectedOptions)
+                    .map(option => option.value)
+                    .filter(value => value); // Entfernt leere "disabled" Werte
+                rules[metric.ruleName + '_alarm'] = selectedValues_alarm.length > 0 ? selectedValues_alarm : null;
+            }
+            if (selectElement_warn) {
+                const selectedValues_warn = Array.from(selectElement_warn.selectedOptions)
+                    .map(option => option.value)
+                    .filter(value => value); // Entfernt leere "disabled" Werte
+                rules[metric.ruleName + '_warn'] = selectedValues_warn.length > 0 ? selectedValues_warn : null;
+            }
+        }
     }
     return rules;
 };
@@ -758,7 +884,7 @@ function updateRuleInputLabels() {
 function getAlarmTimeRange(hourlyStatus) {
     if (!hourlyStatus) return 'N/A';
     const hours = Object.keys(hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b)).map(h => parseInt(h));
-    const alarmHours = hours.filter(h => hourlyStatus[h] === 'alarm');
+    const alarmHours = hours.filter(h => hourlyStatus[h] === 'alarm' || hourlyStatus[h] === 'warn');
     if (alarmHours.length === 0) return 'N/A';
     let resultRanges = [];
     let startHour = null;
@@ -1019,7 +1145,7 @@ export const activateManualMonitorTab = () => {
     // Inhalte umschalten
     if (autoContent) autoContent.classList.remove('active');
     if (matrixContent) matrixContent.classList.add('active');
-    
+
     // Tabs umschalten
     if (showAutoTab) showAutoTab.classList.remove('active');
     if (showMatrixTab) showMatrixTab.classList.add('active');

@@ -2,6 +2,7 @@
 // (Version 1.1: Erweitert um Chart-Optionen)
 
 import * as formatter from './formatter.js';
+import { WMO_TAF_MAP } from './formatter.js';
 import { WEATHER_MODELS } from './config.js';
 
 export const METRICS_CONFIG = {
@@ -217,8 +218,33 @@ export const METRICS_CONFIG = {
             axisLabel: 'Wolkenbasis',
             type: 'line'
         }
-    }
+    },
 
+    'sigWx': {
+        // --- API & Daten ---
+        apiName: 'weather_code',
+        ruleName: 'sigWx',
+        paramType: 'hourly',
+        summaryKey: 'sigWx',
+        // --- NEUER CHECK-TYP ---
+        checkType: 'code_match',    // Weder 'min' noch 'max'
+
+        // --- UI & Anzeige ---
+        uiUnitId: 'unit-sigWx',     // (Wird für das <select> nicht benötigt, aber der Vollständigkeit halber)
+        displayName: 'Signifikantes Wetter',
+        formatter: formatter.formatSigWx,
+        chartColor: '#9932CC', // Dunkles Violett
+
+        // --- NEU: Optionen für das Dropdown ---
+        options: WMO_TAF_MAP,
+
+        chartOptions: {
+            axisId: 'ySigWx', // Eigene (unsichtbare) Y-Achse
+            axisPosition: 'right',
+            axisLabel: 'SigWx',
+            type: 'scatter' // Wir tun so, als wären es Punkte
+        }
+    }
 };
 
 /**
@@ -252,6 +278,9 @@ export const getApiParams = (metrics, modelInfo) => {
 
             if (metric.paramType === 'hourly') {
                 groups.hourly.add(name);
+                if (name === 'weather_code') {
+                    groups.hourly.add('temperature_2m');
+                }
             }
             else if (metric.paramType === 'daily') {
                 groups.daily.add(name);
@@ -260,20 +289,20 @@ export const getApiParams = (metrics, modelInfo) => {
                 groups.hourly.add(name);
             }
             else if (metric.paramType === 'derived_pressure') {
-                
+
                 const requestedLevels = metric.pressureLevels || [];
-                
+
                 // --- KORREKTUR: Behandle Oberflächen- und Druckstufen-Parameter ---
                 // (Der 'name' ist z.B. 'temperature_2m' oder 'relative_humidity')
-                
+
                 if (name.includes('_2m') || name.includes('_10m') || name.includes('surface_')) {
                     // Dies ist ein Oberflächen-Parameter, füge ihn 1:1 hinzu
                     groups.hourly.add(name);
                 } else {
                     // Dies ist ein Druckstufen-Parameter (z.B. 'relative_humidity' ODER 'cloud_cover')
-                    
+
                     // Finde die gültigen Levels
-                    const validLevels = (modelInfo && modelInfo.apiName !== 'auto' && allowedLevels) 
+                    const validLevels = (modelInfo && modelInfo.apiName !== 'auto' && allowedLevels)
                         ? requestedLevels.filter(lvl => allowedLevels.has(lvl))
                         : requestedLevels; // Im "auto" Modus, frage alle an
 
