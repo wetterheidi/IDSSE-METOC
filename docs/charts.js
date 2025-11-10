@@ -135,6 +135,7 @@ export function updateWeatherChart(profile, summary) {
 
         // A. Datensatz erstellen
         if (metric.summaryKey !== 'sigWx') {
+            console.log("SIGWX Test:", metric.summaryKey);
             datasets.push({
                 label: label,
                 data: data,
@@ -146,17 +147,6 @@ export function updateWeatherChart(profile, summary) {
                 summaryKey: metric.summaryKey
             });
         }
-
-        datasets.push({
-            label: label,
-            data: data,
-            borderColor: metric.chartColor,
-            backgroundColor: hexToRgba(metric.chartColor, 0.1),
-            fill: opts.fill || false,
-            yAxisID: opts.axisId,
-            type: opts.type,
-            summaryKey: metric.summaryKey // <-- NEUE ZEILE HINZUFÜGEN
-        });
 
         // B. Achse (Scale) erstellen (nur, wenn sie noch nicht existiert)
         if (!scales[opts.axisId]) {
@@ -221,7 +211,7 @@ export function updateWeatherChart(profile, summary) {
             if (code > 0) {
                 // Holen Sie den TAF-Code (z.B. 'FG', 'TS')
                 const tafCode = (formatter.WMO_TAF_MAP[code] || `Code ${code}`);
-                
+
                 annotationLimits.push({
                     type: 'label',
                     xValue: hour, // Die Stunde (0-23)

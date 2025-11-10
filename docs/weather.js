@@ -325,12 +325,12 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
         console.error("API-Antwort ist ungültig, 'hourly.time' fehlt in *allen* Einträgen.", locationsData);
         return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort (keine Zeitstempel)." });
     }
-    
+
     // Benutze das 'time'-Array des ersten GÜLTIGEN Eintrags
     const timeStamps = firstValidEntry.hourly.time.map(t => new Date(t).getUTCHours());
 
     timeStamps.slice(0, 24).forEach((hour, h) => {
-        Object.values(METRICS_CONFIG).forEach(metric => { 
+        Object.values(METRICS_CONFIG).forEach(metric => {
             const key = metric.summaryKey;
 
             const initialStatus = 'no-data';
@@ -419,8 +419,11 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                 if (value !== null && isFinite(value)) {
                     if (metric.checkType === 'min') {
                         if (value < summary[summaryKey].hourlyData[h]) summary[summaryKey].hourlyData[h] = value;
-                    } else { // 'max'
+                    } else if (metric.checkType === 'max') { // 'max'
                         if (value > summary[summaryKey].hourlyData[h]) summary[summaryKey].hourlyData[h] = value;
+                    } else if (metric.checkType === 'code_match') {
+                        // KORREKTUR: Speichere den Wetter-Code (Zahl) in den hourlyData
+                        summary[summaryKey].hourlyData[h] = value;
                     }
                 }
 
@@ -465,9 +468,9 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
 
                         // Prüfe, ob überhaupt Regeln gesetzt sind
                         if (forbiddenCodes_alarm || forbiddenCodes_warn) {
-                            
+
                             const valueStr = value.toString();
-                            
+
                             // WICHTIG: Alarm hat Vorrang
                             if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
                                 currentStatus = 'alarm';
@@ -478,14 +481,14 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                             }
                             // Code ist nicht in den Listen, also OK
                             else {
-                                currentStatus = 'ok'; 
+                                currentStatus = 'ok';
                             }
-                            
+
                             // Speichere den Code-Wert, wenn er einen Alarm/Warnung auslöst
                             if (currentStatus !== 'ok' && value > summary[summaryKey].value) {
                                 summary[summaryKey].value = value;
                             }
-                            
+
                         } else {
                             currentStatus = 'no-data'; // Keine Codes zum Prüfen ausgewählt
                         }

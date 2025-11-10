@@ -1141,10 +1141,12 @@ export const activateManualMonitorTab = () => {
     const showMatrixTab = document.getElementById('showMatrixTab');
     const matrixContent = document.getElementById('manualWarningMonitor');
     const showGraphTab = document.getElementById('showGraphTab');
+    const graphContent = document.getElementById('graphContainer'); // <-- DIESE ZEILE HINZUFÜGEN
 
     // Inhalte umschalten
     if (autoContent) autoContent.classList.remove('active');
     if (matrixContent) matrixContent.classList.add('active');
+    if (graphContent) graphContent.classList.remove('active'); // <-- DIESE ZEILE HINZUFÜGEN
 
     // Tabs umschalten
     if (showAutoTab) showAutoTab.classList.remove('active');
