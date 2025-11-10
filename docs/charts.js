@@ -129,9 +129,17 @@ export function updateWeatherChart(profile, summary) {
 
         // Formatter anwenden, um Daten und Einheiten zu erhalten
         const formattedData = summary[summaryKey].hourlyData.map(val => metric.formatter(val, profile));
-        const data = formattedData.map(fd => fd.value);
+        const data = formattedData.map(fd => {
+            return (fd.value === 'N/A') ? null : fd.value;
+        });
+
         const unit = formattedData.length > 0 ? formattedData[0].unit : '';
         const label = `${metric.displayName} (${unit})`;
+
+        console.log(`[charts.js DEBUG 1] Prüfe Metrik: '${metric.summaryKey}'`, {
+            label: label,
+            data: data // Zeigt uns, ob hier Text ('RA') oder Zahlen ('63') stehen
+        });
 
         // A. Datensatz erstellen
         if (metric.summaryKey !== 'sigWx') {
@@ -167,40 +175,48 @@ export function updateWeatherChart(profile, summary) {
                 scales[opts.axisId].max = 100;
             }
 
+            if (opts.axisId === 'ySigWx') {
+                scales[opts.axisId].min = 0;   // Setze den Boden
+                scales[opts.axisId].max = 100; // Setze die Decke
+            }
+
             axisGridCounter++;
         }
 
         // C. Limit-Linie(n) (Annotation) erstellen (NEUE LOGIK)
 
         // 1. Lese die ZWEI Limits aus dem Profil
-        const limitValue_alarm = rules[metric.ruleName + '_alarm'];
-        const limitValue_warn = rules[metric.ruleName + '_warn'];
+        if (metric.checkType === 'min' || metric.checkType === 'max') {
+            // 1. Lese die ZWEI Limits aus dem Profil
+            const limitValue_alarm = rules[metric.ruleName + '_alarm'];
+            const limitValue_warn = rules[metric.ruleName + '_warn'];
 
-        // 2. Erstelle die ROTE Alarm-Linie (wenn vorhanden)
-        if (limitValue_alarm !== null && limitValue_alarm !== undefined) {
-            // Formatiere den Wert (z.B. von Meter in Fuß)
-            const { value: formattedVal } = metric.formatter(limitValue_alarm, profile);
+            // 2. Erstelle die ROTE Alarm-Linie (wenn vorhanden)
+            if (limitValue_alarm !== null && limitValue_alarm !== undefined) {
+                // Formatiere den Wert (z.B. von Meter in Fuß)
+                const { value: formattedVal } = metric.formatter(limitValue_alarm, profile);
 
-            // Erstelle die rote Linie
-            annotationLimits.push(createLimitLine(
-                formattedVal,
-                '#dc3545', // Alarm-Rot
-                opts.axisId
-            ));
-        }
+                // Erstelle die rote Linie
+                annotationLimits.push(createLimitLine(
+                    formattedVal,
+                    '#dc3545', // Alarm-Rot
+                    opts.axisId
+                ));
+            }
 
-        // 3. Erstelle die GELBE Warn-Linie (wenn vorhanden)
-        if (limitValue_warn !== null && limitValue_warn !== undefined) {
-            // Formatiere den Wert
-            const { value: formattedVal } = metric.formatter(limitValue_warn, profile);
+            // 3. Erstelle die GELBE Warn-Linie (wenn vorhanden)
+            if (limitValue_warn !== null && limitValue_warn !== undefined) {
+                // Formatiere den Wert
+                const { value: formattedVal } = metric.formatter(limitValue_warn, profile);
 
-            // Erstelle die gelbe Linie
-            annotationLimits.push(createLimitLine(
-                formattedVal,
-                '#ffc107', // Warn-Gelb
-                opts.axisId
-            ));
-        }
+                // Erstelle die gelbe Linie
+                annotationLimits.push(createLimitLine(
+                    formattedVal,
+                    '#ffc107', // Warn-Gelb
+                    opts.axisId
+                ));
+            }
+        } // <-- ENDE des neuen if-Blocks
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
 
@@ -215,7 +231,7 @@ export function updateWeatherChart(profile, summary) {
                 annotationLimits.push({
                     type: 'label',
                     xValue: hour, // Die Stunde (0-23)
-                    yValue: 50,   // Vertikale Position (50% auf der unsichtbaren Achse)
+                    yValue: 90,   // Vertikale Position (50% auf der unsichtbaren Achse)
                     yScaleID: 'ySigWx', // Binden an unsere unsichtbare Achse
                     backgroundColor: 'rgba(255, 255, 255, 0.7)',
                     borderColor: METRICS_CONFIG.sigWx.chartColor,
@@ -263,6 +279,11 @@ export function updateWeatherChart(profile, summary) {
     }).filter(a => a !== null);
 
     const finalAnnotations = annotationLimits.concat(alarmBands);
+
+    console.log("%c[charts.js DEBUG 2] FINALE DATEN VOR DEM ZEICHNEN:", "color: blue; font-weight: bold;", {
+        labels: hours,
+        datasets: datasets
+    });
 
     // 4. Chart.js-Konfiguration
     weatherChart = new Chart(ctx, {
