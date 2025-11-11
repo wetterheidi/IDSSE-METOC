@@ -113,19 +113,26 @@ export function updateWeatherChart(profile, summary) {
     const annotationLimits = [];
 
     // Helfer für Limit-Linien
-    const createLimitLine = (value, color, yAxisID) => ({
+    // Helfer für Limit-Linien
+    const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, labelContent, summaryKey) => ({
         type: 'line',
         yMin: value,
         yMax: value,
         yScaleID: yAxisID,
-        borderColor: color,
-        borderWidth: 2,
-        borderDash: [5, 5],
+        borderColor: borderColor,   // <-- Parameter
+        borderWidth: borderWidth, // <-- Parameter
+        borderDash: borderDash,   // <-- Parameter
         label: {
-            content: `Limit (${value})`,
+            content: labelContent,  // <-- Parameter
             enabled: true,
-            position: 'end'
-        }
+            position: 'end',
+            // (Optional) Sorge dafür, dass die Schriftfarbe auch passt
+            font: {
+                weight: 'bold'
+            },
+            color: borderColor
+        },
+        summaryKey: summaryKey
     });
 
     // --- 2. DYNAMISCHE SCHLEIFE: Metriken hinzufügen ---
@@ -173,13 +180,13 @@ export function updateWeatherChart(profile, summary) {
                 const codeString = code.toString().padStart(2, '0');
 
                 // WICHTIG: Passen Sie diesen Pfad an, falls Ihre Bilder woanders liegen
-                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`; 
+                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
 
                 pointStyles[index] = img; // Speichere das Bild-Objekt
 
                 // Positioniere auf der 0-100 Skala (wie zuvor)
-                return { 
-                    x: index, 
+                return {
+                    x: index,
                     y: 90,    // Position für die Anzeige
                     code: code  // <-- HIER MERKEN WIR UNS DEN ROHWERT (z.B. 80)
                 };
@@ -243,39 +250,43 @@ export function updateWeatherChart(profile, summary) {
         }
 
         // C. Limit-Linie(n) (Annotation) erstellen (NEUE LOGIK)
-
-        // 1. Lese die ZWEI Limits aus dem Profil
         if (metric.checkType === 'min' || metric.checkType === 'max') {
-            // 1. Lese die ZWEI Limits aus dem Profil
             const limitValue_alarm = rules[metric.ruleName + '_alarm'];
             const limitValue_warn = rules[metric.ruleName + '_warn'];
 
-            // 2. Erstelle die ROTE Alarm-Linie (wenn vorhanden)
+            // Hole die Farbe des Parameters (z.B. Orange für Wind Speed)
+            const paramColor = metric.chartColor;
+
+            // 2. Erstelle die ALARM-Linie (Solide, 3px)
             if (limitValue_alarm !== null && limitValue_alarm !== undefined) {
-                // Formatiere den Wert (z.B. von Meter in Fuß)
                 const { value: formattedVal } = metric.formatter(limitValue_alarm, profile);
 
-                // Erstelle die rote Linie
                 annotationLimits.push(createLimitLine(
-                    formattedVal,
-                    '#dc3545', // Alarm-Rot
-                    opts.axisId
+                    formattedVal,                 // Wert
+                    opts.axisId,                  // Y-Achse
+                    paramColor,                   // Farbe = Parameter-Farbe
+                    3,                            // Dicke = 3px
+                    [],                           // Strichelung = Solide
+                    `Alarm (${formattedVal})`,     // Label-Text
+                    metric.summaryKey
                 ));
             }
 
-            // 3. Erstelle die GELBE Warn-Linie (wenn vorhanden)
+            // 3. Erstelle die WARN-Linie (Gestrichelt, 2px)
             if (limitValue_warn !== null && limitValue_warn !== undefined) {
-                // Formatiere den Wert
                 const { value: formattedVal } = metric.formatter(limitValue_warn, profile);
 
-                // Erstelle die gelbe Linie
                 annotationLimits.push(createLimitLine(
-                    formattedVal,
-                    '#ffc107', // Warn-Gelb
-                    opts.axisId
+                    formattedVal,                 // Wert
+                    opts.axisId,                  // Y-Achse
+                    paramColor,                   // Farbe = Parameter-Farbe
+                    2,                            // Dicke = 2px
+                    [6, 3],                       // Strichelung = Gestrichelt (6px Linie, 3px Lücke)
+                    `Warn (${formattedVal})`,      // Label-Text
+                    metric.summaryKey
                 ));
             }
-        } // <-- ENDE des neuen if-Blocks
+        } // <-- ENDE NEU
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
 
@@ -332,23 +343,23 @@ export function updateWeatherChart(profile, summary) {
                 tooltip: {
                     mode: 'index',
                     intersect: false,
-                    
+
                     // --- ANPASSUNG FÜR TOOLTIP-INHALT ---
                     callbacks: {
-                        label: function(context) {
+                        label: function (context) {
                             const datasetLabel = context.dataset.label || '';
 
                             // --- Spezialbehandlung für sigWx ---
                             if (context.dataset.summaryKey === 'sigWx') {
                                 // context.raw ist das Objekt, das wir oben erstellt haben:
                                 // {x: 5, y: 90, code: 80}
-                                const dataPoint = context.raw; 
-                                
+                                const dataPoint = context.raw;
+
                                 if (dataPoint && dataPoint.code !== undefined) {
                                     // Wir rufen den Formatter (der oben importiert ist)
                                     // mit dem Roh-Code auf
                                     const formatted = formatter.formatSigWx(dataPoint.code, profile);
-                                    
+
                                     // Gibt z.B. "Signifikantes Wetter (WMO): SHRA (80)" zurück
                                     return `${datasetLabel}: ${formatted.value}${formatted.unit}`;
                                 }
@@ -369,8 +380,45 @@ export function updateWeatherChart(profile, summary) {
                         // 1. Führe das Standard-Verhalten aus (blendet den Graphen aus)
                         Chart.defaults.plugins.legend.onClick(e, legendItem, legend);
 
-                        // 2. Rufe unseren neuen Handler in main.js auf, um die Karte zu aktualisieren
+                        // 2. Rufe unseren Handler in main.js auf, um die Karte zu aktualisieren
+                        // (Muss NACH dem Standard-Handler, aber VOR unserem neuen Code laufen)
                         handleChartVisibilityUpdate(legend.chart);
+
+                        // --- 3. NEU: ANNOTATIONS-LINIEN SYNCHRONISIEREN ---
+                        try {
+                            const chart = legend.chart;
+                            const clickedDatasetIndex = legendItem.datasetIndex;
+                            const clickedDataset = chart.data.datasets[clickedDatasetIndex];
+
+                            // Finde den 'summaryKey' des geklickten Datensatzes (z.B. 'wind' oder 'windSpeed')
+                            const summaryKey = clickedDataset.summaryKey;
+                            if (!summaryKey) return; // Sicherheitshalber
+
+                            // Finde den NEUEN Sichtbarkeitsstatus
+                            const isVisible = chart.isDatasetVisible(clickedDatasetIndex);
+
+                            // Gehe alle Annotationen durch
+                            const annotations = chart.options.plugins.annotation.annotations;
+                            let changed = false;
+
+                            for (const key in annotations) {
+                                const annotation = annotations[key];
+
+                                // KORREKTUR: Suche Linien, die EXAKT denselben 'summaryKey' haben
+                                if (annotation.type === 'line' && annotation.summaryKey === summaryKey) {
+                                    annotation.display = isVisible; // Setze denselben Status
+                                    changed = true;
+                                }
+                            }
+
+                            // Wenn wir was geändert haben, Chart neu zeichnen
+                            if (changed) {
+                                chart.update();
+                            }
+                        } catch (err) {
+                            console.error("Fehler beim Synchronisieren der Annotations-Sichtbarkeit:", err);
+                        }
+                        // --- ENDE NEUER CODE ---
                     }
                 },
                 annotation: {

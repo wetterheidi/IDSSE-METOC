@@ -55,10 +55,18 @@
 
         <div id="sidebar">
 
-            <button class="accordion-header">✍️ Profil erstellen / Regeln definieren</button>
+            <button class="accordion-header">✍️ Profil erstellen</button>
             <div class="accordion-panel">
 
+                <div style="background: #eee; padding: 5px; margin-top: 10px; border-radius: 5px;">
+                    <label for="templateSelect">Vorlage laden (optional):</label>
+                    <select id="templateSelect">
+                        <option value="">-- Vorlage wählen --</option>
+                    </select>
+                </div>
+
                 <div class="setting-group" style="padding-bottom: 10px;">
+                    <hr style="margin: 5px 0;">
                     <strong>Einheiten-Modus:</strong>
                     <br>
                     <label style="display: inline; margin-left: 10px;">
@@ -73,7 +81,7 @@
                     <strong>Logik-Modus (Gesamt-Status):</strong>
                     <br>
                     <label style="display: inline; margin-left: 10px;">
-                        <input type="radio" name="logicMode" value="OR" checked> ODER (Wenn 1 Regel auslöst)
+                        <input type="radio" name="logicMode" value="OR" checked> ODER (Wenn EINE Regel auslöst)
                     </label>
                     <br>
                     <label style="display: inline; margin-left: 10px;">
@@ -83,16 +91,6 @@
 
                 <input type="text" id="profileName" placeholder="1. Profil-Name (z.B. Heli A)">
 
-                <div style="background: #eee; padding: 5px; margin-top: 10px; border-radius: 5px;">
-                    <label for="templateName">Name für Regeln:</label>
-                    <input type="text" id="templateName" placeholder="z.B. 'Heli VFR'">
-                    <button id="saveTemplateButton">Regeln als Vorlage speichern</button>
-                    <hr style="margin: 5px 0;">
-                    <label for="templateSelect">Vorlage laden (Workflow-Start):</label>
-                    <select id="templateSelect">
-                        <option value="">-- Vorlage wählen --</option>
-                    </select>
-                </div>
                 <details open
                     style="margin-bottom: 10px; border-left: 3px solid var(--color-primary); padding-left: 8px;">
                     <summary style="font-weight: bold; cursor: pointer; padding: 5px 0;">2. Schwellenwerte definieren
@@ -108,6 +106,13 @@
                 </details>
 
                 <button id="saveButton" disabled>4. Aktuelles Shape speichern</button>
+                <hr style="margin: 5px 0;">
+
+                <div style="background: #eee; padding: 5px; margin-top: 10px; border-radius: 5px;">
+                    <label for="templateName">5. (Optional) Name für Vorlagen:</label>
+                    <input type="text" id="templateName" placeholder="z.B. 'Heli VFR'">
+                    <button id="saveTemplateButton">Regeln als Vorlage speichern</button>
+                </div>
 
             </div>
 
