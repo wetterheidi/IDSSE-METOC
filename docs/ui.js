@@ -437,8 +437,15 @@ export const displayAutoWarnings = (alarmResults) => {
 export const initMapStatusPlaceholder = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--border-color-strong)';
     uiElements.mapStatusContainer.style.backgroundColor = 'transparent';
-    uiElements.mapStatusText.innerHTML = '⚠️ **3. Area zeichnen:** Bitte zuerst eine Area auf der Karte definieren.';
+    // Passe den Text an die neue Schritt-Zählung an
+    uiElements.mapStatusText.innerHTML = '⚠️ **Schritt 1: Area zeichnen:** Bitte zuerst eine Area auf der Karte definieren.';
     uiElements.saveButton.disabled = true;
+
+    // --- NEU: Verstecke den Regel-Container ---
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'none';
+    }
 };
 
 /**
@@ -726,8 +733,15 @@ export const setManualMonitorMessage = (html) => {
 export const enableSaveButton = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
     uiElements.mapStatusContainer.style.backgroundColor = '#d4edda';
-    uiElements.mapStatusText.innerHTML = '✅ **3. Area gezeichnet:** Shape ist bereit zum Speichern.';
+    // Passe den Text an die neue Schritt-Zählung an
+    uiElements.mapStatusText.innerHTML = '✅ **Schritt 1 abgeschlossen:** Area ist bereit.';
     uiElements.saveButton.disabled = false;
+
+    // --- NEU: Mache den Regel-Container sichtbar ---
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'block';
+    }
 };
 
 export const resetProfileInputs = () => {
