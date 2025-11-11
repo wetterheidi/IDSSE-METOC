@@ -213,12 +213,32 @@ async function handleManualCheck(profileData) {
 
 /**
  * Wird aufgerufen, wenn auf der Karte ein Shape gezeichnet wird.
+ * (NEU: async, um den Land/See-Check durchzuführen)
  */
-function handleMapCreate(layer) {
+async function handleMapCreate(layer) {
     if (currentLayer) {
         currentLayer.remove();
     }
     currentLayer = layer;
+
+    // --- NEU: Land/See-Check ---
+    console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
+    const geojson = layer.toGeoJSON();
+
+    // (Diese Funktion ruft weather.js oder weather_mock.js auf)
+    const { isMaritime, error } = await getWeatherModule().performLandSeaCheck(geojson);
+
+    // Das ist der von dir gewünschte Output:
+    if (error) {
+        console.error("Land/See-Check fehlgeschlagen:", error);
+    } else if (isMaritime) {
+        console.log("%c[Land/See-Check] ERGEBNIS: Maritimes Gebiet (See) erkannt.", "color: blue; font-weight: bold;");
+    } else {
+        console.log("[Land/See-Check] ERGEBNIS: Reines Land-Gebiet erkannt.");
+    }
+    // --- ENDE NEU ---
+
+    // UI freischalten (wie bisher)
     ui.enableSaveButton();
 }
 

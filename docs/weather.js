@@ -2,7 +2,7 @@
 import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
 // Importiere das NEUE "Gehirn"
 import { METRICS_CONFIG, getApiParams } from './metricsConfig.js';
-import { WEATHER_MODELS } from './config.js';
+import { WEATHER_MODELS, API_URLS } from './config.js';
 import * as Utils from './utils.js'; // <-- NEU
 import { STANDARD_PRESSURE_LEVELS } from './utils.js'; // <-- NEU
 
@@ -869,4 +869,53 @@ function getCloudLayersForMetar(interpolatedData, heightUnit) {
         }
         return `${layer.cover} ${formattedHeight}${displayUnit}`;
     }).join(', ');
+}
+
+// NEU: Führe einen schlanken API-Call durch, um Land/See-Punkte zu prüfen
+// (Version 4: Zielt auf ELEVATION-API und prüft, ob 'elevation == 0')
+export async function performLandSeaCheck(geojson) {
+    
+    // 1. Grid-Punkte holen
+    const { gridPoints, error } = getGridPoints(geojson);
+    if (error) {
+        return { error };
+    }
+    if (!gridPoints || gridPoints.features.length === 0) {
+        return { error: "Keine Grid-Punkte im gezeichneten Gebiet gefunden." };
+    }
+
+    // 2. Wir testen einen Stapel von Punkten (max 50)
+    const pointsToTest = gridPoints.features.slice(0, 50);
+    const lats = pointsToTest.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
+    const lons = pointsToTest.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
+
+    // 3. URL zur ELEVATION-API (unverändert)
+    const url = `${API_URLS.ELEVATION}?latitude=${lats}&longitude=${lons}`;
+
+    // 4. API abfragen
+    try {
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`API-Antwort war nicht OK: ${response.status}`);
+        }
+        
+        const data = await response.json();
+
+        // 5. Die 'elevation' auswerten (DEIN VORSCHLAG)
+        // data = { elevation: [150, 145, 0, 12, ...] }
+        if (!data || !data.elevation) {
+            // Dies ersetzt den 'land_sea_mask'-Fehler
+            throw new Error("API-Antwort enthielt kein 'elevation'-Array.");
+        }
+
+        // Prüfe, ob IRGENDEIN Punkt im Array eine Höhe von 0 hat
+        const isMaritime = data.elevation.some(elevationValue => elevationValue === 0);
+
+        return { isMaritime }; // true (wenn 0 gefunden wurde), sonst false
+
+    } catch (err) {
+        console.error("Fehler bei performLandSeaCheck Fetch:", err);
+        return { error: err.message };
+    }
 }

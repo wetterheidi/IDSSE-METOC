@@ -438,7 +438,7 @@ export const initMapStatusPlaceholder = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--border-color-strong)';
     uiElements.mapStatusContainer.style.backgroundColor = 'transparent';
     // Passe den Text an die neue Schritt-Zählung an
-    uiElements.mapStatusText.innerHTML = '⚠️ **Schritt 1: Area zeichnen:** Bitte zuerst eine Area auf der Karte definieren.';
+    uiElements.mapStatusText.innerHTML = '⚠️ Bitte zuerst eine Area auf der Karte definieren.';
     uiElements.saveButton.disabled = true;
 
     // --- NEU: Verstecke den Regel-Container ---
@@ -734,7 +734,7 @@ export const enableSaveButton = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
     uiElements.mapStatusContainer.style.backgroundColor = '#d4edda';
     // Passe den Text an die neue Schritt-Zählung an
-    uiElements.mapStatusText.innerHTML = '✅ **Schritt 1 abgeschlossen:** Area ist bereit.';
+    uiElements.mapStatusText.innerHTML = '✅ Area ist bereit.';
     uiElements.saveButton.disabled = false;
 
     // --- NEU: Mache den Regel-Container sichtbar ---

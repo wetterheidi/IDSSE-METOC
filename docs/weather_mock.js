@@ -202,3 +202,10 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
 
     return Promise.resolve(summary);
 }
+
+// NEU: Mock für den Land/See-Check
+export async function performLandSeaCheck(geojson) {
+    console.warn("%cDEMO-MODUS: Land/See-Check -> 'isMaritime: true' (Seegebiet simuliert)", "color: magenta;");
+    // Wir simulieren standardmäßig ein Seegebiet, um die zukünftige Logik zu testen
+    return Promise.resolve({ isMaritime: true });
+}

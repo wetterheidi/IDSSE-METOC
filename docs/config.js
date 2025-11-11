@@ -130,5 +130,7 @@ export const WEATHER_MODELS = {
 
 // NEU: API URLs
 export const API_URLS = {
-    FORECAST: "https://api.open-meteo.com/v1/forecast"
+    FORECAST: "https://api.open-meteo.com/v1/forecast",
+    MARINE: "https://marine-api.open-meteo.com/v1/marine",
+    ELEVATION: "https://api.open-meteo.com/v1/elevation"
 };
