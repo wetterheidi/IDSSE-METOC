@@ -59,9 +59,11 @@ body {
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
 
+    position: relative; 
+
     padding: 5px 15px;
     font-size: 1.2em;
-    z-index: 10;
+    z-index: 2;
 
     /* NEU: Einhaltung der Höhe sicherstellen */
     height: 80px;
@@ -83,21 +85,20 @@ body {
 
     display: flex;
     flex-direction: column;
-    height: 97%;
-
-    /* --- ÄNDERUNG 1: Scrollen erlauben --- */
-    /* ALT: overflow: hidden; */
+    height: 100%;
+    min-height: 0;
     overflow-y: auto;
-
-    margin-top: 10px;
+    position: relative; /* NEU: Erzwingt Stacking Context */
+    z-index: 1;         /* NEU: Liegt HINTER dem Header */
 }
 
 #map {
     grid-row: 2;
     grid-column: 2;
-    height: 97%;
+    height: 100%;
     width: 100%;
-    margin-top: 10px;
+    position: relative; /* NEU: Erzwingt Stacking Context */
+    z-index: 1;         /* NEU: Liegt HINTER dem Header */
 }
 
 /* --- DER NEUE FOOTER --- */
@@ -359,8 +360,8 @@ button:hover {
 .slider-wrapper {
     position: relative;
     width: 100%;
-    margin-bottom: 30px;
-    margin-top: 5px;
+    margin-bottom: 0; /* Verhindert das Überlaufen nach unten */
+    margin-top: 0;  /* Redundanten Abstand entfernt */
     /* Platz für Labels oben (wie im letzten Schritt) */
 }
 
@@ -427,7 +428,8 @@ button:hover {
 #timeSlider::-moz-range-track {
     width: 100%;
     height: 6px;
-    background: var(--background-interactive); /* Der graue Balken */
+    background: var(--background-interactive);
+    /* Der graue Balken */
     border-radius: 3px;
     border: none;
 }
@@ -679,27 +681,34 @@ button:hover {
 /* 1. Das <li>-Element als Flex-Container (Text links, Buttons rechts) */
 #profileList li {
     display: flex;
-    justify-content: space-between; /* Text links, Buttons rechts */
-    align-items: center; /* Vertikal zentrieren */
+    justify-content: space-between;
+    /* Text links, Buttons rechts */
+    align-items: center;
+    /* Vertikal zentrieren */
     margin-bottom: 5px;
     padding: 2px 0;
 }
 
 /* 2. Der Name-Span (stellt sicher, dass er bei langen Namen nicht überläuft) */
 .profile-list-name {
-    flex-grow: 1; /* Nimmt den restlichen Platz ein */
+    flex-grow: 1;
+    /* Nimmt den restlichen Platz ein */
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis; /* Schneidet lange Namen mit '...' ab */
-    padding-right: 10px; /* Abstand zu den Buttons */
+    text-overflow: ellipsis;
+    /* Schneidet lange Namen mit '...' ab */
+    padding-right: 10px;
+    /* Abstand zu den Buttons */
 }
 
 /* 3. Der Button-Container (rechtsbündig, Buttons nebeneinander) */
 .profile-button-container {
     display: flex;
     align-items: center;
-    flex-shrink: 0; /* Verhindert, dass er gequetscht wird */
-    gap: 5px; /* Abstand zwischen "Prüfen" und "Löschen" */
+    flex-shrink: 0;
+    /* Verhindert, dass er gequetscht wird */
+    gap: 5px;
+    /* Abstand zwischen "Prüfen" und "Löschen" */
 }
 
 /* 4. Der neue Papierkorb-Button */
@@ -707,28 +716,34 @@ button:hover {
     /* Globale Button-Styles zurücksetzen */
     background: transparent;
     border: none;
-    color: var(--color-danger); /* Nutzt die Standard-Gefahrenfarbe */
-    font-size: 1.2em; /* Macht das Icon etwas größer */
+    color: var(--color-danger);
+    /* Nutzt die Standard-Gefahrenfarbe */
+    font-size: 1.2em;
+    /* Macht das Icon etwas größer */
     cursor: pointer;
-    padding: 0 4px; /* Klickbereich etwas vergrößern */
+    padding: 0 4px;
+    /* Klickbereich etwas vergrößern */
     margin: 0;
-    
+
     /* Globale Button-Styles überschreiben */
     width: auto;
     font-weight: normal;
     border-radius: 4px;
-    line-height: 1; /* Wichtig für vertikale Zentrierung des Icons */
+    line-height: 1;
+    /* Wichtig für vertikale Zentrierung des Icons */
 }
 
 .delete-profile-button:hover {
-    background: #f0f0f0; /* Leichter grauer Hover-Effekt */
-    color: #a71d2a; /* Dunkleres Rot */
+    background: #f0f0f0;
+    /* Leichter grauer Hover-Effekt */
+    color: #a71d2a;
+    /* Dunkleres Rot */
 }
 
 /* 5. (Optional) Aufräumen des "Prüfen"-Buttons */
 /* (Wir entfernen den inline-style 'marginLeft' aus ui.js, CSS steuert das jetzt) */
 .check-profile-button {
-    margin-left: 0; 
+    margin-left: 0;
 }
 
 /* src/style.css (am Ende der Datei hinzufügen) */
@@ -753,28 +768,32 @@ button:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 5px; /* Abstand zwischen den Elementen */
+    gap: 5px;
+    /* Abstand zwischen den Elementen */
 }
 
 /* NEU: Styling für die 2 Input-Felder */
 .rule-input-fields input[type="number"] {
-    width: 40%; /* Jedes Feld nimmt 40% der Breite ein */
+    width: 40%;
+    /* Jedes Feld nimmt 40% der Breite ein */
     text-align: right;
     margin: 0;
     padding: 3px;
     height: auto;
-    
+
     /* NEU: Visuelle Unterscheidung (Rot/Gelb) */
     border: 2px solid var(--border-color);
 }
+
 .rule-input-fields input:focus {
-     outline: none;
+    outline: none;
 }
 
 /* Roter Rand für das Alarm-Feld */
-input[id$="_alarm"] { 
+input[id$="_alarm"] {
     border-color: var(--color-danger);
 }
+
 /* Gelber Rand für das Warn-Feld */
 input[id$="_warn"] {
     border-color: var(--color-warning);
@@ -782,7 +801,8 @@ input[id$="_warn"] {
 
 /* NEU: Das Einheiten-Span */
 .rule-input-fields span {
-    width: 15%; /* Nimmt den Restplatz ein */
+    width: 15%;
+    /* Nimmt den Restplatz ein */
     text-align: left;
     white-space: nowrap;
 }
