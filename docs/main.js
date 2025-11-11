@@ -149,11 +149,30 @@ async function handleManualCheck(profileData) {
 
     await clearAllManualOverrides();
 
-    // 1. Lade die Regeln des angeklickten Profils in die Sidebar-Inputs
-    ui.applyRulesToInputs(profileData.rules, profileData.name);
+    // --- NEUER, VOLLSTÄNDIGER UI-AUFBAU ---
 
-    // 2. Öffne das Sidebar-Panel, damit der Nutzer die Regeln sieht
+    // 1. Führe den Land/See-Check für das geladene Profil aus
+    console.log("[handleManualCheck] Führe Land/See-Check für geladenes Profil aus...");
+    const { isMaritime, error: landSeaError } = await getWeatherModule().performLandSeaCheck(profileData.geojson);
+    
+    if (landSeaError) {
+        console.error("Land/See-Check in handleManualCheck fehlgeschlagen:", landSeaError);
+    }
+
+    // 2. Baue die Regeleingabe-Felder (z.B. mit/ohne Wellenhöhe)
+    ui.generateDynamicRuleInputs(isMaritime); 
+
+    // 3. Fülle die (jetzt existierenden) Felder mit den Profil-Regeln
+    ui.applyRulesToInputs(profileData.rules, profileData.name);
+    
+    // 4. Öffne das Akkordeon-Panel
     ui.openProfileEditorAccordion();
+
+    // 5. Mache den (sonst versteckten) Regel-Container sichtbar
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'block';
+    }
 
     ui.activateManualMonitorTab();
 
