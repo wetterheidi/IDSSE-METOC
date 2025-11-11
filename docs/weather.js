@@ -235,50 +235,117 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     console.log(`Pressure-Params: ${pressure}`); // <-- Neuer Log
 
     // 5. Sequenzielle Schleife (API-URL-Bau)
+    const apiParams = getApiParams(metricsForParams, modelInfo);
+
+    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
+    const hasMarineParams = apiParams.marine.hourly.length > 0;
+
+    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte...`);
+    if (hasForecastParams) console.log(`Forecast-Params: ${apiParams.forecast.hourly}`);
+    if (hasMarineParams) console.log(`Marine-Params: ${apiParams.marine.hourly}`);
+
+    // 5. Sequenzielle Schleife (API-URL-Bau)
     for (const chunk of pointChunks) {
         const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
         const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
-        let apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=2`; // <-- WICHTIG: Auf 2 Tage erhöhen!
+        const fetchPromises = [];
 
-        if (hourly.length > 0) {
-            apiUrl += `&hourly=${hourly}`;
-        }
-        if (daily.length > 0) {
-            apiUrl += `&daily=${daily}`;
-        }
+        // --- URL 1: FORECAST (Wind, Temp, etc.) ---
+        if (hasForecastParams) {
+            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=2`;
+            if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
+            if (apiParams.forecast.daily.length > 0) forecastUrl += `&daily=${apiParams.forecast.daily}`;
 
-        // Modell-Logik (Unverändert)
-        if (modelInfo && modelInfo.apiName) {
-            apiUrl += `&models=${modelInfo.apiName}`;
-            if (modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
-                apiUrl += `&forecast_run=${modelInfo.runTimeISO}`;
+            forecastUrl += `&models=${apiParams.forecast.models}`; // (z.B. auto oder icon_seamless)
+            if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
+                forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-        } else {
-            apiUrl += `&models=auto`;
+            fetchPromises.push(fetch(forecastUrl));
+        }
+
+        // --- URL 2: MARINE (Wellen, etc.) ---
+        if (hasMarineParams) {
+            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=2`;
+            marineUrl += `&hourly=${apiParams.marine.hourly}`; // (z.B. wave_height)
+            marineUrl += `&models=${apiParams.marine.models}`; // (z.B. ecmwf_wam025)
+            fetchPromises.push(fetch(marineUrl));
         }
 
         try {
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                console.error("API-Fehler bei Chunk:", response.statusText, apiUrl);
-                throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
-            }
-            const data = await response.json();
+            const responses = await Promise.all(fetchPromises);
 
-            const locationsData = Array.isArray(data) ? data : [data];
-
-            if (locationsData[0] && locationsData[0].error) {
-                console.error("Open-Meteo API-Fehler:", locationsData[0].reason, apiUrl);
-                throw new Error(`Open-Meteo API-Fehler: ${locationsData[0].reason}`);
+            // Prüfen, ob ALLE Antworten OK waren
+            for (const response of responses) {
+                if (!response.ok) {
+                    console.error("API-Fehler bei Chunk:", response.statusText, response.url);
+                    throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
+                }
             }
-            allApiResponses.push(...locationsData);
+
+            // JSON-Daten aus allen Antworten extrahieren
+            const allData = await Promise.all(responses.map(res => res.json()));
+
+            // --- NEUES DATEN-MERGING ---
+            // Wir nehmen die erste Antwort (Forecast) als Basis
+            let forecastJson = null;
+            let marineJson = null;
+            let promiseIndex = 0; // Ein Zähler für die Antworten
+
+            // Wir weisen die Antworten in der Reihenfolge zu, in der wir die Anfragen gestellt haben
+            if (hasForecastParams) {
+                forecastJson = allData[promiseIndex];
+                promiseIndex++;
+            }
+            if (hasMarineParams) {
+                marineJson = allData[promiseIndex];
+            }
+
+            // Jetzt wandeln wir sie sicher in Arrays um
+            const forecastData = hasForecastParams ? (Array.isArray(forecastJson) ? forecastJson : [forecastJson]) : [];
+            const marineData = hasMarineParams ? (Array.isArray(marineJson) ? marineJson : [marineJson]) : [];
+
+            // Wenn nur Marine-Daten da sind, nutze sie als Basis
+            if (!hasForecastParams && hasMarineParams) {
+                allApiResponses.push(...marineData);
+                continue; // Nächster Chunk
+            }
+
+            // Standardfall: Forecast-Daten (auch wenn leer) als Basis nehmen
+            let mergedLocationsData = forecastData;
+
+            // Wenn wir auch Marine-Daten haben, müssen wir sie in die Forecast-Daten "hinein-mergen"
+            if (hasMarineParams && marineData.length > 0) {
+                if (mergedLocationsData.length === 0) {
+                    // Fall: Nur Marine-Daten wurden zurückgegeben (z.B. Forecast-API down?)
+                    mergedLocationsData = marineData;
+                } else {
+                    // Normalfall: Beide APIs haben geantwortet. Wir mergen 'hourly'.
+                    for (let i = 0; i < mergedLocationsData.length; i++) {
+                        // Mergen das 'hourly' Objekt von Marine in das 'hourly' Objekt von Forecast
+                        if (marineData[i] && marineData[i].hourly) {
+                            mergedLocationsData[i].hourly = {
+                                ...mergedLocationsData[i].hourly,
+                                ...marineData[i].hourly
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Fehlerprüfung (wie bisher, aber am gemergten Objekt)
+            if (mergedLocationsData[0] && mergedLocationsData[0].error) {
+                console.error("Open-Meteo API-Fehler:", mergedLocationsData[0].reason);
+                throw new Error(`Open-MMeteo API-Fehler: ${mergedLocationsData[0].reason}`);
+            }
+
+            allApiResponses.push(...mergedLocationsData);
 
         } catch (err) {
             console.error("Fehler beim Abrufen eines Tiling-Stapels:", err);
             return Object.assign(getEmptySummary(), { error: err.message });
         }
-    } // Ende der Tiling-Schleife
+    }
 
     // 6. Daten zusammennähen (Unverändert)
     console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
@@ -321,6 +388,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
 
     // Schritt 1: Initialisiere alle hourlyStatus-Objekte (wichtig für die UI-Stunden-Header)
     timeStamps.slice(0, 24).forEach((hour, h) => {
+        const hourString = hour.toString(); // <-- NEU: Key als String
         Object.values(METRICS_CONFIG).forEach(metric => {
             const key = metric.summaryKey;
             summary[key].hourlyStatus[hour] = 'no-data'; // Platzhalter
@@ -368,7 +436,8 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                 let value = null;
 
                 // 1. WERT ZUWEISEN
-                if (metric.paramType === 'hourly') {
+                // 1. WERT ZUWEISEN
+                if (metric.paramType === 'hourly' || metric.paramType === 'marine_hourly') {
                     const apiName = metric.apiName;
                     const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
                     value = hasData ? hourly[apiName][h] : null;
@@ -380,6 +449,57 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                     value = calculateDerivedValue(metric.summaryKey, hourly, h);
                 } else if (metric.paramType === 'derived_pressure') {
                     value = calculateDerivedValue(metric, hourly, h, elevation);
+                }
+
+                // --- NEU (1B): ALARM-PUNKTE SAMMELN (per-location check) ---
+                // (Diese Logik ist dupliziert aus Schritt 3, 
+                // aber sie prüft JEDEN Punkt und speichert den Ort)
+                if (value !== null && isFinite(value)) {
+                    const ruleName = metric.ruleName;
+                    const limit_alarm = rules[ruleName + '_alarm'];
+                    const limit_warn = rules[ruleName + '_warn'];
+
+                    // (Lese den dynamischen Check-Typ, genau wie in Schritt 3)
+                    const checkType = rules[metric.ruleName + '_checkType'] || metric.checkType;
+                    const locationString = `${locationData.latitude},${locationData.longitude}`;
+
+                    let locationStatus = 'ok';
+
+                    if (checkType === 'min') {
+                        if (limit_alarm !== null && value < limit_alarm) locationStatus = 'alarm';
+                        else if (limit_warn !== null && value < limit_warn) locationStatus = 'warn';
+
+                    } else if (checkType === 'max') {
+                        if (limit_alarm !== null && value > limit_alarm) locationStatus = 'alarm';
+                        else if (limit_warn !== null && value > limit_warn) locationStatus = 'warn';
+
+                    } else if (metric.checkType === 'code_match') {
+                        const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
+                        const forbiddenCodes_warn = rules[ruleName + '_warn'];
+                        const valueStr = value.toString();
+
+                        if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
+                            (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
+                            locationStatus = 'no-data';
+                        } else {
+                            if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
+                                locationStatus = 'alarm';
+                            } else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
+                                locationStatus = 'warn';
+                            }
+                        }
+                    }
+
+                    // Wenn dieser Punkt ausgelöst hat, speichere den Ort
+                    if (locationStatus === 'alarm' || locationStatus === 'warn') {
+                        const hourString = timeStamps[h].toString(); // <-- NEU: Key als String
+
+                        // Stelle sicher, dass das Set existiert (Sicherheitscheck)
+                        if (!summary[summaryKey].hourlyAlarms[hourString]) {
+                            summary[summaryKey].hourlyAlarms[hourString] = new Set();
+                        }
+                        summary[summaryKey].hourlyAlarms[hourString].add(locationString);
+                    }
                 }
 
                 // 2. GRAPH-AGGREGATION (Maximalwert finden)
@@ -433,37 +553,38 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                 }
             }
             else if (metric.checkType === 'code_match') {
-                    const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
-                    const forbiddenCodes_warn = rules[ruleName + '_warn'];
-                    const valueStr = value.toString();
+                const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
+                const forbiddenCodes_warn = rules[ruleName + '_warn'];
+                const valueStr = value.toString();
 
-                    if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
-                        (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
-                        currentStatus = 'no-data';
-                    } else {
-                        if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
-                            currentStatus = 'alarm';
-                        } else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
-                            currentStatus = 'warn';
-                        }
+                if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
+                    (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
+                    currentStatus = 'no-data';
+                } else {
+                    if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
+                        currentStatus = 'alarm';
+                    } else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
+                        currentStatus = 'warn';
                     }
                 }
+            }
 
-                // 3. Status in Ampel setzen
-                summary[summaryKey].hourlyStatus[hour] = currentStatus;
+            // 3. Status in Ampel setzen
+            const hourString = hour.toString(); // <-- NEU: Key als String
+            summary[summaryKey].hourlyStatus[hourString] = currentStatus;
 
-                // 4. Header-Wert (für Auto-Warn) und Trigger (für Filter) setzen
-                if (currentStatus === 'alarm' || currentStatus === 'warn') {
-                    summary[summaryKey].triggered = true;
+            // 4. Header-Wert (für Auto-Warn) und Trigger (für Filter) setzen
+            if (currentStatus === 'alarm' || currentStatus === 'warn') {
+                summary[summaryKey].triggered = true;
 
-                    // Aktualisiere den 'schlimmsten' Wert (für den "Alarm: 95" Text)
-                    if (metric.checkType === 'min') {
-                        if (value < summary[summaryKey].value) summary[summaryKey].value = value;
-                    } else { // max oder code_match
-                        if (value > summary[summaryKey].value) summary[summaryKey].value = value;
-                    }
+                // Aktualisiere den 'schlimmsten' Wert (für den "Alarm: 95" Text)
+                if (metric.checkType === 'min') {
+                    if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                } else { // max oder code_match
+                    if (value > summary[summaryKey].value) summary[summaryKey].value = value;
                 }
-            });
+            }
+        });
     });
 
     // Schritt 4: Kombi-Zeile (wie bisher, nutzt jetzt korrekten Status)
@@ -500,7 +621,8 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
             combinedStatus = orStatus;
         }
 
-        summary.combined.hourlyStatus[hour] = combinedStatus;
+        const hourString = hour.toString(); // <-- NEU: Key als String
+        summary.combined.hourlyStatus[hourString] = combinedStatus;
         if (combinedStatus !== 'ok' && combinedStatus !== 'no-data') summary.combined.triggered = true;
     });
 
@@ -874,7 +996,7 @@ function getCloudLayersForMetar(interpolatedData, heightUnit) {
 // NEU: Führe einen schlanken API-Call durch, um Land/See-Punkte zu prüfen
 // (Version 4: Zielt auf ELEVATION-API und prüft, ob 'elevation == 0')
 export async function performLandSeaCheck(geojson) {
-    
+
     // 1. Grid-Punkte holen
     const { gridPoints, error } = getGridPoints(geojson);
     if (error) {
@@ -895,11 +1017,11 @@ export async function performLandSeaCheck(geojson) {
     // 4. API abfragen
     try {
         const response = await fetch(url);
-        
+
         if (!response.ok) {
             throw new Error(`API-Antwort war nicht OK: ${response.status}`);
         }
-        
+
         const data = await response.json();
 
         // 5. Die 'elevation' auswerten (DEIN VORSCHLAG)

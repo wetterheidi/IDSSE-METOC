@@ -2,7 +2,7 @@
 // (Version 1.1: Erweitert um Chart-Optionen)
 
 import * as formatter from './formatter.js';
-import { WMO_TAF_MAP } from './formatter.js';
+import { WMO_TAF_MAP, formatWaveHeight } from './formatter.js';
 import { WEATHER_MODELS } from './config.js';
 
 export const METRICS_CONFIG = {
@@ -244,6 +244,29 @@ export const METRICS_CONFIG = {
             axisLabel: 'SigWx',
             type: 'scatter' // Wir tun so, als wären es Punkte
         }
+    },
+    'waveHeight': {
+        // --- API & Daten ---
+        apiName: 'wave_height',
+        ruleName: 'maxWaveHeight',
+        paramType: 'marine_hourly', // <-- NEUER TYP, um es von 'hourly' zu unterscheiden
+        summaryKey: 'waveHeight',
+        checkType: 'max',
+        apiModel: 'ecmwf_wam025', // <-- Dein Wunschmodell
+
+        // --- UI & Anzeige ---
+        uiUnitId: 'unit-maxWaveHeight',
+        displayName: 'Wellenhöhe (See)',
+        formatter: formatter.formatWaveHeight, // NEUER m/ft Formatter mit Präzision
+        chartColor: '#20c997', // Ein Türkis/Teal
+
+        chartOptions: {
+            axisId: 'yWave', // Eigene Achse
+            axisPosition: 'right',
+            axisLabel: 'Wellenhöhe',
+            type: 'line',
+            fill: true
+        }
     }
 };
 
@@ -252,73 +275,75 @@ export const METRICS_CONFIG = {
  * (FINALE VERSION, die 'hourly_per_level' nutzt)
  */
 export const getApiParams = (metrics, modelInfo) => {
-    const groups = {
-        hourly: new Set(),
-        daily: new Set(),
-        pressure: new Set() // (Wird nicht mehr an die URL übergeben, aber intern genutzt)
+    // Tausche die 'groups'-Struktur gegen ein aufgeteiltes Objekt aus
+    const params = {
+        forecast: { hourly: new Set(), daily: new Set(), pressure: new Set(), models: new Set() },
+        marine: { hourly: new Set(), models: new Set() }
     };
 
-    // 1. Bestimme die erlaubten Levels für das aktuelle Modell
+    // 1. Bestimme die erlaubten Levels für das aktuelle Modell (unverändert)
     let allowedLevels = null;
     if (modelInfo && modelInfo.apiName !== 'auto') {
-        // Finde die Meta-ID (z.B. 'dwd_icon')
         const modelMetaId = WEATHER_MODELS.API_MAP[modelInfo.apiName];
-        // Finde die Eigenschaften (z.B. die erlaubten Levels)
         const modelProps = modelMetaId ? WEATHER_MODELS.MODEL_PROPERTIES[modelMetaId] : null;
-
         if (modelProps && modelProps.pressureLevels) {
             allowedLevels = new Set(modelProps.pressureLevels);
         }
     }
+
+    // Setze das Haupt-Forecast-Modell
+    params.forecast.models.add(modelInfo ? modelInfo.apiName : 'auto');
 
     for (const metric of metrics) {
         const apiNames = Array.isArray(metric.apiName) ? metric.apiName : [metric.apiName];
 
         for (const name of apiNames) {
 
-            if (metric.paramType === 'hourly') {
-                groups.hourly.add(name);
-                if (name === 'weather_code') {
-                    groups.hourly.add('temperature_2m');
+            // --- NEUE AUFTEILUNGS-LOGIK ---
+
+            if (metric.paramType === 'marine_hourly') {
+                // Dies ist ein MARINER Parameter
+                params.marine.hourly.add(name);
+                if (metric.apiModel) {
+                    params.marine.models.add(metric.apiModel); // Füge das spezifische Marine-Modell hinzu
                 }
-            }
-            else if (metric.paramType === 'daily') {
-                groups.daily.add(name);
-            }
-            else if (metric.paramType === 'derived') {
-                groups.hourly.add(name);
-            }
-            else if (metric.paramType === 'derived_pressure') {
 
-                const requestedLevels = metric.pressureLevels || [];
-
-                // --- KORREKTUR: Behandle Oberflächen- und Druckstufen-Parameter ---
-                // (Der 'name' ist z.B. 'temperature_2m' oder 'relative_humidity')
-
+            } else if (metric.paramType === 'derived_pressure') {
+                // Dies ist ein FORECAST-Parameter (Druckstufen)
                 if (name.includes('_2m') || name.includes('_10m') || name.includes('surface_')) {
-                    // Dies ist ein Oberflächen-Parameter, füge ihn 1:1 hinzu
-                    groups.hourly.add(name);
+                    params.forecast.hourly.add(name);
                 } else {
-                    // Dies ist ein Druckstufen-Parameter (z.B. 'relative_humidity' ODER 'cloud_cover')
-
-                    // Finde die gültigen Levels
+                    const requestedLevels = metric.pressureLevels || [];
                     const validLevels = (modelInfo && modelInfo.apiName !== 'auto' && allowedLevels)
                         ? requestedLevels.filter(lvl => allowedLevels.has(lvl))
-                        : requestedLevels; // Im "auto" Modus, frage alle an
-
+                        : requestedLevels;
                     validLevels.forEach(level => {
-                        // Baue den String (z.B. "relative_humidity_900hPa" oder "cloud_cover_900hPa")
-                        groups.hourly.add(`${name}_${level}hPa`);
+                        params.forecast.hourly.add(`${name}_${level}hPa`);
                     });
                 }
-                // --- ENDE KORREKTUR ---
+
+            } else {
+                // Dies ist ein Standard-FORECAST-Parameter (hourly, daily, derived)
+                const group = (metric.paramType === 'daily') ? params.forecast.daily : params.forecast.hourly;
+                group.add(name);
+                if (name === 'weather_code') {
+                    params.forecast.hourly.add('temperature_2m');
+                }
             }
         }
     }
 
+    // Konvertiere Sets in Strings
     return {
-        hourly: Array.from(groups.hourly).join(','), // Enthält jetzt "param_900hPa" etc.
-        daily: Array.from(groups.daily).join(','),
-        pressure: '' // WICHTIG: Immer leer zurückgeben!
+        forecast: {
+            hourly: Array.from(params.forecast.hourly).join(','),
+            daily: Array.from(params.forecast.daily).join(','),
+            pressure: '', // (Bleibt leer, da in 'hourly' integriert)
+            models: Array.from(params.forecast.models).join(',') // (z.B. 'icon_seamless')
+        },
+        marine: {
+            hourly: Array.from(params.marine.hourly).join(','), // (z.B. 'wave_height')
+            models: Array.from(params.marine.models).join(',') // (z.B. 'ecmwf_wam025')
+        }
     };
 };

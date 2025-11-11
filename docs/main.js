@@ -224,11 +224,10 @@ async function handleMapCreate(layer) {
     // --- NEU: Land/See-Check ---
     console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
     const geojson = layer.toGeoJSON();
-
+    
     // (Diese Funktion ruft weather.js oder weather_mock.js auf)
     const { isMaritime, error } = await getWeatherModule().performLandSeaCheck(geojson);
-
-    // Das ist der von dir gewünschte Output:
+    
     if (error) {
         console.error("Land/See-Check fehlgeschlagen:", error);
     } else if (isMaritime) {
@@ -238,7 +237,18 @@ async function handleMapCreate(layer) {
     }
     // --- ENDE NEU ---
 
-    // UI freischalten (wie bisher)
+    // --- NEUER UI-WORKFLOW ---
+    // 1. Baue die Regeleingabe-Liste basierend auf dem Ergebnis (isMaritime) auf.
+    ui.generateDynamicRuleInputs(isMaritime); 
+    
+    // 2. Mache den Container "Schritt 3: Regeln definieren" sichtbar.
+    // (Wir holen uns den Container, den ui.js in der letzten Antwort versteckt hat)
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'block';
+    }
+
+    // 3. UI freischalten (wie bisher)
     ui.enableSaveButton();
 }
 

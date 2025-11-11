@@ -16,7 +16,7 @@ const STATUS_CYCLE = ['ok', 'warn', 'alarm', null];
  * Erstellt die HTML-Eingabefelder für die Regeln dynamisch
  * basierend auf der METRICS_CONFIG.
  */
-function generateDynamicRuleInputs() {
+export function generateDynamicRuleInputs(isMaritime) {
     const container = document.getElementById('dynamic-rules-container');
     if (!container) {
         console.error("Kritischer Fehler: Container 'dynamic-rules-container' in index.html nicht gefunden!");
@@ -25,6 +25,11 @@ function generateDynamicRuleInputs() {
 
     let html = '';
     for (const metric of Object.values(METRICS_CONFIG)) {
+
+        // Wenn der Parameter 'marine_hourly' ist, aber die Area NICHT maritim, überspringe ihn.
+        if (metric.paramType === 'marine_hourly' && !isMaritime) {
+            continue;
+        }
         // Hole den Standard-Label-Text (z.B. km/h oder %)
         if (metric.checkType === 'min' || metric.checkType === 'max') {
             let initialUnit = 'N/A'; // Sicherer Fallback
@@ -108,9 +113,6 @@ export const initUI = (handlers) => {
 
     uiElements.mapStatusContainer = document.getElementById('mapStatusContainer');
     uiElements.mapStatusText = document.getElementById('mapStatusText');
-
-    // NEU: Regel-Inputs dynamisch generieren
-    generateDynamicRuleInputs();
 
     // Die alten uiElements.ruleInputs und uiElements.unitSpans werden NICHT MEHR benötigt,
     // da die Funktionen (z.B. getRulesFromInputs) jetzt dynamisch auf das DOM zugreifen.
@@ -636,10 +638,10 @@ export const applyRulesToInputs = (rules, profileName) => {
 
         if (metric.checkType === 'min' || metric.checkType === 'max') {
 
-           // 0. Finde die ZWEI neuen Input-Felder
+            // 0. Finde die ZWEI neuen Input-Felder
             const elem_alarm = document.getElementById(metric.ruleName + '_alarm');
             const elem_warn = document.getElementById(metric.ruleName + '_warn');
-            
+
             // 1. Lese den gespeicherten *metrischen* Wert (z.B. 22.2 km/h)
             const value_alarm = rules[metric.ruleName + '_alarm'];
             const value_warn = rules[metric.ruleName + '_warn'];
@@ -734,14 +736,8 @@ export const enableSaveButton = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
     uiElements.mapStatusContainer.style.backgroundColor = '#d4edda';
     // Passe den Text an die neue Schritt-Zählung an
-    uiElements.mapStatusText.innerHTML = '✅ Area ist bereit.';
+    uiElements.mapStatusText.innerHTML = '✅ **Schritt 1 abgeschlossen:** Area ist bereit.';
     uiElements.saveButton.disabled = false;
-
-    // --- NEU: Mache den Regel-Container sichtbar ---
-    const rulesContainer = document.getElementById('rules-workflow-container');
-    if (rulesContainer) {
-        rulesContainer.style.display = 'block';
-    }
 };
 
 export const resetProfileInputs = () => {

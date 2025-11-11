@@ -84,6 +84,29 @@ export function formatPrecipMM(value_mm, profile) {
     return { value: value_mm.toFixed(1), unit: 'mm' };
 }
 
+/**
+ * NEU: Formatiert Wellenhöhe (Engine liefert Meter) mit Präzision.
+ */
+export function formatWaveHeight(value_m, profile) {
+    const mode = getUnitMode(profile);
+    // Holt die korrekte Einheit (m oder ft)
+    const unit = (mode === 'aviation') ? UNITS.aviation.altitude : UNITS.metric.altitude;
+
+    if (value_m === null || !isFinite(value_m)) {
+        return { value: 'N/A', unit: unit };
+    }
+    
+    let value = value_m;
+    if (mode === 'aviation') {
+        // Aviation-Modus: m -> ft, 1 Dezimalstelle (z.B. 5.8 ft)
+        value = value_m * CONVERSIONS.METER_TO_FEET;
+        return { value: value.toFixed(1), unit: unit };
+    }
+    
+    // Metric-Modus: m, 1 Dezimalstelle (z.B. 1.8 m)
+    return { value: value.toFixed(1), unit: unit };
+}
+
 // --- NEU: WMO Code-Definitionen ---
 export const WMO_TAF_MAP = {
     0: 'NSW', // No Significant Weather
