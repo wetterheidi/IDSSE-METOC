@@ -195,12 +195,6 @@ export const initUI = (handlers) => {
             // 1. Regeln zuerst auslesen
             const rules = getRulesFromInputs();
 
-            // 2. --- NEUE VALIDIERUNG ---
-            const validationError = validateRules(rules);
-            if (validationError) {
-                alert(validationError); // Zeige den Logikfehler
-                return; // Stoppe das Speichern
-            }
             // --- ENDE VALIDIERUNG ---
 
             // 3. Erst jetzt das Profil-Objekt bauen
@@ -225,12 +219,6 @@ export const initUI = (handlers) => {
             const name = uiElements.templateNameInput.value;
             const rules = getRulesFromInputs(); // 1. Regeln lesen
 
-            // --- HIER VALIDIERUNG HINZUFÜGEN ---
-            const validationError = validateRules(rules);
-            if (validationError) {
-                alert(validationError); // Zeige den Logikfehler
-                return; // Stoppe das Speichern
-            }
             // --- ENDE VALIDIERUNG ---
 
             if (!name) {
@@ -767,37 +755,6 @@ export const resetProfileInputs = () => {
 };
 
 /**
- * NEU: Validiert die logische Konsistenz der Alarm- und Warn-Regeln.
- * @param {object} rules - Das Regel-Objekt von getRulesFromInputs
- * @returns {string | null} - Eine Fehlermeldung oder null, wenn alles OK ist.
- */
-function validateRules(rules) {
-    for (const metric of Object.values(METRICS_CONFIG)) {
-        const alarm_val = rules[metric.ruleName + '_alarm'];
-        const warn_val = rules[metric.ruleName + '_warn'];
-
-        // Nur prüfen, wenn BEIDE Werte gesetzt wurden
-        if (alarm_val !== null && warn_val !== null) {
-
-            if (metric.checkType === 'min') {
-                // "MIN"-Check (Sicht, Temp): Alarm-Limit muss *kleiner* sein als Warn-Limit
-                // z.B. FEHLER: Rot (50) >= Gelb (200) -> Falsch
-                if (alarm_val >= warn_val) {
-                    return `Logikfehler bei "${metric.displayName}": Das Rote Limit (${alarm_val}) muss *kleiner* sein als das Gelbe Limit (${warn_val}).`;
-                }
-            } else { // 'max'
-                // "MAX"-Check (Wind, Wolken): Alarm-Limit muss *größer* sein als Warn-Limit
-                // z.B. FEHLER: Rot (50) <= Gelb (40) -> Falsch
-                if (alarm_val <= warn_val) {
-                    return `Logikfehler bei "${metric.displayName}": Das Rote Limit (${alarm_val}) muss *größer* sein als das Gelbe Limit (${warn_val}).`;
-                }
-            }
-        }
-    }
-    return null; // Alles OK
-}
-
-/**
  * Liest die aktuellen Werte aus den Regel-Feldern.
  * NEU: Liest _alarm und _warn Felder.
  */
@@ -822,14 +779,30 @@ const getRulesFromInputs = () => {
             // (Wir nutzen parseFloat, damit auch 0 als Wert gespeichert wird)
 
             const parsed_alarm = parseFloat(rawVal_alarm);
-            // Konvertiere den gelesenen Wert (z.B. 12) in metrisch (z.B. 22.2)
-            const metric_alarm = isNaN(parsed_alarm) ? null : toMetric(parsed_alarm, metric, unitMode);
-            rules[metric.ruleName + '_alarm'] = metric_alarm; // Speichere metrischen Wert
-
             const parsed_warn = parseFloat(rawVal_warn);
-            // Konvertiere den gelesenen Wert (z.B. 10) in metrisch (z.B. 18.5)
+
+            // Konvertiere beide Werte zuerst (WICHTIG für den Vergleich)
+            const metric_alarm = isNaN(parsed_alarm) ? null : toMetric(parsed_alarm, metric, unitMode);
             const metric_warn = isNaN(parsed_warn) ? null : toMetric(parsed_warn, metric, unitMode);
-            rules[metric.ruleName + '_warn'] = metric_warn; // Speichere metrischen Wert
+
+            rules[metric.ruleName + '_alarm'] = metric_alarm;
+            rules[metric.ruleName + '_warn'] = metric_warn;
+
+            // --- NEU: DYNAMISCHE CHECK-TYP ERKENNUNG ---
+            let dynamicCheckType = null;
+            if (metric_alarm !== null && metric_warn !== null) {
+                // Der Nutzer hat BEIDE Schwellen gesetzt
+                if (metric_alarm > metric_warn) {
+                    dynamicCheckType = 'max'; // Hitzewarnung / Starkwind
+                } else if (metric_alarm < metric_warn) {
+                    dynamicCheckType = 'min'; // Kältewarnung / "Glassy Sea"
+                }
+            }
+            // (Wenn nur ein Wert gesetzt ist oder sie gleich sind, 
+            // verwenden wir den 'dynamicCheckType = null')
+
+            // Speichere den erkannten Typ (oder null) im Profil
+            rules[metric.ruleName + '_checkType'] = dynamicCheckType;
         }
         else if (metric.checkType === 'code_match') {
             // --- NEUE Logik (Liest ZWEI Dropdowns) ---

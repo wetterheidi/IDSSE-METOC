@@ -417,48 +417,53 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                 const limit_alarm = rules[ruleName + '_alarm'];
                 const limit_warn = rules[ruleName + '_warn'];
 
+                // --- NEU: DYNAMISCHEN CHECK-TYP LESEN ---
+                // 1. Nimm den dynamischen Typ aus dem Profil (z.B. 'min')
+                // 2. Wenn nicht vorhanden (null), nimm den statischen Typ aus der Config (z.B. 'max')
+                const checkType = rules[metric.ruleName + '_checkType'] || metric.checkType;
+
                 if (limit_alarm === null && limit_warn === null) {
                     currentStatus = 'no-data';
-                } else if (metric.checkType === 'min') {
+                } else if (checkType === 'min') { // <-- Nutzt die DYNAMISCHE Variable
                     if (limit_alarm !== null && value < limit_alarm) currentStatus = 'alarm';
                     else if (limit_warn !== null && value < limit_warn) currentStatus = 'warn';
-                } else { // max
+                } else { // max (oder alles andere)
                     if (limit_alarm !== null && value > limit_alarm) currentStatus = 'alarm';
                     else if (limit_warn !== null && value > limit_warn) currentStatus = 'warn';
                 }
             }
             else if (metric.checkType === 'code_match') {
-                const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
-                const forbiddenCodes_warn = rules[ruleName + '_warn'];
-                const valueStr = value.toString();
+                    const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
+                    const forbiddenCodes_warn = rules[ruleName + '_warn'];
+                    const valueStr = value.toString();
 
-                if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
-                    (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
-                    currentStatus = 'no-data';
-                } else {
-                    if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
-                        currentStatus = 'alarm';
-                    } else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
-                        currentStatus = 'warn';
+                    if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
+                        (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
+                        currentStatus = 'no-data';
+                    } else {
+                        if (forbiddenCodes_alarm && forbiddenCodes_alarm.includes(valueStr)) {
+                            currentStatus = 'alarm';
+                        } else if (forbiddenCodes_warn && forbiddenCodes_warn.includes(valueStr)) {
+                            currentStatus = 'warn';
+                        }
                     }
                 }
-            }
 
-            // 3. Status in Ampel setzen
-            summary[summaryKey].hourlyStatus[hour] = currentStatus;
+                // 3. Status in Ampel setzen
+                summary[summaryKey].hourlyStatus[hour] = currentStatus;
 
-            // 4. Header-Wert (für Auto-Warn) und Trigger (für Filter) setzen
-            if (currentStatus === 'alarm' || currentStatus === 'warn') {
-                summary[summaryKey].triggered = true;
+                // 4. Header-Wert (für Auto-Warn) und Trigger (für Filter) setzen
+                if (currentStatus === 'alarm' || currentStatus === 'warn') {
+                    summary[summaryKey].triggered = true;
 
-                // Aktualisiere den 'schlimmsten' Wert (für den "Alarm: 95" Text)
-                if (metric.checkType === 'min') {
-                    if (value < summary[summaryKey].value) summary[summaryKey].value = value;
-                } else { // max oder code_match
-                    if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                    // Aktualisiere den 'schlimmsten' Wert (für den "Alarm: 95" Text)
+                    if (metric.checkType === 'min') {
+                        if (value < summary[summaryKey].value) summary[summaryKey].value = value;
+                    } else { // max oder code_match
+                        if (value > summary[summaryKey].value) summary[summaryKey].value = value;
+                    }
                 }
-            }
-        });
+            });
     });
 
     // Schritt 4: Kombi-Zeile (wie bisher, nutzt jetzt korrekten Status)
