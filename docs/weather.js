@@ -195,12 +195,11 @@ export function getGridPoints(geojson) {
 
 // --- 2. Die "Kachel-Engine" (Tiling + Caching) ---
 
-export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activeMetrics) {
-    // 1. Cache-Schlüssel (Unverändert)
+export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activeMetrics, forecastDay) {    // 1. Cache-Schlüssel (Unverändert)
     const modelApiName = modelInfo ? modelInfo.apiName : 'auto';
     const modelRunISO = modelInfo ? modelInfo.runTimeISO : 'latest';
-    const cacheKey = `${profile.id}_${modelApiName}_${modelRunISO}`;
-
+    const cacheKey = `${profile.id}_${modelApiName}_${modelRunISO}_day${forecastDay || 0}`;
+    
     // 2. Cache-Prüfung (Unverändert)
     try {
         const cachedData = await getCache(cacheKey);
@@ -253,7 +252,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
         // --- URL 1: FORECAST (Wind, Temp, etc.) ---
         if (hasForecastParams) {
-            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=2`;
+            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=7`;
             if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
             if (apiParams.forecast.daily.length > 0) forecastUrl += `&daily=${apiParams.forecast.daily}`;
 
@@ -266,7 +265,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
         // --- URL 2: MARINE (Wellen, etc.) ---
         if (hasMarineParams) {
-            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=2`;
+            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=7`;
             marineUrl += `&hourly=${apiParams.marine.hourly}`; // (z.B. wave_height)
             marineUrl += `&models=${apiParams.marine.models}`; // (z.B. ecmwf_wam025)
             fetchPromises.push(fetch(marineUrl));
@@ -350,8 +349,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     // 6. Daten zusammennähen (Unverändert)
     console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
     console.log("%cRAW API DATA (Aggregated from Tiling):", "color: blue; font-weight: bold;", allApiResponses);
-    const finalSummary = checkThresholds_Sampling(profile, allApiResponses, activeMetrics);
-
+    const finalSummary = checkThresholds_Sampling(profile, allApiResponses, activeMetrics, forecastDay);
     // 7. Cache speichern (Unverändert)
     try {
         await setCache(cacheKey, finalSummary);
@@ -368,20 +366,24 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
  * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
  * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
  */
-function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
+function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecastDay) {
     const rules = profile.rules;
     const summary = getEmptySummary();
+    const hourOffset = (forecastDay || 0) * 24;
+
     const metrics = activeMetrics || Object.values(METRICS_CONFIG);
 
     if (!locationsData || locationsData.length === 0) {
         return Object.assign(getEmptySummary(), { error: "Keine API-Daten empfangen." });
     }
 
+    console.log(`[DEBUG 4] Engine empfängt. forecastDay: ${forecastDay}, Berechneter Offset: ${hourOffset}`);
+
     const firstValidEntry = locationsData.find(loc => loc && loc.hourly && loc.hourly.time);
 
-    if (!firstValidEntry) {
-        console.error("API-Antwort ist ungültig, 'hourly.time' fehlt in *allen* Einträgen.", locationsData);
-        return Object.assign(getEmptySummary(), { error: "Ungültige API-Antwort (keine Zeitstempel)." });
+    if (!firstValidEntry || !firstValidEntry.hourly || !firstValidEntry.hourly.time || firstValidEntry.hourly.time.length < (hourOffset + 24)) {
+        console.error(`[weather.js] API-Daten für Tag ${forecastDay} nicht verfügbar. (Offset: ${hourOffset}, Benötigt: ${hourOffset + 24}, Verfügbar: ${firstValidEntry?.hourly?.time?.length})`);
+        return Object.assign(getEmptySummary(), { error: `Prognosedaten für Tag ${forecastDay + 1} nicht verfügbar.` });
     }
 
     const timeStamps = firstValidEntry.hourly.time.map(t => new Date(t + 'Z').getUTCHours());
@@ -429,7 +431,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
         }
 
         for (let h = 0; h < 24; h++) {
-            if (h >= timeStamps.length) return;
+            const dataIndex = h + hourOffset; // <-- NEU: Echter API-Index
 
             metrics.forEach(metric => {
                 const summaryKey = metric.summaryKey;
@@ -440,15 +442,15 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                 if (metric.paramType === 'hourly' || metric.paramType === 'marine_hourly') {
                     const apiName = metric.apiName;
                     const hasData = hourly[apiName] !== undefined && hourly[apiName] !== null;
-                    value = hasData ? hourly[apiName][h] : null;
+                    value = hasData ? hourly[apiName][dataIndex] : null;
 
                 } else if (metric.paramType === 'daily') {
                     value = dailyValueCache[summaryKey];
 
                 } else if (metric.paramType === 'derived') {
-                    value = calculateDerivedValue(metric, hourly, h, null);
+                    value = calculateDerivedValue(metric, hourly, dataIndex, null); // <-- Index geändert
                 } else if (metric.paramType === 'derived_pressure') {
-                    value = calculateDerivedValue(metric, hourly, h, elevation);
+                    value = calculateDerivedValue(metric, hourly, dataIndex, elevation); // <-- Index geändert
                 }
 
                 // --- NEU (1B): ALARM-PUNKTE SAMMELN (per-location check) ---

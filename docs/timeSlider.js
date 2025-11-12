@@ -93,7 +93,7 @@ function updateSliderLabels(maxHours) {
  * Aktualisiert die Zeitanzeige (z.B. "14:00")
  */
 function updateSelectedTime(hour) {
-    
+
     let startDate;
 
     // 1. Hole den ISO-String (z.B. '2025-11-02T09:00:00.000Z') oder 'latest'.
@@ -105,22 +105,22 @@ function updateSelectedTime(hour) {
         // Wir nehmen das Datum des Laufs, da der 24h-Forecast (00Z-23Z) in der API
         // immer auf diesen Tag referenziert. Die Zeit des Laufs (09:00Z) wird ignoriert.
         const runDate = new Date(referenceISO);
-        
+
         // Erstellt ein neues Date-Objekt mit dem Datum des Laufs, aber Zeit 00:00:00.000 UTC
         startDate = new Date(Date.UTC(
-            runDate.getUTCFullYear(), 
-            runDate.getUTCMonth(), 
-            runDate.getUTCDate(), 
+            runDate.getUTCFullYear(),
+            runDate.getUTCMonth(),
+            runDate.getUTCDate(),
             0, 0, 0 // <-- WICHTIG: Setze auf 00Z (Index 0)
         ));
-        
+
     } else {
         // Fallback für den Initialzustand oder 'auto' / 'latest'.
         // Der sicherste Startpunkt für den Forecast ist heute 00:00Z.
         startDate = new Date();
-        startDate.setUTCHours(0, 0, 0, 0); 
+        startDate.setUTCHours(0, 0, 0, 0);
     }
-    
+
     // 2. Die Stunde hinzufügen (UTC-basiert)
     // Wir klonen das Datum und addieren die Stunden.
     const selectedDate = new Date(startDate.getTime());
@@ -175,6 +175,43 @@ function updateModelSelect(models) {
 }
 
 /**
+ * NEU: Befüllt das Dropdown-Menü für die Tagauswahl.
+ */
+function populateDaySelector(maxDays = 7) {
+    if (!dom.daySelect) return; // (wird in initTimeSlider hinzugefügt)
+
+    dom.daySelect.innerHTML = ''; // Leeren
+    const today = new Date();
+
+    for (let i = 0; i < maxDays; i++) {
+        const date = new Date(today);
+        date.setUTCDate(date.getUTCDate() + i); // Datum um 'i' Tage erhöhen
+
+        let dayName;
+        if (i === 0) dayName = 'Heute';
+        else if (i === 1) dayName = 'Morgen';
+        else dayName = date.toLocaleDateString('de-DE', { weekday: 'short' });
+
+        const dateString = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+
+        const option = document.createElement('option');
+        option.value = i; // Wichtig: Der Wert ist der Offset (0, 1, 2...)
+        option.textContent = `${dayName} (${dateString})`;
+        dom.daySelect.appendChild(option);
+    }
+}
+
+/**
+ * NEU: Setzt den Slider-Wert extern
+ */
+export function setSliderHour(hour) {
+    if (!dom.timeSlider) return;
+    dom.timeSlider.value = hour;
+    updateSelectedTime(hour);
+    updateSliderHighlight(hour);
+}
+
+/**
  * Aktualisiert das Highlight-Band unter dem Slider
  */
 function updateSliderHighlight(value) {
@@ -188,21 +225,21 @@ function updateSliderHighlight(value) {
  * Entspricht der gewünschten Struktur: "Run: [Datum/Zeit]"
  */
 function updateModelInfoDisplay(apiName, runKey) {
-    
+
     let runTimeDisplay;
-    
+
     // 1. Logge den erhaltenen Schlüssel zur Fehlerbehebung
-    console.log(`[updateModelInfoDisplay] Erhaltener runKey: ${runKey}`); 
+    console.log(`[updateModelInfoDisplay] Erhaltener runKey: ${runKey}`);
 
     // 2. Prüfe auf den Fall, dass fetchLastRunTime keine spezifische Zeit liefern konnte.
     if (runKey === 'latest') {
         // Dieser Fall tritt bei 'auto' oder API-Fehler in fetchLastRunTime auf.
-        runTimeDisplay = 'Laufzeit nicht abrufbar (Kein fester Run)'; 
+        runTimeDisplay = 'Laufzeit nicht abrufbar (Kein fester Run)';
     } else {
         // 3. WERT sollte ein ISO-String sein. Wir versuchen, ihn zu formatieren.
         runTimeDisplay = formatIsoToRunTime(runKey);
     }
-    
+
     // Info-Popup Text aktualisieren
     dom.modelInfoPopup.innerHTML = `<strong>Run:</strong> ${runTimeDisplay}`;
 }
@@ -254,9 +291,9 @@ async function checkAvailableModels(lat, lng) {
 async function fetchLastRunTime(selectedApiName) {
     // 1. Sonderfall: Wenn 'auto' gewählt ist, gibt es keine feste Laufzeit-Info.
     if (selectedApiName === 'auto') {
-        return 'latest'; 
+        return 'latest';
     }
-    
+
     // 2. Die Open-Meteo ID aus der API_MAP holen
     const modelMetaId = WEATHER_MODELS.API_MAP[selectedApiName];
     if (!modelMetaId) {
@@ -266,22 +303,22 @@ async function fetchLastRunTime(selectedApiName) {
 
     // 3. Metadaten-URL erstellen
     // KORREKTUR: Verwende das robuste Format aus dem anderen Projekt
-    const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`; 
-    
+    const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`;
+
     try {
         const metaResponse = await fetch(metaUrl);
         if (!metaResponse.ok) {
             // Loggt den Statuscode (z.B. 404) zur besseren Diagnose
-            throw new Error(`Status ${metaResponse.status}`); 
+            throw new Error(`Status ${metaResponse.status}`);
         }
         const metaData = await metaResponse.json();
-        
+
         // Zeitstempel ist in Sekunden (UNIX Epoch)
         const runDate = new Date(metaData.last_run_initialisation_time * 1000);
-        
+
         // WICHTIG: Rückgabe als ISO-String
-        return runDate.toISOString(); 
-        
+        return runDate.toISOString();
+
     } catch (e) {
         // Fallback, wenn der Abruf fehlschlägt
         console.warn(`[timeSlider] Konnte letzte Laufzeit für ${selectedApiName} nicht abrufen: ${e.message}`);
@@ -296,14 +333,14 @@ async function fetchLastRunTime(selectedApiName) {
  */
 function formatIsoToRunTime(isoString) {
     if (!isoString || typeof isoString !== 'string') return 'FEHLER: Ungültige Daten';
-    
+
     const date = new Date(isoString);
-    
+
     // KORREKTUR: Prüft auf ungültige Datumsobjekte (new Date(bad string) liefert 'Invalid Date')
     if (isNaN(date.getTime())) {
         console.error(`[formatIsoToRunTime] Konnte Datum nicht parsen. Erhalten: ${isoString}`);
         // Gibt den Originalwert zurück, damit der Benutzer sehen kann, was schiefgelaufen ist.
-        return `FEHLER (NaN): ${isoString}`; 
+        return `FEHLER (NaN): ${isoString}`;
     }
 
     const year = date.getUTCFullYear();
@@ -334,6 +371,7 @@ export async function initTimeSlider(callbacks) {
     dom.modelSelect = document.getElementById('modelSelect');
     dom.modelInfoButton = document.getElementById('modelInfoButton');
     dom.modelInfoPopup = document.getElementById('modelInfoPopup');
+    dom.daySelect = document.getElementById('daySelect');
 
     // 2. Interne Event-Listener
 
@@ -369,6 +407,15 @@ export async function initTimeSlider(callbacks) {
             callbacks.onModelChange(apiName, runTimeISO);
         }
     });
+
+    if (dom.daySelect) { // (Sicherheitscheck)
+        dom.daySelect.addEventListener('change', (e) => {
+            console.log("[DEBUG 1] Tag-Auswahl geklickt! Wert:", e.target.value);
+            if (callbacks.onDayChange) {
+                callbacks.onDayChange(e); // Ruft handleDayChange in main.js auf
+            }
+        });
+    }
 
     // Autoupdate
     dom.autoupdateCheckbox.addEventListener('change', (e) => {
@@ -409,6 +456,8 @@ export async function initTimeSlider(callbacks) {
 
     // Dropdown befüllen
     updateModelSelect(models);
+
+    populateDaySelector(7); // <-- NEU: Tagauswahl befüllen
 
     // Setze die Standard-Werte für das erste Element/Auto
     const [initialApiName] = dom.modelSelect.value.split('|');

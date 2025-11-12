@@ -127,6 +127,8 @@ export const initUI = (handlers) => {
     uiElements.unitModeMetric = document.querySelector('input[name="unitMode"][value="metric"]');
     uiElements.unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
 
+    uiElements.daySelect = document.getElementById('daySelect');
+    
     // --- SCHRITT 2: Event-Listener anhängen (Großteils unverändert) ---
 
     // Akkordeon

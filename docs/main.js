@@ -17,6 +17,7 @@ let currentManualProfile = null; // NEU: Merkt sich, welches Profil im Footer ge
 let currentManualSummary = null; // NEU: Merkt sich das *Ergebnis* der letzten Prüfung
 let currentSliderHour = 0;       // NEU: Merkt sich die Stunde (0-23)
 let currentWeatherModel = null;  // NEU: Merkt sich { apiName, runTimeISO }
+let currentForecastDay = 0; // <-- NEU (0=Heute, 1=Morgen, etc.)
 export let manualOverrides = {};
 // NEU: Speichert, welche Graphen-Layer sichtbar sind.
 // Wir initialisieren es mit *allen* Metrik-Schlüsseln.
@@ -80,6 +81,29 @@ function handleAutoupdateChange(isEnabled) {
     // (Logik hierfür später)
 }
 
+/**
+ * HANDLER: Wird aufgerufen, wenn der Prognosetag geändert wird.
+ */
+async function handleDayChange(e) {
+
+    console.log("[DEBUG 2] handleDayChange aufgerufen.");
+
+    currentForecastDay = parseInt(e.target.value, 10);
+    console.log(`Main.js: Prognosetag geändert auf ${currentForecastDay}`);
+
+    // Setze den Slider zurück auf Stunde 0
+    currentSliderHour = 0;
+    timeSlider.setSliderHour(0); // <-- NEU
+
+    // Wenn ein Profil manuell geladen ist, führe die Prüfung erneut aus
+    if (currentManualProfile) {
+        await handleManualCheck(currentManualProfile);
+    }
+
+    // Führe auch den Auto-Check für das Dashboard neu aus
+    await runAndUpdateDashboard();
+}
+
 // --- KERN-WORKFLOWS (Die "Orchestrator"-Funktionen) ---
 
 /**
@@ -121,8 +145,7 @@ async function runAndUpdateDashboard() {
 
         const activeMetrics = getActiveMetrics(profileData.rules);
 
-        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics, currentWeatherModel); // <-- currentWeatherModel zweimal übergeben
-        results.push({ profile: profileData, summary: summary });
+        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics, currentForecastDay); results.push({ profile: profileData, summary: summary });
     }
 
     const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
@@ -154,17 +177,17 @@ async function handleManualCheck(profileData) {
     // 1. Führe den Land/See-Check für das geladene Profil aus
     console.log("[handleManualCheck] Führe Land/See-Check für geladenes Profil aus...");
     const { isMaritime, error: landSeaError } = await getWeatherModule().performLandSeaCheck(profileData.geojson);
-    
+
     if (landSeaError) {
         console.error("Land/See-Check in handleManualCheck fehlgeschlagen:", landSeaError);
     }
 
     // 2. Baue die Regeleingabe-Felder (z.B. mit/ohne Wellenhöhe)
-    ui.generateDynamicRuleInputs(isMaritime); 
+    ui.generateDynamicRuleInputs(isMaritime);
 
     // 3. Fülle die (jetzt existierenden) Felder mit den Profil-Regeln
     ui.applyRulesToInputs(profileData.rules, profileData.name);
-    
+
     // 4. Öffne das Akkordeon-Panel
     ui.openProfileEditorAccordion();
 
@@ -208,8 +231,10 @@ async function handleManualCheck(profileData) {
     // Finde HIER heraus, welche Metriken für DIESES Profil aktiv sind
     const activeMetrics = getActiveMetrics(profileData.rules);
 
+    console.log(`[DEBUG 3] handleManualCheck ruft fetch auf mit forecastDay: ${currentForecastDay}`);
+
     // 3. Engine aufrufen (MIT den Punkten UND den gefilterten Metriken)
-    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics);
+    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics, currentForecastDay);
 
     // --- DEBUG 5 ---
     console.log("%c[main.js] Summary-Objekt VOR Übergabe an UI:", "color: blue; font-weight: bold;", summary);
@@ -243,10 +268,10 @@ async function handleMapCreate(layer) {
     // --- NEU: Land/See-Check ---
     console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
     const geojson = layer.toGeoJSON();
-    
+
     // (Diese Funktion ruft weather.js oder weather_mock.js auf)
     const { isMaritime, error } = await getWeatherModule().performLandSeaCheck(geojson);
-    
+
     if (error) {
         console.error("Land/See-Check fehlgeschlagen:", error);
     } else if (isMaritime) {
@@ -258,8 +283,8 @@ async function handleMapCreate(layer) {
 
     // --- NEUER UI-WORKFLOW ---
     // 1. Baue die Regeleingabe-Liste basierend auf dem Ergebnis (isMaritime) auf.
-    ui.generateDynamicRuleInputs(isMaritime); 
-    
+    ui.generateDynamicRuleInputs(isMaritime);
+
     // 2. Mache den Container "Schritt 3: Regeln definieren" sichtbar.
     // (Wir holen uns den Container, den ui.js in der letzten Antwort versteckt hat)
     const rulesContainer = document.getElementById('rules-workflow-container');
@@ -368,13 +393,13 @@ async function handleSaveTemplate(name, rules) {
 
     // 3. Speichern
     await db.saveTemplate({ name, rules });
-    
+
     // 4. UI aktualisieren
     await updateTemplateList();
 
     // 5. Anforderung 2: Erfolgs-Bestätigung
     alert(`Vorlage "${name}" erfolgreich gespeichert.`);
-    
+
     // 6. (Bonus) Textfeld leeren
     ui.clearTemplateNameInput();
 }
@@ -399,7 +424,7 @@ async function handleDeleteTemplate() {
     }
 
     const confirmed = confirm(`Soll die Vorlage "${template.name}" wirklich gelöscht werden?`);
-    
+
     // 3. Löschen und UI aktualisieren
     if (confirmed) {
         await db.deleteTemplate(templateId);
@@ -425,7 +450,7 @@ async function handleTemplateSelect(templateId) {
         alert("Fehler: Vorlage konnte nicht geladen werden.");
         return;
     }
-    
+
     // 1. NEU: Baue die UI-Felder.
     ui.generateDynamicRuleInputs(true);
 
@@ -454,7 +479,7 @@ async function handleExport() {
         alert("Keine Profile zum Exportieren vorhanden.");
         return;
     }
-    
+
     // NEU: Dynamischen Dateinamen generieren
     const timestamp = new Date().toISOString().split('T')[0]; // z.B. "2025-11-12"
     ui.triggerExportDownload(profiles, `idsse-m-export-${timestamp}.json`);
@@ -603,7 +628,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         await timeSlider.initTimeSlider({
             onSliderChange: handleSliderChange,
             onModelChange: handleModelChange,
-            onAutoupdateChange: handleAutoupdateChange
+            onAutoupdateChange: handleAutoupdateChange,
+            onDayChange: handleDayChange // <-- DIESE ZEILE HINZUFÜGEN
         });
         console.log("Time-Slider erfolgreich initialisiert.");
     } catch (err) {
