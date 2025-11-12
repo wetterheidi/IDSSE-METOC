@@ -114,9 +114,7 @@ export const initUI = (handlers) => {
     uiElements.mapStatusContainer = document.getElementById('mapStatusContainer');
     uiElements.mapStatusText = document.getElementById('mapStatusText');
 
-    // Die alten uiElements.ruleInputs und uiElements.unitSpans werden NICHT MEHR benötigt,
-    // da die Funktionen (z.B. getRulesFromInputs) jetzt dynamisch auf das DOM zugreifen.
-
+    uiElements.deleteTemplateButton = document.getElementById('deleteTemplateButton');
     uiElements.templateNameInput = document.getElementById('templateName');
     uiElements.saveTemplateButton = document.getElementById('saveTemplateButton');
     uiElements.templateSelect = document.getElementById('templateSelect');
@@ -231,13 +229,24 @@ export const initUI = (handlers) => {
         });
     }
 
-    // Vorlage anwenden
-    if (uiElements.templateSelect) {
-        uiElements.templateSelect.addEventListener('change', () => {
-            const templateId = parseInt(uiElements.templateSelect.value);
-            if (!templateId) return;
-            handlers.onTemplateSelect(templateId);
+    // 1. Neuen Lade-Button finden (innerhalb initUI, ca. Zeile 136)
+    uiElements.loadTemplateButton = document.getElementById('loadTemplateButton');
+
+    // 2. Event-Listener (ca. Zeile 276)
+
+    // Vorlage anwenden (NEUE Logik: per Button-Klick)
+    if (uiElements.loadTemplateButton) {
+        uiElements.loadTemplateButton.addEventListener('click', () => {
+            const templateId = parseInt(uiElements.templateSelect.value, 10);
+            if (!templateId) {
+                alert("Bitte wählen Sie zuerst eine Vorlage aus der Liste aus.");
+                return;
+            }
+            handlers.onTemplateSelect(templateId); // Löst handleTemplateSelect in main.js aus
         });
+    }
+    if (uiElements.deleteTemplateButton) {
+        uiElements.deleteTemplateButton.addEventListener('click', handlers.onDeleteTemplate);
     }
 
     // Backup
@@ -1143,13 +1152,9 @@ function getBlendedCombinedStatus(profile, summary) {
  * per Code zu öffnen.
  */
 export const openProfileEditorAccordion = () => {
-    // Finde den richtigen Header (Annahme: Es ist der 2. Header, Index 1)
-    // 0 = 🚨 Automatischer Alarm-Monitor
-    // 1 = ✍️ Profil erstellen / Regeln definieren
     if (!uiElements.accordions || uiElements.accordions.length < 2) return;
 
-    const editorHeader = uiElements.accordions[1];
-    if (editorHeader) {
+    const editorHeader = uiElements.accordions[0]; if (editorHeader) {
         const panel = editorHeader.nextElementSibling;
         const isOpen = panel.classList.contains('open');
 
@@ -1233,3 +1238,42 @@ function fromMetric(metricValue, metricConfig, unitMode) {
     }
     return metricValue; // (z.B. Temp, Percent)
 }
+
+export const clearTemplateNameInput = () => {
+    if (uiElements.templateNameInput) {
+        uiElements.templateNameInput.value = '';
+    }
+};
+
+/**
+ * NEU: Löst den Download einer JSON-Datei für den Export aus.
+ * (Behebt den Absturz in main.js)
+ */
+export const triggerExportDownload = (dataToExport, suggestedFileName) => {
+    try {
+        // 1. Daten in einen "schön lesbaren" JSON-String umwandeln
+        const jsonString = JSON.stringify(dataToExport, null, 2);
+        
+        // 2. Einen "Blob" (quasi eine Datei im Speicher) erstellen
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        
+        // 3. Temporären Link im Browser erstellen
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        
+        a.href = url;
+        a.download = suggestedFileName || 'idsse-m-profile-export.json';
+        
+        // 4. Download auslösen (simulierter Klick)
+        document.body.appendChild(a); // Link muss im DOM sein
+        a.click();
+        
+        // 5. Aufräumen
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+    } catch (err) {
+        console.error("Fehler beim Erstellen des Export-Downloads:", err);
+        alert("Fehler beim Erstellen der Export-Datei.");
+    }
+};

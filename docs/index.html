@@ -101,25 +101,6 @@
                 </div>
                 <h4>Schritt 4: Profil speichern</h4>
                 <button id="saveButton" disabled>Profil speichern</button>
-
-                <hr style="margin: 20px 0;">
-
-                <h4 style="margin-bottom: 5px;">Vorlagen-Verwaltung</h4>
-                <div style="background: #eee; padding: 10px; border-radius: 5px;">
-                    <label for="templateSelect" style="font-weight: bold;">Vorlage laden:</label>
-                    <select id="templateSelect" style="width: 100%;">
-                        <option value="">-- Vorlage wählen --</option>
-                    </select>
-
-                    <hr style="margin: 10px 0;">
-
-                    <label for="templateName" style="font-weight: bold;">(oder) Aktuelle Regeln als Vorlage
-                        speichern:</label>
-                    <input type="text" id="templateName" placeholder="Name für Vorlage (z.B. 'Heli VFR')"
-                        style="width: 100%;">
-                    <button id="saveTemplateButton" style="width: 100%;">Als Vorlage speichern</button>
-                </div>
-
             </div>
 
             <button class="accordion-header">📂 Gespeicherte Profile laden & prüfen</button>
@@ -127,6 +108,27 @@
                 <h4>Profile verwalten:</h4>
                 <ul id="profileList"></ul>
                 <hr>
+            </div>
+
+            <button class="accordion-header">📖 Vorlagen verwalten</button>
+            <div class="accordion-panel">
+                
+                <div style="background: #eee; padding: 10px; border-radius: 5px;">
+                    <label for="templateSelect" style="font-weight: bold;">Vorlage laden:</label>
+                    <select id="templateSelect" style="width: 100%;">
+                        <option value="">-- Vorlage wählen --</option>
+                    </select>
+                    
+                    <button id="loadTemplateButton" style="width: 100%; background-color: var(--color-success); margin-top: 10px;">Ausgewählte Vorlage laden</button>
+                    <button id="deleteTemplateButton" style="width: 100%; background-color: var(--color-danger); margin-top: 5px;">Ausgewählte Vorlage löschen</button>
+
+                    <hr style="margin: 10px 0;">
+                    
+                    <label for="templateName" style="font-weight: bold;">(oder) Aktuelle Regeln als Vorlage speichern:</label>
+                    <input type="text" id="templateName" placeholder="Name für Vorlage (z.B. 'Heli VFR')" style="width: 100%;">
+                    <button id="saveTemplateButton" style="width: 100%;">Als Vorlage speichern</button>
+                </div>
+
             </div>
 
             <button class="accordion-header">☁️ Daten-Export / Import</button>

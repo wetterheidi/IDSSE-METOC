@@ -350,10 +350,62 @@ async function handleDeleteProfile(profile) {
 
 /**
  * Speichert die aktuellen Regeln als Vorlage.
+ * (NEU: Prüft auf Duplikate und gibt Bestätigung)
  */
 async function handleSaveTemplate(name, rules) {
+    // 1. Prüfen, ob der Name leer ist (bereits in ui.js, aber sicher ist sicher)
+    if (!name || name.trim() === '') {
+        alert("Bitte einen Namen für die Vorlage eingeben.");
+        return;
+    }
+
+    // 2. Anforderung 3: Auf Eindeutigkeit prüfen
+    const existingTemplate = await db.findTemplateByName(name);
+    if (existingTemplate) {
+        alert(`Fehler: Eine Vorlage mit dem Namen "${name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
+        return; // Abbrechen
+    }
+
+    // 3. Speichern
     await db.saveTemplate({ name, rules });
+    
+    // 4. UI aktualisieren
     await updateTemplateList();
+
+    // 5. Anforderung 2: Erfolgs-Bestätigung
+    alert(`Vorlage "${name}" erfolgreich gespeichert.`);
+    
+    // 6. (Bonus) Textfeld leeren
+    ui.clearTemplateNameInput();
+}
+
+/**
+ * Löscht eine Vorlage und aktualisiert die Liste.
+ */
+async function handleDeleteTemplate() {
+    // 1. Finde die ausgewählte ID aus dem Dropdown
+    const templateIdStr = ui.uiElements.templateSelect.value;
+    if (!templateIdStr) {
+        alert("Bitte wählen Sie zuerst die zu löschende Vorlage aus der Liste aus.");
+        return;
+    }
+    const templateId = parseInt(templateIdStr, 10);
+
+    // 2. Bestätigung einholen
+    const template = await db.getTemplate(templateId);
+    if (!template) {
+        alert("Fehler: Vorlage nicht gefunden.");
+        return;
+    }
+
+    const confirmed = confirm(`Soll die Vorlage "${template.name}" wirklich gelöscht werden?`);
+    
+    // 3. Löschen und UI aktualisieren
+    if (confirmed) {
+        await db.deleteTemplate(templateId);
+        await updateTemplateList();
+        console.log(`Vorlage "${template.name}" gelöscht.`);
+    }
 }
 
 /**
@@ -369,7 +421,28 @@ async function updateTemplateList() {
  */
 async function handleTemplateSelect(templateId) {
     const template = await db.getTemplate(templateId);
+    if (!template) {
+        alert("Fehler: Vorlage konnte nicht geladen werden.");
+        return;
+    }
+    
+    // 1. NEU: Baue die UI-Felder.
+    ui.generateDynamicRuleInputs(true);
+
+    // 2. Öffne das Akkordeon-Panel (Profil erstellen)
+    ui.openProfileEditorAccordion();
+
+    // 3. NEU: Mache den (sonst versteckten) Regel-Container sichtbar
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'block';
+    }
+
+    // 4. KORREKTUR: Rufe die 'applyTemplateToInputs'-Funktion auf
     ui.applyTemplateToInputs(template);
+
+    // 5. Feedback-Meldung
+    alert(`Vorlage "${template.name}" erfolgreich geladen.`);
 }
 
 /**
@@ -381,7 +454,10 @@ async function handleExport() {
         alert("Keine Profile zum Exportieren vorhanden.");
         return;
     }
-    ui.triggerExportDownload(profiles);
+    
+    // NEU: Dynamischen Dateinamen generieren
+    const timestamp = new Date().toISOString().split('T')[0]; // z.B. "2025-11-12"
+    ui.triggerExportDownload(profiles, `idsse-m-export-${timestamp}.json`);
 }
 
 /**
@@ -514,6 +590,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         onSaveProfile: handleSaveProfile,
         onSaveTemplate: handleSaveTemplate,
         onTemplateSelect: handleTemplateSelect,
+        onDeleteTemplate: handleDeleteTemplate,
         onRunAutoCheck: runAndUpdateDashboard,
         onDashboardClick: handleManualCheck,
         onExport: handleExport,
@@ -543,4 +620,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 5. "Automatik-Light" starten
     runAndUpdateDashboard();
     setInterval(runAndUpdateDashboard, AUTO_CHECK_INTERVAL);
+
+
 });

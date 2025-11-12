@@ -95,7 +95,7 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
                 }
                 // --- ENDE DEBUG LOG ---
 
-                return null; // Keine Wolkenschicht gefunden (SKC)
+                return 99999; // Keine Wolkenschicht gefunden (SKC)
             }
             default:
                 return null;
@@ -446,7 +446,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics) {
                     value = dailyValueCache[summaryKey];
 
                 } else if (metric.paramType === 'derived') {
-                    value = calculateDerivedValue(metric.summaryKey, hourly, h);
+                    value = calculateDerivedValue(metric, hourly, h, null);
                 } else if (metric.paramType === 'derived_pressure') {
                     value = calculateDerivedValue(metric, hourly, h, elevation);
                 }

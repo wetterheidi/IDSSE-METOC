@@ -47,6 +47,12 @@ export const getProfilesForExport = async () => {
 export const getTemplates = () => db.templates.toArray();
 export const getTemplate = (id) => db.templates.get(id);
 export const saveTemplate = (template) => db.templates.add(template);
+export const deleteTemplate = (id) => db.templates.delete(id);
+
+export const findTemplateByName = (name) => {
+    if (!name) return null;
+    return db.templates.where('name').equalsIgnoreCase(name).first();
+};
 
 export const getCache = (key) => {
     try {
