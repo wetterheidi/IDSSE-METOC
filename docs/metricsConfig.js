@@ -2,7 +2,7 @@
 // (Version 1.1: Erweitert um Chart-Optionen)
 
 import * as formatter from './formatter.js';
-import { WMO_TAF_MAP, formatWaveHeight } from './formatter.js';
+import { WMO_TAF_MAP, formatWaveHeight, formatAltitude_M, formatAltitude_FT, formatSigWx } from './formatter.js';
 import { WEATHER_MODELS } from './config.js';
 
 export const METRICS_CONFIG = {
@@ -77,7 +77,7 @@ export const METRICS_CONFIG = {
         checkType: 'min',
         uiUnitId: 'unit-minVis',
         displayName: 'Sichtweite',
-        formatter: formatter.formatAltitude,
+        formatter: formatAltitude_M,
         chartColor: '#8B4513', // Braun
         chartOptions: {
             axisId: 'yAltitude',
@@ -140,7 +140,7 @@ export const METRICS_CONFIG = {
         // --- UI & Anzeige ---
         uiUnitId: 'unit-maxSnowDepth',      // ID für das <span> (Einheit)
         displayName: 'Schneehöhe',          // Name für UI-Label
-        formatter: formatter.formatAltitude,  // WICHTIG: Wiederverwendung des m/ft-Formatters
+        formatter: formatAltitude_M,  // WICHTIG: Wiederverwendung des m/ft-Formatters
         chartColor: '#17a2b8', // Info-Blau / Cyan
 
         // --- Chart-Infos ---
@@ -210,7 +210,7 @@ export const METRICS_CONFIG = {
         // --- UI & Anzeige ---
         uiUnitId: 'unit-minCloudBase',
         displayName: 'Wolkenuntergrenze',
-        formatter: formatter.formatAltitude,
+        formatter: formatAltitude_FT,
         chartColor: '#1abc9c',
         chartOptions: {
             axisId: 'yCloudBase',
@@ -257,7 +257,7 @@ export const METRICS_CONFIG = {
         // --- UI & Anzeige ---
         uiUnitId: 'unit-maxWaveHeight',
         displayName: 'Wellenhöhe (See)',
-        formatter: formatter.formatWaveHeight, // NEUER m/ft Formatter mit Präzision
+        formatter: formatWaveHeight, // NEUER m/ft Formatter mit Präzision
         chartColor: '#20c997', // Ein Türkis/Teal
 
         chartOptions: {

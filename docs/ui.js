@@ -1,6 +1,7 @@
 // ui.js (Version 2.0 - Config-Driven)
 import * as db from './db.js';
 import * as formatter from './formatter.js';
+import { formatAltitude_M, formatAltitude_FT, formatWaveHeight, formatSigWx } from './formatter.js';
 import { UNITS, CONVERSIONS } from './config.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
 // NEU: Importiere das "Gehirn"
@@ -23,6 +24,10 @@ export function generateDynamicRuleInputs(isMaritime) {
         return;
     }
 
+    const unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
+    const mode = (unitModeAviation && unitModeAviation.checked) ? 'aviation' : 'metric';
+    const unitConfig = UNITS[mode]; // Holt das { speed: 'kt', altitude: 'ft' } Objekt
+
     let html = '';
     for (const metric of Object.values(METRICS_CONFIG)) {
 
@@ -36,15 +41,25 @@ export function generateDynamicRuleInputs(isMaritime) {
 
             // NEU: Dynamische Zuweisung basierend auf dem Formatter
             if (metric.formatter === formatter.formatSpeed) {
-                initialUnit = UNITS.metric.speed;
-            } else if (metric.formatter === formatter.formatAltitude) {
-                initialUnit = UNITS.metric.altitude;
-            } else if (metric.formatter === formatter.formatTemp) {
-                initialUnit = UNITS.metric.temp;
+                initialUnit = unitConfig.speed;
+            }
+            // --- KORREKTUR: Vergleiche mit den direkten Importen ---
+            else if (metric.formatter === formatAltitude_FT) {
+                initialUnit = unitConfig.altitude; // m oder ft
+            }
+            else if (metric.formatter === formatAltitude_M) {
+                initialUnit = UNITS.metric.altitude; // Immer 'm'
+            }
+            else if (metric.formatter === formatWaveHeight) {
+                initialUnit = unitConfig.altitude; // m oder ft
+            }
+            // --- ENDE KORREKTUR ---
+            else if (metric.formatter === formatter.formatTemp) {
+                initialUnit = unitConfig.temp;
             } else if (metric.formatter === formatter.formatPercent) {
                 initialUnit = '%';
             } else if (metric.formatter === formatter.formatPrecipMM) {
-                initialUnit = 'mm'; // <-- DIE FEHLENDE PRÜFUNG
+                initialUnit = 'mm';
             }
 
             // Erzeuge das HTML für diese Regel
@@ -128,7 +143,7 @@ export const initUI = (handlers) => {
     uiElements.unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
 
     uiElements.daySelect = document.getElementById('daySelect');
-    
+
     // --- SCHRITT 2: Event-Listener anhängen (Großteils unverändert) ---
 
     // Akkordeon
@@ -411,12 +426,14 @@ export const displayAutoWarnings = (alarmResults) => {
                 // --- 2. BLOCK: WARNUNGEN (gelb) ---
                 const warnHours = hours.filter(h => blendedStatus[h] === 'warn');
                 if (warnHours.length > 0) {
-                    // Finde den "schlimmsten" Wert NUR aus den Warn-Stunden
                     let worstValue = (metric.checkType === 'min') ? Infinity : -Infinity;
                     warnHours.forEach(h_str => {
                         const h_idx = parseInt(h_str, 10);
                         if (h_idx >= s[summaryKey].hourlyData.length) return;
+
+                        // --- HIER IST DIE KORREKTUR ---
                         const val = s[summaryKey].hourlyData[h_idx];
+                        // --- ENDE KORREKTUR ---
 
                         if (val === null || val === undefined) return;
 
@@ -428,9 +445,8 @@ export const displayAutoWarnings = (alarmResults) => {
                     });
 
                     const { value, unit } = metric.formatter(worstValue, p);
-                    const range = getAlarmTimeRange(blendedStatus, 'warn'); // <-- Neuer Aufruf
+                    const range = getAlarmTimeRange(blendedStatus, 'warn');
 
-                    // Nutze die harte Warnfarbe (gelb)
                     html += `<span style="color: #ffc107;">&#9658; ${metric.displayName} (Warnung: ${value}${unit}): ${range}</span><br>`;
                 }
             }
@@ -906,16 +922,28 @@ function updateRuleInputLabels() {
 
         // Leite die Einheit aus der zugewiesenen Formatierungsfunktion ab
         if (metric.formatter === formatter.formatSpeed) {
-            unit = unitConfig.speed;
-        } else if (metric.formatter === formatter.formatAltitude) {
-            unit = unitConfig.altitude;
-        } else if (metric.formatter === formatter.formatTemp) {
-            unit = unitConfig.temp;
+            unit = unitConfig.speed; // km/h oder kt
+        }
+        // --- KORREKTUR: Vergleiche mit den direkten Importen ---
+        else if (metric.formatter === formatAltitude_FT) {
+            unit = unitConfig.altitude; // m oder ft (für CloudBase)
+        }
+        else if (metric.formatter === formatAltitude_M) {
+            unit = UNITS.metric.altitude; // Bleibt immer 'm' (für Vis, Snow)
+        }
+        else if (metric.formatter === formatWaveHeight) {
+            unit = unitConfig.altitude; // m oder ft (für Wellen)
+        }
+        else if (metric.formatter === formatSigWx) {
+            unit = '(WMO)'; // Bleibt immer (WMO)
+        }
+        // --- ENDE KORREKTUR ---
+        else if (metric.formatter === formatter.formatTemp) {
+            unit = unitConfig.temp; // °C
         } else if (metric.formatter === formatter.formatPercent) {
-            unit = '%';
+            unit = '%'; // %
         } else if (metric.formatter === formatter.formatPrecipMM) {
-            // (Vorbereitung für den finalen Umbau)
-            unit = 'mm';
+            unit = 'mm'; // mm
         }
 
         span.textContent = unit;
@@ -1255,21 +1283,21 @@ export const triggerExportDownload = (dataToExport, suggestedFileName) => {
     try {
         // 1. Daten in einen "schön lesbaren" JSON-String umwandeln
         const jsonString = JSON.stringify(dataToExport, null, 2);
-        
+
         // 2. Einen "Blob" (quasi eine Datei im Speicher) erstellen
         const blob = new Blob([jsonString], { type: 'application/json' });
-        
+
         // 3. Temporären Link im Browser erstellen
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        
+
         a.href = url;
         a.download = suggestedFileName || 'idsse-m-profile-export.json';
-        
+
         // 4. Download auslösen (simulierter Klick)
         document.body.appendChild(a); // Link muss im DOM sein
         a.click();
-        
+
         // 5. Aufräumen
         document.body.removeChild(a);
         URL.revokeObjectURL(url);

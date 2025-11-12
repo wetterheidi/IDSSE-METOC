@@ -30,7 +30,7 @@ export function formatSpeed(value_kmh, profile) {
 /**
  * Formatiert einen Höhen/Sicht-Wert (Engine liefert Meter).
  */
-export function formatAltitude(value_m, profile) {
+export function formatAltitude_FT(value_m, profile) {
     const mode = getUnitMode(profile);
     const unit = (mode === 'aviation') ? UNITS.aviation.altitude : UNITS.metric.altitude;
 
@@ -45,6 +45,23 @@ export function formatAltitude(value_m, profile) {
         value = Math.round(value / 100) * 100; 
     }
     return { value: value.toFixed(0), unit: unit };
+}
+
+/**
+ * Formatiert einen Höhenwert (Engine liefert Meter), BLEIBT ABER METRISCH.
+ * (Für Sichtweite, Schneehöhe)
+ */
+export function formatAltitude_M(value_m, profile) {
+    const mode = getUnitMode(profile);
+    // NEU: Holt die Einheit, aber ignoriert Aviation-Umrechnung
+    const unit = UNITS.metric.altitude; // <-- Bleibt immer 'm'
+
+    if (value_m === null || !isFinite(value_m)) {
+        return { value: 'N/A', unit: unit };
+    }
+
+    // Keine Umrechnung, nur Runden auf ganze Meter
+    return { value: value_m.toFixed(0), unit: unit };
 }
 
 /**

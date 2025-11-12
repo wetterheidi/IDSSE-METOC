@@ -1,4 +1,14 @@
 // main.js - Der Dirigent
+// NEU: Debounce Helfer
+let debounceTimer;
+function debounce(func, delay) {
+    return function(...args) {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
 
 import { AUTO_CHECK_INTERVAL } from './config.js';
 import * as db from './db.js';
@@ -8,6 +18,7 @@ import * as map from './map.js';
 import * as ui from './ui.js';
 import * as timeSlider from './timeSlider.js';
 import * as charts from './charts.js'; // <-- NEU
+import { WEATHER_MODELS } from './config.js';
 import { METRICS_CONFIG } from './metricsConfig.js';
 
 // --- Globaler App-Zustand ---
@@ -62,14 +73,48 @@ async function handleModelChange(apiName, runTimeISO) {
     console.log(`Main.js: Modell geändert auf ${apiName} (Lauf: ${runTimeISO})`);
     currentWeatherModel = { apiName, runTimeISO };
 
+    // --- NEUER SMART-RESET (KORRIGIERT) ---
+    let maxDays = 7; // Standard-Annahme (z.B. für 'auto')
+    if (apiName !== 'auto') {
+        // KORREKTUR: Direkter Zugriff auf MODEL_PROPERTIES mit dem apiName
+        const modelProps = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
+        
+        if (modelProps && modelProps.maxDays) {
+            maxDays = modelProps.maxDays;
+        } else {
+            // Fallback, falls wir vergessen haben, ein Modell in config.js einzutragen
+            console.warn(`[main.js] 'maxDays' für Modell "${apiName}" nicht in config.js gefunden. Nutze Standard (7 Tage).`);
+        }
+    }
+
+    // Prüfe, ob der aktuell gewählte Tag außerhalb der neuen Reichweite liegt
+    if (currentForecastDay >= maxDays) {
+        const resetToDay = 0;
+        alert(`Das Modell "${WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName}" liefert nur ${maxDays} Tage Prognose. Sie wurden auf "Heute" (Tag ${resetToDay + 1}) zurückgesetzt.`);
+        
+        // 1. Globalen Zustand zurücksetzen
+        currentForecastDay = resetToDay;
+        
+        // 2. Visuelles Dropdown zurücksetzen
+        timeSlider.resetDaySelector();
+        
+        // 3. Slider-Label auf den neuen Tag (Heute) aktualisieren
+        timeSlider.setForecastDay(resetToDay);
+        
+        // 4. Zeit-Slider auf 00:00 setzen
+        currentSliderHour = 0; 
+        timeSlider.setSliderHour(0);
+    }
+    // --- ENDE SMART-RESET ---
+
+
     if (currentManualProfile) {
         console.log(`[Modell-Wechsel] Führe manuelle Prüfung für "${currentManualProfile.name}" mit neuem Modell aus.`);
-
-        // Wir rufen dieselbe Funktion auf, die auch der "Laden & Prüfen"-Button nutzt.
-        // 'await' stellt sicher, dass alles der Reihe nach passiert.
+        // (Dieser Aufruf verwendet jetzt den korrigierten 'currentForecastDay')
         await handleManualCheck(currentManualProfile);
     }
 
+    // (Dieser Aufruf verwendet jetzt auch den korrigierten 'currentForecastDay')
     await runAndUpdateDashboard();
 }
 
@@ -91,9 +136,12 @@ async function handleDayChange(e) {
     currentForecastDay = parseInt(e.target.value, 10);
     console.log(`Main.js: Prognosetag geändert auf ${currentForecastDay}`);
 
-    // Setze den Slider zurück auf Stunde 0
-    currentSliderHour = 0;
-    timeSlider.setSliderHour(0); // <-- NEU
+    // 1. Sage dem Slider, welchen Tag er anzeigen soll
+    timeSlider.setForecastDay(currentForecastDay);
+    
+    // 2. Setze den Slider auf 0 Uhr (dies ruft updateSelectedTime auf)
+    currentSliderHour = 0; 
+    timeSlider.setSliderHour(0); 
 
     // Wenn ein Profil manuell geladen ist, führe die Prüfung erneut aus
     if (currentManualProfile) {
@@ -103,6 +151,8 @@ async function handleDayChange(e) {
     // Führe auch den Auto-Check für das Dashboard neu aus
     await runAndUpdateDashboard();
 }
+
+const debouncedHandleDayChange = debounce(handleDayChange, 500); // 500ms Verzögerung
 
 // --- KERN-WORKFLOWS (Die "Orchestrator"-Funktionen) ---
 
@@ -629,7 +679,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             onSliderChange: handleSliderChange,
             onModelChange: handleModelChange,
             onAutoupdateChange: handleAutoupdateChange,
-            onDayChange: handleDayChange // <-- DIESE ZEILE HINZUFÜGEN
+            onDayChange: debouncedHandleDayChange // <-- DIESE ZEILE HINZUFÜGEN
         });
         console.log("Time-Slider erfolgreich initialisiert.");
     } catch (err) {

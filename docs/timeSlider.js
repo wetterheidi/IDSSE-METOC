@@ -66,6 +66,7 @@ function calculateModelRunTimes() {
 // Wir suchen diese Elemente erst, wenn init() aufgerufen wird.
 let dom = {};
 let currentRunTimeISO = null;
+let currentDayOffset = 0;
 let lastModelRun = "N/A (No data)";
 
 // --- 3. Interne Display-Logik (portiert aus DZMaster/displayManager.js) ---
@@ -113,12 +114,14 @@ function updateSelectedTime(hour) {
             runDate.getUTCDate(),
             0, 0, 0 // <-- WICHTIG: Setze auf 00Z (Index 0)
         ));
+        startDate.setUTCDate(startDate.getUTCDate() + currentDayOffset); // <-- NEU
 
     } else {
         // Fallback für den Initialzustand oder 'auto' / 'latest'.
         // Der sicherste Startpunkt für den Forecast ist heute 00:00Z.
         startDate = new Date();
         startDate.setUTCHours(0, 0, 0, 0);
+        startDate.setUTCDate(startDate.getUTCDate() + currentDayOffset); // <-- NEU
     }
 
     // 2. Die Stunde hinzufügen (UTC-basiert)
@@ -209,6 +212,24 @@ export function setSliderHour(hour) {
     dom.timeSlider.value = hour;
     updateSelectedTime(hour);
     updateSliderHighlight(hour);
+}
+
+/**
+ * NEU: Setzt den Tages-Offset extern (von main.js)
+ */
+export function setForecastDay(dayOffset) {
+    currentDayOffset = dayOffset;
+    // (Wir aktualisieren die UI hier nicht, 
+    // das passiert gleich durch setSliderHour(0))
+}
+
+/**
+ * NEU: Setzt das Dropdown-Menü für den Tag visuell zurück.
+ */
+export function resetDaySelector() {
+    if (dom.daySelect) {
+        dom.daySelect.value = "0"; // Setzt auf "Heute"
+    }
 }
 
 /**
@@ -392,17 +413,35 @@ export async function initTimeSlider(callbacks) {
     dom.modelSelect.addEventListener('change', async (e) => {
         const [apiName] = e.target.value.split('|'); // RunKey ist hier 'latest'
 
-        // 1. Letzte Laufzeit abrufen
+        // --- NEU: TAGES-DROPDOWN DYNAMISCH ANPASSEN ---
+        
+        // 1. Finde maxDays (dieselbe Logik wie in main.js "Smart Reset")
+        let maxDays = 7; // Standard (für 'auto')
+        if (apiName !== 'auto') {
+            const modelProps = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
+            if (modelProps && modelProps.maxDays) {
+                maxDays = modelProps.maxDays;
+            } else {
+                console.warn(`[timeSlider] 'maxDays' für "${apiName}" nicht gefunden, nutze 7.`);
+            }
+        }
+
+        // 2. Baue das Day-Dropdown mit der korrekten Anzahl an Tagen neu auf
+        populateDaySelector(maxDays);
+        
+        // --- ENDE NEU ---
+
+        // 3. Letzte Laufzeit abrufen
         const runTimeISO = await fetchLastRunTime(apiName);
 
-        // 2. Zustand speichern
+        // 4. Zustand speichern
         currentRunTimeISO = runTimeISO;
 
-        // 3. UI aktualisieren
+        // 5. UI aktualisieren
         updateModelInfoDisplay(apiName, runTimeISO);
         updateSelectedTime(parseInt(dom.timeSlider.value, 10));
 
-        // 4. Callback auslösen (runTimeISO ist entweder ISO-String oder 'latest')
+        // 6. Callback auslösen (ruft handleModelChange in main.js auf)
         if (callbacks.onModelChange) {
             callbacks.onModelChange(apiName, runTimeISO);
         }
