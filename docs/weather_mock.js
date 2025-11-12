@@ -177,7 +177,7 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
                 if (metric.checkType === 'code_match' && value > summary[summaryKey].value) {
                     summary[summaryKey].value = value;
                 }
-                if (!summary[summaryKey].hourlyAlarms[h]) summary[TsummaryKey].hourlyAlarms[h] = new Set();
+                if (!summary[summaryKey].hourlyAlarms[h]) summary[summaryKey].hourlyAlarms[h] = new Set();
                 summary[summaryKey].hourlyAlarms[h].add(fakeLocationId);
             }
 

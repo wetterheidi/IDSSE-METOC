@@ -470,7 +470,7 @@ button:hover {
     z-index: 1;
 }
 
-#modelSelect {
+#modelSelect, #daySelect {
     font-size: 14px;
     padding: 2px;
     border-radius: 4px;
