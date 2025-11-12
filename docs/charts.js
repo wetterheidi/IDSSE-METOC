@@ -196,10 +196,29 @@ export function updateWeatherChart(profile, summary) {
 
         } else {
             // Normaler Pfad für alle anderen Metriken
-            const formattedData = summary[summaryKey].hourlyData.map(val => metric.formatter(val, profile));
-            // 'N/A' zu 'null' konvertieren, um Abstürze zu verhindern
+            // Hole die Rohdaten (z.B. [10, 12, 99999, 15])
+            const rawData = summary[summaryKey].hourlyData;
+            let processedData;
+
+            // --- NEUE PRÜFUNG FÜR WOLKENUNTERGRENZE ---
+            if (summaryKey === 'cloudBase') {
+                // Wandle 99999 (unser SKC-Wert) in 'null' um
+                processedData = rawData.map(val => (val >= 99999) ? null : val);
+            } else {
+                // Alle anderen Parameter (Wind, Temp) bleiben wie sie sind
+                processedData = rawData;
+            }
+            // --- ENDE NEU ---
+
+            // Formatiere die bereinigten Daten
+            const formattedData = processedData.map(val => metric.formatter(val, profile));
+
+            // 'N/A' (was von metric.formatter für 'null' zurückgegeben wird)
+            // zu 'null' konvertieren, damit der Graph die Linie unterbricht
             data = formattedData.map(fd => (fd.value === 'N/A') ? null : fd.value);
-            unit = formattedData.length > 0 ? formattedData[0].unit : '';
+
+            // Einheit sicher bestimmen (selbst wenn der erste Wert 'null' ist)
+            unit = (metric.formatter(null, profile)).unit;
         }
 
         const label = `${metric.displayName} (${unit})`;
