@@ -180,7 +180,7 @@ export function updateWeatherChart(profile, summary) {
                 const codeString = code.toString().padStart(2, '0');
 
                 // WICHTIG: Passen Sie diesen Pfad an, falls Ihre Bilder woanders liegen
-                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
+                img.src = `../img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
 
                 pointStyles[index] = img; // Speichere das Bild-Objekt
 
