@@ -1,7 +1,7 @@
 // ui.js (Version 2.0 - Config-Driven)
 import * as db from './db.js';
 import * as formatter from './formatter.js';
-import { formatAltitude_M, formatAltitude_FT, formatWaveHeight, formatSigWx } from './formatter.js';
+import { formatAltitude_M, formatAltitude_FT, formatWaveHeight, formatSigWx, formatOktas, oktasToPercent, percentToOktas } from './formatter.js';
 import { UNITS, CONVERSIONS } from './config.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
 // NEU: Importiere das "Gehirn"
@@ -937,6 +937,9 @@ function updateRuleInputLabels() {
         else if (metric.formatter === formatSigWx) {
             unit = '(WMO)'; // Bleibt immer (WMO)
         }
+        else if (metric.formatter === formatOktas) {
+            unit = 'Achtel';
+        }
         // --- ENDE KORREKTUR ---
         else if (metric.formatter === formatter.formatTemp) {
             unit = unitConfig.temp; // °C
@@ -1239,6 +1242,10 @@ function toMetric(displayValue, metricConfig, unitMode) {
         // Von kt -> km/h
         return displayValue / CONVERSIONS.KMH_TO_KTS;
     }
+    if (metricConfig.formatter === formatOktas) {
+        // Konvertiere Achtel (z.B. 4) in Prozent (z.B. 50)
+        return oktasToPercent(displayValue);
+    }
     if (metricConfig.formatter === formatter.formatAltitude) {
         // Von ft -> m
         return displayValue / CONVERSIONS.METER_TO_FEET;
@@ -1260,6 +1267,10 @@ function fromMetric(metricValue, metricConfig, unitMode) {
         // Von km/h -> kt (und runden, wie der Formatter es tun würde)
         const val = metricValue * CONVERSIONS.KMH_TO_KTS;
         return Math.round(val);
+    }
+    if (metricConfig.formatter === formatOktas) {
+        // Konvertiere Prozent (z.B. 50) in Achtel (z.B. 4)
+        return percentToOktas(metricValue);
     }
     if (metricConfig.formatter === formatter.formatAltitude) {
         // Von m -> ft (und runden auf 100ft, wie der Formatter)

@@ -2,7 +2,7 @@
 // (Version 1.1: Erweitert um Chart-Optionen)
 
 import * as formatter from './formatter.js';
-import { WMO_TAF_MAP, formatWaveHeight, formatAltitude_M, formatAltitude_FT, formatSigWx } from './formatter.js';
+import { WMO_TAF_MAP, formatWaveHeight, formatAltitude_M, formatAltitude_FT, formatSigWx, formatOktas } from './formatter.js';
 import { WEATHER_MODELS } from './config.js';
 
 export const METRICS_CONFIG = {
@@ -95,14 +95,20 @@ export const METRICS_CONFIG = {
         checkType: 'max',
         uiUnitId: 'unit-maxCloudCover',
         displayName: 'Wolken (Tief)',
-        formatter: formatter.formatPercent,
+
+        // --- ÄNDERUNG 1: Neuer Formatter ---
+        formatter: formatOktas, // ALT: formatter.formatPercent
+
         chartColor: '#6c757d', // Grau
+
+        // --- ÄNDERUNG 2: Eigene Achse für Achtel ---
         chartOptions: {
-            axisId: 'yPercent', // Teilt sich die Achse mit 'precip'
+            axisId: 'yOktas', // ALT: 'yPercent'. Wichtig, damit sie nicht mehr 0-100 skaliert
             axisPosition: 'right',
-            axisLabel: 'Wolken/Niederschl.',
-            type: 'line', // Als Fläche (fill: true)
+            axisLabel: 'Wolken (Achtel)', // ALT: 'Wolken/Niederschl.'
+            type: 'line',
             fill: true
+            // min: 0, max: 8 (Das setzen wir in charts.js)
         }
     },
 

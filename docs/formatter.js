@@ -168,3 +168,36 @@ export function formatSigWx(value_code, profile) {
     const tafCode = WMO_TAF_MAP[codeNum] || 'N/A';
     return { value: tafCode, unit: ` (${codeNum})` };
 }
+
+/**
+ * NEU: Konvertiert einen Prozentwert (0-100) in Achtel (0-8)
+ */
+export function percentToOktas(value_perc) {
+    if (value_perc === null || !isFinite(value_perc)) {
+        return null;
+    }
+    // 100% / 8 = 12.5% pro Achtel
+    return Math.round(value_perc / 12.5);
+}
+
+/**
+ * NEU: Konvertiert einen Achtel-Wert (0-8) zurück in Prozent (0-100)
+ */
+export function oktasToPercent(value_oktas) {
+    if (value_oktas === null || !isFinite(value_oktas)) {
+        return null;
+    }
+    return value_oktas * 12.5;
+}
+
+/**
+ * NEU: Formatter-Funktion für die Graphen und Tabellen
+ */
+export function formatOktas(value_perc, profile) {
+    const value_oktas = percentToOktas(value_perc);
+
+    if (value_oktas === null) {
+        return { value: 'N/A', unit: 'Achtel' };
+    }
+    return { value: value_oktas.toFixed(0), unit: 'Achtel' };
+}

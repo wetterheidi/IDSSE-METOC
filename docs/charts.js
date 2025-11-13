@@ -254,9 +254,9 @@ export function updateWeatherChart(profile, summary) {
                 }
             };
 
-            if (opts.axisId === 'yPercent') {
+            if (opts.axisId === 'yOktas') { // Wir verwenden die neue ID
                 scales[opts.axisId].min = 0;
-                scales[opts.axisId].max = 100;
+                scales[opts.axisId].max = 8; // Skala 0-8
             }
 
             // WICHTIG: Skala für sigWx-Achse (von letzter Iteration)
