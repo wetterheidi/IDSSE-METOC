@@ -1246,10 +1246,18 @@ function toMetric(displayValue, metricConfig, unitMode) {
         // Konvertiere Achtel (z.B. 4) in Prozent (z.B. 50)
         return oktasToPercent(displayValue);
     }
-    if (metricConfig.formatter === formatter.formatAltitude) {
+
+    // --- KORREKTUR HIER ---
+    // ALT: if (metricConfig.formatter === formatter.formatAltitude) {
+    // NEU: Wir prüfen auf die ECHTEN importierten Formatierer
+    if (metricConfig.formatter === formatAltitude_FT || 
+        metricConfig.formatter === formatWaveHeight) 
+    {
         // Von ft -> m
         return displayValue / CONVERSIONS.METER_TO_FEET;
     }
+    // --- ENDE KORREKTUR ---
+
     return displayValue; // (z.B. Temp, Percent)
 }
 
@@ -1272,11 +1280,24 @@ function fromMetric(metricValue, metricConfig, unitMode) {
         // Konvertiere Prozent (z.B. 50) in Achtel (z.B. 4)
         return percentToOktas(metricValue);
     }
-    if (metricConfig.formatter === formatter.formatAltitude) {
-        // Von m -> ft (und runden auf 100ft, wie der Formatter)
+
+    // NEU: Fall 1: Wolkenuntergrenze (m -> ft, runden auf 100)
+    // (nutzt formatAltitude_FT)
+    if (metricConfig.formatter === formatAltitude_FT) {
         const val = metricValue * CONVERSIONS.METER_TO_FEET;
+        // Rundet auf die nächsten 100ft, wie es der Formatter tut
         return Math.round(val / 100) * 100;
     }
+    
+    // NEU: Fall 2: Wellenhöhe (m -> ft, runden auf 0.1)
+    // (nutzt formatWaveHeight)
+    if (metricConfig.formatter === formatWaveHeight) {
+        const val = metricValue * CONVERSIONS.METER_TO_FEET;
+        // Rundet auf eine Dezimalstelle (der formatter.js macht toFixed(1))
+        return Math.round(val * 10) / 10; 
+    }
+    // --- ENDE KORREKTUR ---
+
     return metricValue; // (z.B. Temp, Percent)
 }
 
