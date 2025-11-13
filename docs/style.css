@@ -809,10 +809,12 @@ input[id$="_warn"] {
 
 .leaflet-control-coords {
     background-color: rgba(255, 255, 255, 0.7);
-    padding: 2px 5px;
+    padding: 5px 8px; /* Etwas mehr Platz (war 2px 5px) */
     border-radius: 3px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 12px;
     box-shadow: 0 0 5px rgba(0,0,0,0.2);
     color: var(--text-primary);
+    /* NEU: Verhindert, dass der Text bei der Mausbewegung umbricht */
+    white-space: nowrap; 
 }

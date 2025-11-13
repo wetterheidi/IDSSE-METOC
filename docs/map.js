@@ -2,6 +2,7 @@
 import { getManualOverrides, getVisibleChartMetrics } from './main.js';
 // NEU: Importiere das "Gehirn"
 import { METRICS_CONFIG } from './metricsConfig.js';
+import { forward } from 'https://cdn.jsdelivr.net/npm/mgrs@latest/mgrs.min.js';
 
 // Modul-interne Variablen für die Karten-Objekte
 let map;
@@ -33,20 +34,23 @@ export const initMap = () => {
 
         onAdd: function (map) {
             // Erstelle ein div-Element für die Anzeige
-            // Wir geben ihm eine CSS-Klasse, die wir gleich definieren
             this._container = L.DomUtil.create('div', 'leaflet-control-coords');
-            this._container.innerHTML = 'Lat/Lng: --'; // Starttext
+            // WICHTIG: Mehr Platz, da wir zwei Zeilen brauchen
+            this._container.style.lineHeight = '1.4';
+            this.update(null, null); // Starttext setzen
             return this._container;
         },
 
         // update-Methode zum Aktualisieren des Texts
-        update: function (latlng) {
-            if (latlng) {
-                const lat = latlng.lat.toFixed(5); // Auf 5 Nachkommastellen
+        update: function (latlng, mgrsString) { // <-- Akzeptiert jetzt MGRS
+            if (latlng && mgrsString) {
+                const lat = latlng.lat.toFixed(5);
                 const lng = latlng.lng.toFixed(5);
-                this._container.innerHTML = `Lat: ${lat} | Lng: ${lng}`;
+                // Zeigt MGRS in der ersten Zeile und Lat/Lng in der zweiten
+                this._container.innerHTML = `MGRS: <strong>${mgrsString}</strong><br>Lat: ${lat} | Lng: ${lng}`;
             } else {
-                this._container.innerHTML = 'Lat/Lng: --';
+                // Starttext (zweizeilig)
+                this._container.innerHTML = 'MGRS: --<br>Lat/Lng: --';
             }
         }
     });
@@ -57,8 +61,22 @@ export const initMap = () => {
 
     // 3. Füge die Event-Listener zur Karte hinzu
     map.on('mousemove', (e) => {
-        // Rufe die update-Methode unseres Controls auf
-        coordsControl.update(e.latlng);
+        // --- HIER IST DIE KONVERTIERUNG ---
+        try {
+            // Die mgrs.js-Bibliothek erwartet [lng, lat]
+            const coords = [e.latlng.lng, e.latlng.lat];
+
+            // Konvertiere in MGRS (Präzision 5 = 1m)
+            // 'window.mgrs' kommt von der mgrs.min.js, die wir in index.html geladen haben
+            const mgrsString = forward(coords, 5);
+
+            // Rufe die update-Methode mit beiden Werten auf
+            coordsControl.update(e.latlng, mgrsString);
+
+        } catch (err) {
+            // Falls die Konvertierung fehlschlägt (z.B. Pol-Region)
+            coordsControl.update(e.latlng, "Ungültig");
+        }
     });
 
     map.on('mouseout', () => {
