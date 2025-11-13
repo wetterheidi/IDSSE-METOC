@@ -643,7 +643,6 @@ function getActiveMetrics(rules) {
 
 export const getCurrentManualSummary = () => currentManualSummary;
 
-
 // --- ANWENDUNG STARTEN ---
 document.addEventListener('DOMContentLoaded', async () => {
     // 0. Zustand laden

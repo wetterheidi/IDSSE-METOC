@@ -818,3 +818,21 @@ input[id$="_warn"] {
     /* NEU: Verhindert, dass der Text bei der Mausbewegung umbricht */
     white-space: nowrap; 
 }
+
+/* MGRS Gitter-Beschriftung */
+.mgrs-label {
+    background: rgba(0, 0, 0, 0.7) !important;
+    color: white !important;
+    font-family: 'Courier New', monospace !important;
+    font-weight: bold !important;
+    font-size: 10px !important;
+    padding: 2px 5px !important;
+    border-radius: 3px !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    white-space: nowrap;
+}
+
+.leaflet-tooltip.mgrs-label::before {
+    border: none !important;
+}

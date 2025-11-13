@@ -84,14 +84,155 @@ export const initMap = () => {
         coordsControl.update(null);
     });
 
-    // --- NEU: MGRS-GITTER INITIALISIEREN ---
+    // Automatisches Update des MGRS-Gitters
+    map.on('zoomend moveend', () => {
+        updateMGRSGrid();
+    });
 
+    // Initial einmal zeichnen
+    updateMGRSGrid();
 
     warningAreasLayer = L.layerGroup().addTo(map);
     samplePointsLayer = L.layerGroup().addTo(map);
     profileBoundaryLayer = L.layerGroup().addTo(map);
+    initMGRSGrid();
+
     return map;
 };
+
+// --- MGRS GITTER – KORRIGIERTE VERSION (nach initMap!) ---
+let mgrsGridLayer = null; // Wird erst in initMap() erzeugt!
+
+/**
+ * Initialisiert das MGRS-Gitter – muss NACH map = L.map(...) aufgerufen werden!
+ */
+export function initMGRSGrid() {
+    // Jetzt ist map garantiert definiert!
+    mgrsGridLayer = L.layerGroup().addTo(map);
+
+    // Automatisches Update bei Zoom/Pan
+    map.on('zoomend moveend', updateMGRSGrid);
+
+    // Erstes Zeichnen
+    updateMGRSGrid();
+}
+
+/**
+ * Aktualisiert das MGRS-Gitter
+ */
+export function updateMGRSGrid() {
+    if (!mgrsGridLayer) return;
+    mgrsGridLayer.clearLayers();
+
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+
+    if (zoom < 8) return;
+
+    const levels = [];
+    if (zoom >= 16) levels.push({ size: 100, color: '#ffff00', weight: 1, dash: null });
+    if (zoom >= 14) levels.push({ size: 1000, color: '#00ff00', weight: 1.5, dash: null });
+    if (zoom >= 12) levels.push({ size: 10000, color: '#0000ff', weight: 2, dash: null });
+    if (zoom >= 8) levels.push({ size: 100000, color: '#ff0000', weight: 2, dash: '10, 10' });
+
+    console.log(`[MGRS] Update bei Zoom ${zoom}, ${levels.length} Level(s)`);
+    levels.forEach(level => drawMGRSGridLevel(bounds, level));
+}
+
+function metersToDegrees(meters, latitude = 0) {
+    const earthRadius = 6371000; // Meter
+    const degPerMeterLat = 180 / (Math.PI * earthRadius);
+    const degPerMeterLng = 180 / (Math.PI * earthRadius * Math.cos(latitude * Math.PI / 180));
+    return {
+        lat: meters * degPerMeterLat,
+        lng: meters * degPerMeterLng
+    };
+}
+
+function drawMGRSGridLevel(bounds, level) {
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const centerLat = (sw.lat + ne.lat) / 2;
+
+    // 1. Meter → Grad
+    const deg = metersToDegrees(level.size, centerLat);
+    const gridSizeLat = deg.lat;
+    const gridSizeLng = deg.lng;
+
+    // 2. Gitter ausrichten
+    const startLat = Math.floor(sw.lat / gridSizeLat) * gridSizeLat;
+    const startLng = Math.floor(sw.lng / gridSizeLng) * gridSizeLng;
+    const endLat = Math.ceil(ne.lat / gridSizeLat) * gridSizeLat;
+    const endLng = Math.ceil(ne.lng / gridSizeLng) * gridSizeLng;
+
+    // 3. Präzision für MGRS-Label wählen
+    let precision = 0;
+    if (level.size === 100) precision = 5;      // 100m → 1m genau
+    else if (level.size === 1000) precision = 4; // 1km → 10m genau
+    else if (level.size === 10000) precision = 3; // 10km → 100m genau
+    else if (level.size === 100000) precision = 1; // 100km → 1km genau
+
+    // 4. Vertikale Linien + Label (rechts)
+    for (let lng = startLng; lng <= endLng + gridSizeLng; lng += gridSizeLng) {
+        if (lng < sw.lng - gridSizeLng || lng > ne.lng + gridSizeLng) continue;
+
+        const line = L.polyline([[startLat, lng], [endLat, lng]], {
+            color: level.color,
+            weight: level.weight,
+            opacity: 0.85,
+            dashArray: level.dash || null
+        }).addTo(mgrsGridLayer);
+
+        // Label in der Mitte der Linie (rechts)
+        if (level.size >= 1000) {
+            const cellLat = startLat + gridSizeLat / 2;
+            const cellLng = startLng + gridSizeLng / 2;
+            if (cellLat >= sw.lat && cellLat <= ne.lat && cellLng >= sw.lng && cellLng <= ne.lng) {
+                try {
+                    const mgrs = forward([cellLng, cellLat], precision);
+                    const label = mgrs.split(' ').slice(-2).join(' ');
+                    L.marker([cellLat, cellLng], {
+                        icon: L.divIcon({
+                            className: 'mgrs-label',
+                            html: `<div style="background:${level.color};color:white;padding:2px 6px;font-size:11px;border-radius:3px;font-weight:bold;">${label}</div>`,
+                            iconSize: [60, 20]
+                        })
+                    }).addTo(mgrsGridLayer);
+                } catch (e) { }
+            }
+        }
+    }
+
+    // 5. Horizontale Linien + Label (oben)
+    for (let lat = startLat; lat <= endLat + gridSizeLat; lat += gridSizeLat) {
+        if (lat < sw.lat - gridSizeLat || lat > ne.lat + gridSizeLat) continue;
+
+        const line = L.polyline([[lat, startLng], [lat, endLng]], {
+            color: level.color,
+            weight: level.weight,
+            opacity: 0.85,
+            dashArray: level.dash || null
+        }).addTo(mgrsGridLayer);
+
+        // Label in der Mitte der Linie (oben)
+        const midLng = (startLng + endLng) / 2;
+        if (midLng >= sw.lng && midLng <= ne.lng) {
+            try {
+                const mgrs = forward([midLng, lat], precision);
+                const parts = mgrs.split(' ');
+                const label = parts.slice(-2).join(' ');
+
+                line.bindTooltip(label, {
+                    permanent: true,
+                    direction: 'top',
+                    className: 'mgrs-label',
+                    offset: [0, -8],
+                    opacity: 0.9
+                });
+            } catch (e) { }
+        }
+    }
+}
 
 /**
  * Initialisiert Leaflet-Geoman.
@@ -313,5 +454,13 @@ function getBlendedStatus(summary, summaryKey, hour) {
     return manualStatus || autoStatus || 'no-data';
 }
 
-// HINWEIS: Die alte Hilfsfunktion `getDisplayValue` wird entfernt, 
-// da wir jetzt die zentralen `formatter` aus der Config nutzen.
+setTimeout(() => {
+    console.log("MGRS-Gitter Debug-Check:");
+    console.log("  map existiert:", !!map);
+    console.log("  mgrsGridLayer existiert:", !!mgrsGridLayer);
+    console.log("  mgrsGridLayer ist auf Karte:", map.hasLayer(mgrsGridLayer));
+    console.log("  Anzahl Layer im mgrsGridLayer:", mgrsGridLayer.getLayers().length);
+    console.log("  Aktueller Zoom:", map.getZoom());
+    console.log("  Sichtbare Bounds:", map.getBounds().toBBoxString());
+    console.log("  forward() funktioniert:", forward([8.78, 48.711], 3));
+}, 3000); // 3 Sekunden nach Laden
