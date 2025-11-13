@@ -14,11 +14,61 @@ let profileBoundaryLayer;
  * (Unverändert)
  */
 export const initMap = () => {
-    map = L.map('map').setView([48.711, 8.78], 6);
+    map = L.map('map').setView([48.711, 8.78], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         minZoom: 3,
     }).addTo(map);
+
+    L.control.scale({
+        metric: true,    // Zeigt metrische Einheiten (m, km)
+        imperial: false  // Zeigt imperiale Einheiten (ft, mi) - setzen wir auf false
+    }).addTo(map);
+
+    // 1. Erstelle ein neues Leaflet Control
+    const CoordsControl = L.Control.extend({
+        options: {
+            position: 'bottomright' // Position (z.B. unten rechts)
+        },
+
+        onAdd: function (map) {
+            // Erstelle ein div-Element für die Anzeige
+            // Wir geben ihm eine CSS-Klasse, die wir gleich definieren
+            this._container = L.DomUtil.create('div', 'leaflet-control-coords');
+            this._container.innerHTML = 'Lat/Lng: --'; // Starttext
+            return this._container;
+        },
+
+        // update-Methode zum Aktualisieren des Texts
+        update: function (latlng) {
+            if (latlng) {
+                const lat = latlng.lat.toFixed(5); // Auf 5 Nachkommastellen
+                const lng = latlng.lng.toFixed(5);
+                this._container.innerHTML = `Lat: ${lat} | Lng: ${lng}`;
+            } else {
+                this._container.innerHTML = 'Lat/Lng: --';
+            }
+        }
+    });
+
+    // 2. Erstelle eine Instanz des Controls und füge es zur Karte hinzu
+    const coordsControl = new CoordsControl();
+    map.addControl(coordsControl);
+
+    // 3. Füge die Event-Listener zur Karte hinzu
+    map.on('mousemove', (e) => {
+        // Rufe die update-Methode unseres Controls auf
+        coordsControl.update(e.latlng);
+    });
+
+    map.on('mouseout', () => {
+        // Leert die Anzeige, wenn die Maus die Karte verlässt
+        coordsControl.update(null);
+    });
+
+    // --- NEU: MGRS-GITTER INITIALISIEREN ---
+
+
     warningAreasLayer = L.layerGroup().addTo(map);
     samplePointsLayer = L.layerGroup().addTo(map);
     profileBoundaryLayer = L.layerGroup().addTo(map);
