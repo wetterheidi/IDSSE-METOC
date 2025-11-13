@@ -35,6 +35,12 @@ export function generateDynamicRuleInputs(isMaritime) {
         if (metric.paramType === 'marine_hourly' && !isMaritime) {
             continue;
         }
+
+        // Wenn der Parameter 'maritimeOnly' ist, aber die Area NICHT maritim, überspringe ihn.
+        if (metric.maritimeOnly === true && !isMaritime) {
+            continue;
+        }
+
         // Hole den Standard-Label-Text (z.B. km/h oder %)
         if (metric.checkType === 'min' || metric.checkType === 'max') {
             let initialUnit = 'N/A'; // Sicherer Fallback
@@ -1250,9 +1256,8 @@ function toMetric(displayValue, metricConfig, unitMode) {
     // --- KORREKTUR HIER ---
     // ALT: if (metricConfig.formatter === formatter.formatAltitude) {
     // NEU: Wir prüfen auf die ECHTEN importierten Formatierer
-    if (metricConfig.formatter === formatAltitude_FT || 
-        metricConfig.formatter === formatWaveHeight) 
-    {
+    if (metricConfig.formatter === formatAltitude_FT ||
+        metricConfig.formatter === formatWaveHeight) {
         // Von ft -> m
         return displayValue / CONVERSIONS.METER_TO_FEET;
     }
@@ -1288,13 +1293,13 @@ function fromMetric(metricValue, metricConfig, unitMode) {
         // Rundet auf die nächsten 100ft, wie es der Formatter tut
         return Math.round(val / 100) * 100;
     }
-    
+
     // NEU: Fall 2: Wellenhöhe (m -> ft, runden auf 0.1)
     // (nutzt formatWaveHeight)
     if (metricConfig.formatter === formatWaveHeight) {
         const val = metricValue * CONVERSIONS.METER_TO_FEET;
         // Rundet auf eine Dezimalstelle (der formatter.js macht toFixed(1))
-        return Math.round(val * 10) / 10; 
+        return Math.round(val * 10) / 10;
     }
     // --- ENDE KORREKTUR ---
 

@@ -453,6 +453,14 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                     value = calculateDerivedValue(metric, hourly, dataIndex, elevation); // <-- Index geändert
                 }
 
+                // Prüft, ob diese Metrik 'maritimeOnly' ist UND ob der aktuelle Punkt 'land' ist.
+                if (metric.maritimeOnly === true && locationData.elevation !== 0) {
+                    // Dies ist die SST-Metrik, aber der Punkt ist Land (elevation != 0).
+                    // Wir setzen den Wert auf 'null', damit er weder Alarme
+                    // noch die Graph-Aggregation (Min/Max) beeinflusst.
+                    value = null;
+                }
+                
                 // --- NEU (1B): ALARM-PUNKTE SAMMELN (per-location check) ---
                 // (Diese Logik ist dupliziert aus Schritt 3, 
                 // aber sie prüft JEDEN Punkt und speichert den Ort)

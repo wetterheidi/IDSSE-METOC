@@ -273,7 +273,35 @@ export const METRICS_CONFIG = {
             type: 'line',
             fill: true
         }
-    }
+    },
+
+
+    'seaSurfaceTemp': {
+        // --- API & Daten ---
+        apiName: 'soil_temperature_0cm', // Wie von dir identifiziert
+        ruleName: 'seaTemp',             // Für die Regeln (seaTemp_alarm, seaTemp_warn)
+        paramType: 'hourly',             // Kommt von der Standard 'forecast' API
+        summaryKey: 'seaTemp',           // Interner Schlüssel für das Summary-Objekt
+        checkType: 'min',                // Standard-Prüftyp (kann durch UI überschrieben werden)
+
+        // --- DIE NEUE STEUERUNGS-EIGENSCHAFT ---
+        maritimeOnly: true,              // Zeigt an: 1. UI nur bei Seegebiet 2. Engine filtert Landpunkte
+        forecastModel: 'icon_seamless',  // Erzwingt dieses Modell für diesen Parameter
+
+        // --- UI & Anzeige ---
+        uiUnitId: 'unit-seaTemp',
+        displayName: 'Wassertemperatur',
+        formatter: formatter.formatTemp, // Wir nutzen denselben Formatter wie für Luft
+        chartColor: '#0047AB', // Ein tiefes Blau (Kobaltblau)
+
+        // --- Chart-Infos ---
+        chartOptions: {
+            axisId: 'yTemp',                 // Nutzt dieselbe Y-Achse wie die Lufttemperatur
+            axisPosition: 'left',
+            axisLabel: 'Temp.',
+            type: 'line'
+        }
+    },
 };
 
 /**
@@ -327,13 +355,18 @@ export const getApiParams = (metrics, modelInfo) => {
                         params.forecast.hourly.add(`${name}_${level}hPa`);
                     });
                 }
-
+                if (metric.forecastModel) {
+                    params.forecast.models.add(metric.forecastModel);
+                }
             } else {
                 // Dies ist ein Standard-FORECAST-Parameter (hourly, daily, derived)
                 const group = (metric.paramType === 'daily') ? params.forecast.daily : params.forecast.hourly;
                 group.add(name);
                 if (name === 'weather_code') {
                     params.forecast.hourly.add('temperature_2m');
+                }
+                if (metric.forecastModel) {
+                    params.forecast.models.add(metric.forecastModel);
                 }
             }
         }
