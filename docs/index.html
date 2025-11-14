@@ -102,6 +102,22 @@
                     <div class="rule-input-container" id="dynamic-rules-container" style="margin-top: 10px;">
                     </div>
                 </div>
+                <hr style="margin: 15px 0;">
+                <h4>Zusatz-Optionen</h4>
+                <div class="setting-group" id="custom-row-settings"
+                    style="padding-bottom: 10px; border: 1px solid var(--border-color); border-radius: var(--border-radius); padding: 10px;">
+
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="customRowEnabled" style="width: auto; margin: 0; cursor: pointer;">
+                        Manuelle Ampelzeile einfügen
+                    </label>
+
+                    <div id="custom-row-name-container" style="display: none; margin-top: 10px; padding-left: 10px;">
+                        <label for="customRowName" style="font-weight: bold;">Name der Zeile:</label>
+                        <input type="text" id="customRowName" placeholder="z.B. 'Manuelle Prüfung Pilot'"
+                            style="width: 100%;">
+                    </div>
+                </div>
                 <h4>Schritt 4: Profil speichern</h4>
                 <button id="saveButton" disabled>Profil speichern</button>
             </div>

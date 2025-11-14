@@ -150,6 +150,10 @@ export const initUI = (handlers) => {
 
     uiElements.daySelect = document.getElementById('daySelect');
 
+    uiElements.customRowEnabled = document.getElementById('customRowEnabled');
+    uiElements.customRowNameContainer = document.getElementById('custom-row-name-container');
+    uiElements.customRowName = document.getElementById('customRowName');
+
     // --- SCHRITT 2: Event-Listener anhängen (Großteils unverändert) ---
 
     // Akkordeon
@@ -181,6 +185,19 @@ export const initUI = (handlers) => {
         uiElements.unitModeAviation.addEventListener('change', unitModeChangeHandler);
     }
     // (Labels werden beim Start bereits durch generateDynamicRuleInputs() korrekt gesetzt)
+
+    // Event-Listener für die manuelle Zeilen-Checkbox
+    if (uiElements.customRowEnabled) {
+        uiElements.customRowEnabled.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                // Zeige das Namensfeld an, wenn die Box gecheckt ist
+                uiElements.customRowNameContainer.style.display = 'block';
+            } else {
+                // Verstecke es, wenn nicht
+                uiElements.customRowNameContainer.style.display = 'none';
+            }
+        });
+    }
 
     // Auto-Check
     if (uiElements.runAutoCheckButton) {
@@ -573,6 +590,20 @@ export const displayManualWarning = (profile, summary) => {
         }
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
+        // 6. Manuelle Zeile (falls im Profil aktiviert)
+        if (profile.rules.customRow && profile.rules.customRow.enabled) {
+
+            const customRowName = profile.rules.customRow.name || "Manuelle Zeile";
+            // Dies ist der feste Schlüssel, unter dem die Klicks in 'manualOverrides' gespeichert werden
+            const customRowKey = "customRow";
+
+            // buildRow(DisplayName, AutoStatus-Objekt, Stunden, Override-Schlüssel, istKombizeile)
+            // Wir übergeben ein leeres Objekt {} als AutoStatus.
+            // Die buildRow-Funktion wird 'manualOverrides[customRowKey]' verwenden
+            // oder auf 'no-data' zurückfallen, was genau das ist, was wir wollen.
+            tableHtml += buildRow(customRowName, {}, hours, customRowKey);
+        }
+
         tableHtml += `</tbody></table>`;
     }
 
@@ -735,6 +766,22 @@ export const applyRulesToInputs = (rules, profileName) => {
 
     // 5. Labels (m/ft, etc.) aktualisieren
     updateRuleInputLabels();
+
+    // 6. Setze die manuelle Zeilen-Option
+    const customRowCheckbox = document.getElementById('customRowEnabled');
+    const customRowNameInput = document.getElementById('customRowName');
+    const customRowNameContainer = document.getElementById('custom-row-name-container');
+
+    if (rules.customRow && rules.customRow.enabled) {
+        if (customRowCheckbox) customRowCheckbox.checked = true;
+        if (customRowNameInput) customRowNameInput.value = rules.customRow.name || "Manuelle Zeile";
+        if (customRowNameContainer) customRowNameContainer.style.display = 'block';
+    } else {
+        // Stelle sicher, dass es beim Laden eines Profils *ohne* die Option zurückgesetzt wird
+        if (customRowCheckbox) customRowCheckbox.checked = false;
+        if (customRowNameInput) customRowNameInput.value = '';
+        if (customRowNameContainer) customRowNameContainer.style.display = 'none';
+    }
 };
 
 
@@ -866,6 +913,16 @@ const getRulesFromInputs = () => {
             }
         }
     }
+
+    // Lese die manuelle Zeilen-Option aus
+    const customRowEnabled = document.getElementById('customRowEnabled')?.checked || false;
+    const customRowName = document.getElementById('customRowName')?.value || "Manuelle Zeile";
+
+    rules.customRow = {
+        enabled: customRowEnabled,
+        name: customRowName
+    };
+
     return rules;
 };
 
@@ -1149,6 +1206,24 @@ function getBlendedCombinedStatus(profile, summary) {
                 const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
                 activeRuleStati.push(blendedRuleStatus);
             }
+        }
+
+        // --- NEUER BLOCK START ---
+        // 1b. Prüfe die manuelle Zeile (customRow), falls aktiviert
+        if (rules.customRow && rules.customRow.enabled) {
+            const customRowKey = "customRow";
+            const overrides = getManualOverrides();
+
+            // Hol den manuellen Status für diese Stunde.
+            // Der 'auto' Status ist 'no-data', 
+            // also ist der 'blended' Status einfach der manuelle Override.
+            const manualStatus = (overrides[customRowKey] ? overrides[customRowKey][hour] : null);
+
+            // Wenn der User 'null' (Reset) klickt, wird es zu 'no-data'.
+            const blendedCustomRowStatus = manualStatus || 'no-data';
+
+            // Füge den Status zur Liste hinzu, damit er in der Logik berücksichtigt wird
+            activeRuleStati.push(blendedCustomRowStatus);
         }
 
         // 2. Wende die "UND" / "ODER" Logik an
