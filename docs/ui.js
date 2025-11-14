@@ -24,6 +24,9 @@ export function generateDynamicRuleInputs(isMaritime) {
         return;
     }
 
+    // (Wir rufen die interne Hilfsfunktion getRulesFromInputs auf)
+    const currentRules = getRulesFromInputs();
+
     const unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
     const mode = (unitModeAviation && unitModeAviation.checked) ? 'aviation' : 'metric';
     const unitConfig = UNITS[mode]; // Holt das { speed: 'kt', altitude: 'ft' } Objekt
@@ -67,6 +70,11 @@ export function generateDynamicRuleInputs(isMaritime) {
             } else if (metric.formatter === formatter.formatPrecipMM) {
                 initialUnit = 'mm';
             }
+            else if (metric.formatter === formatOktas) {
+                initialUnit = 'Achtel';
+            } else if (metric.formatter === formatSigWx) {
+                initialUnit = '(WMO)';
+            }
 
             // Erzeuge das HTML für diese Regel
             html += `
@@ -99,11 +107,11 @@ export function generateDynamicRuleInputs(isMaritime) {
                     <label>${metric.displayName}:</label>
                     <div class="rule-input-fields">
                         <select multiple id="${metric.ruleName}_alarm" size="6" style="padding: 5px; border: 2px solid var(--color-danger);">
-                            <option value="" disabled>-- ALARM --</option>
+                            <option value="">-- ALARM --</option>
                             ${optionsHtml}
                         </select>
                         <select multiple id="${metric.ruleName}_warn" size="6" style="padding: 5px; border: 2px solid var(--color-warning);">
-                            <option value="" disabled>-- WARNUNG --</option>
+                            <option value="">-- WARNUNG --</option>
                             ${optionsHtml}
                         </select>
                         <span id="${metric.uiUnitId}">(WMO)</span>
@@ -114,6 +122,7 @@ export function generateDynamicRuleInputs(isMaritime) {
         }
     }
     container.innerHTML = html;
+    applyRulesToInputs(currentRules, null);
 }
 
 

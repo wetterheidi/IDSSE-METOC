@@ -168,13 +168,36 @@ export const METRICS_CONFIG = {
 
         // --- UI & Anzeige ---
         uiUnitId: 'unit-minWindchill',      // ID für das <span> (Einheit)
-        displayName: 'Gefühlte Temp.',      // Name für UI-Label
+        displayName: 'Windchill Temp.',      // Name für UI-Label
         formatter: formatter.formatTemp,    // Nutzt den normalen Temperatur-Formatter
         chartColor: '#9b59b6', // Ein Violett
 
         // --- Chart-Infos ---
         chartOptions: {
             axisId: 'yTemp',                // Nutzt dieselbe Y-Achse wie Temp.
+            axisPosition: 'left',
+            axisLabel: 'Temp.',
+            type: 'line'
+        }
+    },
+
+    'apparentTemp': {
+        // --- API & Daten ---
+        apiName: 'apparent_temperature', // Der direkte API-Parameter
+        paramType: 'hourly',             // Einfacher stündlicher Wert
+        ruleName: 'apparentTemp',        // Neuer, eindeutiger Regel-Name
+        summaryKey: 'apparentTemp',      // Neuer, eindeutiger Summary-Schlüssel
+        checkType: 'min',                // Standard (kann in der UI geändert werden)
+        
+        // --- UI & Anzeige ---
+        uiUnitId: 'unit-apparentTemp',
+        displayName: 'Gefühlte Temp. (Hitze/Kälte)', // Neuer Name
+        formatter: formatter.formatTemp,   // Nutzt denselben Temperatur-Formatter
+        chartColor: '#E91E63', // Ein kräftiges Pink zur Unterscheidung
+        
+        // --- Chart-Infos ---
+        chartOptions: {
+            axisId: 'yTemp',                 // Nutzt dieselbe Y-Achse
             axisPosition: 'left',
             axisLabel: 'Temp.',
             type: 'line'
