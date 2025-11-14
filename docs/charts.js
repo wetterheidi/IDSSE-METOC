@@ -309,20 +309,75 @@ export function updateWeatherChart(profile, summary) {
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
 
-    // --- 3. Override-Blending für Hintergrund-Bänder ---
-    const combinedBlendedStatus = Array.from({ length: 24 }, (_, h) => {
-        const hour = h.toString();
-        let combinedStatus = 'no-data';
+// --- 3. Override-Blending für Hintergrund-Bänder (KORRIGIERTE LOGIK) ---
+    // Diese Logik spiegelt exakt getBlendedCombinedStatus() aus ui.js wider.
+    
+    const logicMode = rules.logicMode || 'OR';
+    const hourlyCombinedStatus = {}; // Ein Objekt zum Sammeln
 
-        // DYNAMISCHE SCHLEIFE:
+    // Wir brauchen ein Array von 0-23 als Strings
+    const hoursAsStrings = Array.from({ length: 24 }, (_, h) => h.toString());
+
+    hoursAsStrings.forEach(hour => {
+        let combinedStatusForHour = 'no-data';
+        let activeRuleStati = []; // Speichert den geblendeten Status aller *aktiven* Regeln
+
+        // 1. Sammle den *geblendeten* Status aller METRIK-Regeln
         for (const metric of Object.values(METRICS_CONFIG)) {
-            // Berücksichtige nur, wenn Regel aktiv
-            if (rules[metric.ruleName] !== null && rules[metric.ruleName] !== undefined) {
-                combinedStatus = getWorseStatus(combinedStatus, getBlendedStatus(summary, metric.summaryKey, hour));
+            const ruleName = metric.ruleName;
+            const summaryKey = metric.summaryKey;
+
+            // KORREKTE PRÜFUNG: Ist die Regel (egal welche) im Profil aktiv?
+            let isRuleActive = false;
+            if (metric.checkType === 'min' || metric.checkType === 'max') {
+                isRuleActive = (rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
+                               (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined);
+            } else if (metric.checkType === 'code_match') {
+                isRuleActive = (rules[ruleName + '_alarm']?.length > 0) || 
+                               (rules[ruleName + '_warn']?.length > 0);
+            }
+
+            // Nur wenn die Regel aktiv ist UND das Summary Daten hat
+            if (isRuleActive && summary[summaryKey]) {
+                const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
+                activeRuleStati.push(blendedRuleStatus);
             }
         }
-        return combinedStatus;
+
+        // 1b. Prüfe die manuelle Zeile (customRow), falls aktiviert
+        if (rules.customRow && rules.customRow.enabled) {
+            const customRowKey = "customRow";
+            const overrides = getManualOverrides();
+            const manualStatus = (overrides[customRowKey] ? overrides[customRowKey][hour] : null);
+            const blendedCustomRowStatus = manualStatus || 'no-data';
+            activeRuleStati.push(blendedCustomRowStatus);
+        }
+
+        // 2. Wende die "UND" / "ODER" Logik an
+        if (activeRuleStati.length === 0) {
+            combinedStatusForHour = 'no-data';
+        } else if (logicMode === 'AND') {
+            if (activeRuleStati.some(s => s === 'ok')) {
+                combinedStatusForHour = 'ok';
+            } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
+                combinedStatusForHour = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
+            } else {
+                combinedStatusForHour = 'no-data';
+            }
+        } else { // OR (Standard)
+            let orStatus = 'no-data';
+            activeRuleStati.forEach(status => {
+                orStatus = getWorseStatus(orStatus, status);
+            });
+            combinedStatusForHour = orStatus;
+        }
+
+        hourlyCombinedStatus[hour] = combinedStatusForHour;
     });
+
+    // Wandle das { '0': 'ok', '1': 'warn' } Objekt in ein Array ['ok', 'warn'] um
+    const combinedBlendedStatus = Object.values(hourlyCombinedStatus);
+    // --- ENDE KORREKTUR ---
 
     // Alarm-Bänder erstellen (unverändert in der Logik)
     const alarmBands = combinedBlendedStatus.map((status, index) => {
