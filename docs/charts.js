@@ -169,31 +169,38 @@ export function updateWeatherChart(profile, summary) {
         if (summaryKey === 'sigWx') {
             // Für sigWx: Daten sind die Roh-Codes, aber an y=90 positioniert
             data = summary[summaryKey].hourlyData.map((code, index) => {
+                
+                // --- KORREKTUR START ---
                 if (code === null || code === 0 || code === undefined) { // 0 ist 'NSW'
                     pointStyles[index] = false; // Kein Symbol
-                    return null; // Kein Datenpunkt
+                    
+                    // ALT (verursacht den Fehler beim Hovern):
+                    // return null; 
+                    
+                    // NEU: Gib ein valides Objekt mit 'null' Y-Wert zurück.
+                    // Chart.js überspringt das Zeichnen von 'null'-Y-Werten
+                    return {
+                        x: index,
+                        y: null, // <--- Der entscheidende Punkt
+                        code: 0
+                    };
                 }
+                // --- KORREKTUR ENDE ---
 
                 // Erstelle das Bild-Objekt
-                const img = new Image(20, 20); // Größe festlegen (z.B. 20x20)
-
+                const img = new Image(20, 20); 
                 const codeString = code.toString().padStart(2, '0');
-
-                // WICHTIG: Passen Sie diesen Pfad an, falls Ihre Bilder woanders liegen
                 img.src = `../img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
-
+                
                 pointStyles[index] = img; // Speichere das Bild-Objekt
 
-                // Positioniere auf der 0-100 Skala (wie zuvor)
                 return {
                     x: index,
-                    y: 90,    // Position für die Anzeige
-                    code: code  // <-- HIER MERKEN WIR UNS DEN ROHWERT (z.B. 80)
+                    y: 90,    
+                    code: code  
                 };
             });
-
-            unit = 'WMO'; // Einheit für die Legende
-
+            unit = 'WMO'; 
         } else {
             // Normaler Pfad für alle anderen Metriken
             // Hole die Rohdaten (z.B. [10, 12, 99999, 15])

@@ -24,9 +24,6 @@ export function generateDynamicRuleInputs(isMaritime) {
         return;
     }
 
-    // (Wir rufen die interne Hilfsfunktion getRulesFromInputs auf)
-    const currentRules = getRulesFromInputs();
-
     const unitModeAviation = document.querySelector('input[name="unitMode"][value="aviation"]');
     const mode = (unitModeAviation && unitModeAviation.checked) ? 'aviation' : 'metric';
     const unitConfig = UNITS[mode]; // Holt das { speed: 'kt', altitude: 'ft' } Objekt
@@ -122,7 +119,6 @@ export function generateDynamicRuleInputs(isMaritime) {
         }
     }
     container.innerHTML = html;
-    applyRulesToInputs(currentRules, null);
 }
 
 
@@ -857,7 +853,7 @@ export const resetProfileInputs = () => {
  * Liest die aktuellen Werte aus den Regel-Feldern.
  * NEU: Liest _alarm und _warn Felder.
  */
-const getRulesFromInputs = () => {
+export const getRulesFromInputs = () => {
     const unitMode = uiElements.unitModeAviation.checked ? 'aviation' : 'metric';
     const logicModeRadio = document.querySelector('input[name="logicMode"]:checked');
     const logicMode = logicModeRadio ? logicModeRadio.value : 'OR';

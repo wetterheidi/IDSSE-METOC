@@ -2,7 +2,7 @@
 // NEU: Debounce Helfer
 let debounceTimer;
 function debounce(func, delay) {
-    return function(...args) {
+    return function (...args) {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             func.apply(this, args);
@@ -78,7 +78,7 @@ async function handleModelChange(apiName, runTimeISO) {
     if (apiName !== 'auto') {
         // KORREKTUR: Direkter Zugriff auf MODEL_PROPERTIES mit dem apiName
         const modelProps = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
-        
+
         if (modelProps && modelProps.maxDays) {
             maxDays = modelProps.maxDays;
         } else {
@@ -91,18 +91,18 @@ async function handleModelChange(apiName, runTimeISO) {
     if (currentForecastDay >= maxDays) {
         const resetToDay = 0;
         alert(`Das Modell "${WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName}" liefert nur ${maxDays} Tage Prognose. Sie wurden auf "Heute" (Tag ${resetToDay + 1}) zurückgesetzt.`);
-        
+
         // 1. Globalen Zustand zurücksetzen
         currentForecastDay = resetToDay;
-        
+
         // 2. Visuelles Dropdown zurücksetzen
         timeSlider.resetDaySelector();
-        
+
         // 3. Slider-Label auf den neuen Tag (Heute) aktualisieren
         timeSlider.setForecastDay(resetToDay);
-        
+
         // 4. Zeit-Slider auf 00:00 setzen
-        currentSliderHour = 0; 
+        currentSliderHour = 0;
         timeSlider.setSliderHour(0);
     }
     // --- ENDE SMART-RESET ---
@@ -138,10 +138,10 @@ async function handleDayChange(e) {
 
     // 1. Sage dem Slider, welchen Tag er anzeigen soll
     timeSlider.setForecastDay(currentForecastDay);
-    
+
     // 2. Setze den Slider auf 0 Uhr (dies ruft updateSelectedTime auf)
-    currentSliderHour = 0; 
-    timeSlider.setSliderHour(0); 
+    currentSliderHour = 0;
+    timeSlider.setSliderHour(0);
 
     // Wenn ein Profil manuell geladen ist, führe die Prüfung erneut aus
     if (currentManualProfile) {
@@ -315,6 +315,9 @@ async function handleMapCreate(layer) {
     }
     currentLayer = layer;
 
+    // Wir rufen die eben exportierte Funktion aus ui.js auf
+    const currentRules = ui.getRulesFromInputs();
+
     // --- NEU: Land/See-Check ---
     console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
     const geojson = layer.toGeoJSON();
@@ -329,14 +332,11 @@ async function handleMapCreate(layer) {
     } else {
         console.log("[Land/See-Check] ERGEBNIS: Reines Land-Gebiet erkannt.");
     }
-    // --- ENDE NEU ---
-
-    // --- NEUER UI-WORKFLOW ---
-    // 1. Baue die Regeleingabe-Liste basierend auf dem Ergebnis (isMaritime) auf.
+    // 1. Baue die Regeleingabe-Liste basierend auf dem Ergebnis (isMaritime).
+    // (Dieser Aufruf löscht die Werte in der UI)
     ui.generateDynamicRuleInputs(isMaritime);
 
     // 2. Mache den Container "Schritt 3: Regeln definieren" sichtbar.
-    // (Wir holen uns den Container, den ui.js in der letzten Antwort versteckt hat)
     const rulesContainer = document.getElementById('rules-workflow-container');
     if (rulesContainer) {
         rulesContainer.style.display = 'block';
@@ -344,8 +344,11 @@ async function handleMapCreate(layer) {
 
     // 3. UI freischalten (wie bisher)
     ui.enableSaveButton();
-}
 
+    // 4. KORREKTUR SCHRITT 2: Wende die gesicherten Regeln wieder an ---
+    // Wir übergeben 'null' für den Namen, damit das Profil-Namensfeld nicht beeinflusst wird.
+    ui.applyRulesToInputs(currentRules, null);
+}
 /**
  * Wird aufgerufen, wenn der "Speichern"-Knopf geklickt wird.
  */
