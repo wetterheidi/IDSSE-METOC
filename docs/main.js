@@ -30,6 +30,7 @@ let currentSliderHour = 0;       // NEU: Merkt sich die Stunde (0-23)
 let currentWeatherModel = null;  // NEU: Merkt sich { apiName, runTimeISO }
 let currentForecastDay = 0; // <-- NEU (0=Heute, 1=Morgen, etc.)
 export let manualOverrides = {};
+
 // NEU: Speichert, welche Graphen-Layer sichtbar sind.
 // Wir initialisieren es mit *allen* Metrik-Schlüsseln.
 export let visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
@@ -73,49 +74,36 @@ async function handleModelChange(apiName, runTimeISO) {
     console.log(`Main.js: Modell geändert auf ${apiName} (Lauf: ${runTimeISO})`);
     currentWeatherModel = { apiName, runTimeISO };
 
-    // --- NEUER SMART-RESET (KORRIGIERT) ---
-    let maxDays = 7; // Standard-Annahme (z.B. für 'auto')
+    // --- (Smart-Reset Block) ---
+    let maxDays = 7; 
     if (apiName !== 'auto') {
-        // KORREKTUR: Direkter Zugriff auf MODEL_PROPERTIES mit dem apiName
         const modelProps = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
-
         if (modelProps && modelProps.maxDays) {
             maxDays = modelProps.maxDays;
         } else {
-            // Fallback, falls wir vergessen haben, ein Modell in config.js einzutragen
             console.warn(`[main.js] 'maxDays' für Modell "${apiName}" nicht in config.js gefunden. Nutze Standard (7 Tage).`);
         }
     }
-
-    // Prüfe, ob der aktuell gewählte Tag außerhalb der neuen Reichweite liegt
     if (currentForecastDay >= maxDays) {
         const resetToDay = 0;
         alert(`Das Modell "${WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName}" liefert nur ${maxDays} Tage Prognose. Sie wurden auf "Heute" (Tag ${resetToDay + 1}) zurückgesetzt.`);
-
-        // 1. Globalen Zustand zurücksetzen
         currentForecastDay = resetToDay;
-
-        // 2. Visuelles Dropdown zurücksetzen
         timeSlider.resetDaySelector();
-
-        // 3. Slider-Label auf den neuen Tag (Heute) aktualisieren
         timeSlider.setForecastDay(resetToDay);
-
-        // 4. Zeit-Slider auf 00:00 setzen
-        currentSliderHour = 0;
+        currentSliderHour = 0; 
         timeSlider.setSliderHour(0);
     }
     // --- ENDE SMART-RESET ---
 
-
+    // --- KORREKTUR: Logik-Trennung ---
+    // Beeinflusse NUR das manuelle Profil
     if (currentManualProfile) {
         console.log(`[Modell-Wechsel] Führe manuelle Prüfung für "${currentManualProfile.name}" mit neuem Modell aus.`);
-        // (Dieser Aufruf verwendet jetzt den korrigierten 'currentForecastDay')
         await handleManualCheck(currentManualProfile);
     }
-
-    // (Dieser Aufruf verwendet jetzt auch den korrigierten 'currentForecastDay')
-    await runAndUpdateDashboard();
+    
+    // (Der Aufruf von runAndUpdateDashboard() wird hier entfernt,
+    // da er nichts mit der UI-Modellauswahl zu tun hat)
 }
 
 /**
@@ -136,19 +124,18 @@ async function handleDayChange(e) {
     currentForecastDay = parseInt(e.target.value, 10);
     console.log(`Main.js: Prognosetag geändert auf ${currentForecastDay}`);
 
-    // 1. Sage dem Slider, welchen Tag er anzeigen soll
     timeSlider.setForecastDay(currentForecastDay);
+    currentSliderHour = 0; 
+    timeSlider.setSliderHour(0); 
 
-    // 2. Setze den Slider auf 0 Uhr (dies ruft updateSelectedTime auf)
-    currentSliderHour = 0;
-    timeSlider.setSliderHour(0);
+    // --- KORREKTUR: Rufe beide Systeme sicher auf ---
 
-    // Wenn ein Profil manuell geladen ist, führe die Prüfung erneut aus
+    // 1. Manuelles Profil neu laden (nutzt das UI-Modell 'currentWeatherModel')
     if (currentManualProfile) {
         await handleManualCheck(currentManualProfile);
     }
 
-    // Führe auch den Auto-Check für das Dashboard neu aus
+    // 2. Dashboard neu laden (nutzt jetzt sein eigenes, festes 'icon_seamless')
     await runAndUpdateDashboard();
 }
 
@@ -158,10 +145,21 @@ const debouncedHandleDayChange = debounce(handleDayChange, 500); // 500ms Verzö
 
 /**
  * Führt den automatischen Voll-Check aus und aktualisiert das Dashboard.
- * (Version 3.0: Sequenziell UND holt gridPoints für Tiling)
+ * (Version 3.1: Nutzt ein festes, globales Modell)
+ */
+/**
+ * Führt den automatischen Voll-Check aus und aktualisiert das Dashboard.
+ * (Version 3.2: Vollständig korrigiert)
  */
 async function runAndUpdateDashboard() {
     ui.setDashboardMessage(`<p>Prüfe ${await db.getProfileCount()} Profile...</p>`);
+
+    // --- LÖSUNG: Feste Modell-Konfiguration für das Dashboard ---
+    // (Stellt sicher, dass der Auto-Monitor immer 'icon_seamless' verwendet)
+    const dashboardModelInfo = { 
+        apiName: 'icon_seamless', 
+        runTimeISO: 'latest' 
+    };
 
     const profiles = await db.getProfiles();
     const results = [];
@@ -174,6 +172,7 @@ async function runAndUpdateDashboard() {
 
     for (const profile of profiles) {
 
+        // --- DAS IST DER BLOCK, DEN ICH VERGESSEN HATTE ---
         const profileData = {
             id: profile.id,
             name: profile.name,
@@ -182,24 +181,35 @@ async function runAndUpdateDashboard() {
         };
 
         // KUGELSICHERER CHECK: Hat das Profil eine Form?
+        // (Diese Zeile hat den Fehler 'profileData is not defined' verursacht)
         if (!profileData.geojson) {
             console.warn(`Profil "${profileData.name}" wird übersprungen (keine Geometrie).`);
             continue;
         }
 
-        const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
+        const { gridPoints, error } = await gridPointGetter(profileData.geojson);
         if (error) {
             results.push({ profile: profileData, summary: weather_LIVE.getEmptySummary() });
             continue;
         }
 
         const activeMetrics = getActiveMetrics(profileData.rules);
+        // --- ENDE DES FEHLENDEN BLOCKS ---
 
-        const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics, currentForecastDay); results.push({ profile: profileData, summary: summary });
+
+        // --- KORRIGIERTER AUFRUF ---
+        // (Verwendet das 'dashboardModelInfo')
+        const summary = await getWeatherModule().fetchAndCheckProfile(
+            profileData, 
+            dashboardModelInfo, // <-- HIER IST DIE ÄNDERUNG
+            gridPoints, 
+            activeMetrics, 
+            currentForecastDay
+        );
+        results.push({ profile: profileData, summary: summary });
     }
 
     const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
-
     ui.displayAutoWarnings(activeAlarms);
 }
 
@@ -218,6 +228,22 @@ async function handleManualCheck(profileData) {
         alert("Fehler: Dieses Profil hat keine gezeichnete Form. Bitte löschen und neu anlegen.");
         ui.setManualMonitorMessage(`<p>Fehler: Profil "${profileData.name}" hat keine Geometrie.</p>`);
         return;
+    }
+
+   // 1. Aktualisiere die Modell-Liste (wie bisher)
+    try {
+        const coords = profileData.geojson.geometry.coordinates[0][0];
+        const lng = coords[0];
+        const lat = coords[1];
+        await timeSlider.updateAvailableModelsForArea(lat, lng);
+
+        // 2. HOLE das (jetzt aktualisierte) Modell vom TimeSlider
+        // und setze es als *aktuelles* Modell für DIESEN Check.
+        currentWeatherModel = timeSlider.getCurrentModelInfo();
+        console.log(`[handleManualCheck] Modell-Liste aktualisiert. Verwende jetzt: ${currentWeatherModel.apiName}`);
+
+    } catch (e) {
+        console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
     }
 
     await clearAllManualOverrides();
@@ -284,8 +310,13 @@ async function handleManualCheck(profileData) {
     console.log(`[DEBUG 3] handleManualCheck ruft fetch auf mit forecastDay: ${currentForecastDay}`);
 
     // 3. Engine aufrufen (MIT den Punkten UND den gefilterten Metriken)
-    const summary = await getWeatherModule().fetchAndCheckProfile(profileData, currentWeatherModel, gridPoints, activeMetrics, currentForecastDay);
-
+    const summary = await getWeatherModule().fetchAndCheckProfile(
+        profileData, 
+        currentWeatherModel, // <-- Verwendet jetzt das korrekte, aktualisierte Modell
+        gridPoints, 
+        activeMetrics, 
+        currentForecastDay
+    );
     // --- DEBUG 5 ---
     console.log("%c[main.js] Summary-Objekt VOR Übergabe an UI:", "color: blue; font-weight: bold;", summary);
     console.log("--- DEBUG [main.js]: fetchAndCheckProfile BEENDET.");
@@ -318,9 +349,20 @@ async function handleMapCreate(layer) {
     // Wir rufen die eben exportierte Funktion aus ui.js auf
     const currentRules = ui.getRulesFromInputs();
 
+    // 0. Aktualisiere die Modell-Liste basierend auf der neuen Area
+    console.log("[Modell-Check] Starte Prüfung für neues Gebiet...");
+    const geojson = layer.toGeoJSON();
+    try {
+        const coords = geojson.geometry.coordinates[0][0];
+        const lng = coords[0];
+        const lat = coords[1];
+        await timeSlider.updateAvailableModelsForArea(lat, lng);
+    } catch (e) {
+        console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
+    }
+
     // --- NEU: Land/See-Check ---
     console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
-    const geojson = layer.toGeoJSON();
 
     // (Diese Funktion ruft weather.js oder weather_mock.js auf)
     const { isMaritime, error } = await getWeatherModule().performLandSeaCheck(geojson);
@@ -681,12 +723,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             onSliderChange: handleSliderChange,
             onModelChange: handleModelChange,
             onAutoupdateChange: handleAutoupdateChange,
-            onDayChange: debouncedHandleDayChange // <-- DIESE ZEILE HINZUFÜGEN
+            onDayChange: debouncedHandleDayChange 
         });
+        
+        // --- LÖSUNG (FIX FÜR START-FEHLER) ---
+        // Hole das initial geladene Modell (für Berlin)
+        // damit 'currentWeatherModel' nicht 'null' ist.
+        currentWeatherModel = timeSlider.getCurrentModelInfo();
+        console.log(`[main.js] Initiales Modell geladen: ${currentWeatherModel.apiName}`);
+        // --- ENDE LÖSUNG ---
+
         console.log("Time-Slider erfolgreich initialisiert.");
     } catch (err) {
         console.error("FEHLER bei Initialisierung des Time-Sliders:", err);
-        // (z.B. wenn DOM-Elemente nicht gefunden wurden)
     }
 
     map.onMapCreate(handleMapCreate);
@@ -698,6 +747,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 5. "Automatik-Light" starten
     runAndUpdateDashboard();
     setInterval(runAndUpdateDashboard, AUTO_CHECK_INTERVAL);
-
-
 });

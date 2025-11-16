@@ -68,6 +68,7 @@ let dom = {};
 let currentRunTimeISO = null;
 let currentDayOffset = 0;
 let lastModelRun = "N/A (No data)";
+let registeredCallbacks = {};
 
 // --- 3. Interne Display-Logik (portiert aus DZMaster/displayManager.js) ---
 
@@ -139,41 +140,66 @@ function updateSelectedTime(hour) {
 
 /**
  * Füllt das Modell-Dropdown-Menü
+ * NEU: Versucht, 'preferredModelApiName' beizubehalten
  */
-function updateModelSelect(models) {
+function updateModelSelect(models, preferredModelApiName = null) {
     dom.modelSelect.innerHTML = ''; // Leeren
 
-    // FÜGE ZUERST die Option für die "Auto"-Modelle hinzu (Wird nicht standardmäßig gewählt)
+    // 1. "Auto" Option hinzufügen
     const autoOption = document.createElement('option');
     autoOption.value = 'auto|latest';
     autoOption.textContent = '-- Automatische Auswahl (Open-Meteo) --';
     dom.modelSelect.appendChild(autoOption);
 
-    let firstModelSet = false; // NEU: Flag, um das erste *verfügbare* Modell zu markieren
+    let preferredModelFound = false;
+    let iconSeamlessAvailable = false; // <-- NEU: Merker für unseren besten Fallback
 
-    // Füge die verfügbaren Modelle hinzu
+    // 2. Verfügbare Modelle hinzufügen
     models.forEach(model => {
         const displayLabel = WEATHER_MODELS.DISPLAY_MAP[model.apiName] || model.apiName;
         const option = document.createElement('option');
-
         option.value = `${model.apiName}|latest`;
         option.textContent = displayLabel;
 
-        // NEU: Wähle das erste Modell, das wir von der API als verfügbar erhalten, als Standard.
-        // Die Modelle sind in config.js vorsortiert (icon_seamless ist das erste).
-        if (!firstModelSet) {
-            option.selected = true;
-            firstModelSet = true;
+        // Prüfe, ob dies unser bevorzugtes globales Modell ist
+        if (model.apiName === 'icon_seamless') {
+            iconSeamlessAvailable = true;
         }
 
+        // Prüfen, ob dies das bevorzugte Modell ist
+        if (model.apiName === preferredModelApiName) {
+            option.selected = true;
+            preferredModelFound = true;
+            console.log(`[timeSlider] Bevorzugtes Modell (${preferredModelApiName}) gefunden und wiederhergestellt.`);
+        }
         dom.modelSelect.appendChild(option);
     });
 
-    // Falls die Prüfung komplett fehlschlägt, wähle Auto (das wäre aber schon drin)
-    if (!firstModelSet && models.length > 0) {
-        // Falls icon_seamless nicht verfügbar wäre, wählen wir das erste in der Liste.
-        // Das ist der Sicherheits-Fallback. 
-        dom.modelSelect.querySelector('option[value="' + models[0].apiName + '|latest"]').selected = true;
+    // 3. Fallback: Wenn das bevorzugte Modell nicht gefunden wurde
+    if (!preferredModelFound) {
+        console.log(`[timeSlider] Bevorzugtes Modell (${preferredModelApiName}) nicht gefunden.`);
+        
+        // --- KORRIGIERTER FALLBACK ---
+        // Unser bester Fallback ist 'icon_seamless', da es Druckstufen unterstützt
+        if (iconSeamlessAvailable) {
+            dom.modelSelect.querySelector('option[value="icon_seamless|latest"]').selected = true;
+            console.log(`[timeSlider] Fallback auf 'icon_seamless' (global).`);
+        } 
+        // Wenn selbst das nicht da ist, versuchen wir das 'auto'
+        else if (preferredModelApiName === 'auto') {
+             autoOption.selected = true;
+             console.log(`[timeSlider] Fallback auf 'auto'.`);
+        } 
+        // Wenn alles fehlschlägt, nimm das erste in der Liste (z.B. HRRR in den USA)
+        else {
+            const firstAvailableModel = dom.modelSelect.querySelector('option:nth-child(2)');
+            if (firstAvailableModel) {
+                firstAvailableModel.selected = true;
+                console.log(`[timeSlider] Fallback auf erstes verfügbares Modell: ${firstAvailableModel.value}`);
+            } else {
+                autoOption.selected = true; // Letzter Ausweg
+            }
+        }
     }
 }
 
@@ -382,6 +408,9 @@ function formatIsoToRunTime(isoString) {
  */
 export async function initTimeSlider(callbacks) {
 
+    // Speichere die Callbacks, damit unsere neue Funktion sie nutzen kann
+    registeredCallbacks = callbacks;
+
     // 1. DOM-Elemente finden 
     dom.sliderContainer = document.getElementById('slider-container');
     dom.selectedTime = document.getElementById('selectedTime');
@@ -414,7 +443,7 @@ export async function initTimeSlider(callbacks) {
         const [apiName] = e.target.value.split('|'); // RunKey ist hier 'latest'
 
         // --- NEU: TAGES-DROPDOWN DYNAMISCH ANPASSEN ---
-        
+
         // 1. Finde maxDays (dieselbe Logik wie in main.js "Smart Reset")
         let maxDays = 7; // Standard (für 'auto')
         if (apiName !== 'auto') {
@@ -428,7 +457,7 @@ export async function initTimeSlider(callbacks) {
 
         // 2. Baue das Day-Dropdown mit der korrekten Anzahl an Tagen neu auf
         populateDaySelector(maxDays);
-        
+
         // --- ENDE NEU ---
 
         // 3. Letzte Laufzeit abrufen
@@ -488,22 +517,7 @@ export async function initTimeSlider(callbacks) {
     const lat = 52.5;
     const lng = 13.4;
 
-    // UI-Meldung setzen
-    dom.modelSelect.innerHTML = '<option value="">-- Modelle werden geladen --</option>';
-
-    const models = await checkAvailableModels(lat, lng);
-
-    // Dropdown befüllen
-    updateModelSelect(models);
-
-    populateDaySelector(7); // <-- NEU: Tagauswahl befüllen
-
-    // Setze die Standard-Werte für das erste Element/Auto
-    const [initialApiName] = dom.modelSelect.value.split('|');
-    const runTimeISO = await fetchLastRunTime(initialApiName);
-    currentRunTimeISO = runTimeISO; // Initialer Wert
-
-    // Setze den Slider (Annahme: 24h, da fetchAndCheckProfile nur 24h holt)
+    populateDaySelector(7); // Tagauswahl befüllen
     const maxHours = 23;
     dom.timeSlider.max = maxHours;
     dom.timeSlider.value = 0;
@@ -512,15 +526,57 @@ export async function initTimeSlider(callbacks) {
     updateSelectedTime(0);
     updateSliderHighlight(0);
 
-    // 4. Callbacks auslösen
-
-    // Initiales Update der Modell-Anzeige
-    updateModelInfoDisplay(initialApiName, runTimeISO);
-
-    if (callbacks.onModelChange) {
-        callbacks.onModelChange(initialApiName, runTimeISO);
-    }
+    // 4. Callbacks auslösen (nur den, der übrig geblieben ist)
     if (callbacks.onSliderChange) {
         callbacks.onSliderChange(0);
     }
+}
+
+/**
+ * NEU: Prüft verfügbare Modelle für einen Standort und baut das Dropdown neu auf.
+ * Löst den onModelChange-Callback aus, wenn die Liste aktualisiert wurde.
+ */
+export async function updateAvailableModelsForArea(lat, lng) {
+    if (!dom.modelSelect) return; 
+    console.log(`[timeSlider] Aktualisiere Modelle für Standort: ${lat}, ${lng}`);
+
+    // --- KORREKTUR: Aktuell ausgewähltes Modell merken ---
+    // (Wir holen das Modell, das der User gerade geklickt hat ODER das bereits geladen war)
+    const preferredModelApiName = dom.modelSelect.value ? dom.modelSelect.value.split('|')[0] : 'auto';
+    console.log(`[timeSlider] Bevorzugtes Modell ist: ${preferredModelApiName}`);
+    // --- ENDE KORREKTUR ---
+
+    // 1. UI-Meldung setzen
+    dom.modelSelect.innerHTML = '<option value="">-- Modelle werden geladen --</option>';
+
+    // 2. Modelle prüfen (interne Funktion)
+    const models = await checkAvailableModels(lat, lng);
+
+    // 3. Dropdown befüllen (mit Übergabe des bevorzugten Modells)
+    updateModelSelect(models, preferredModelApiName); // <-- Geänderter Aufruf
+
+    // 4. Setze die Standard-Werte (basierend auf der *neuen* Auswahl)
+    const [selectedApiName] = dom.modelSelect.value.split('|');
+    const runTimeISO = await fetchLastRunTime(selectedApiName);
+    currentRunTimeISO = runTimeISO; // Zustand aktualisieren
+
+    // 5. Initiales Update der Modell-Anzeige
+    updateModelInfoDisplay(selectedApiName, runTimeISO);
+
+    // (Der onModelChange Callback bleibt entfernt, das war korrekt so)
+}
+
+/**
+ * Gibt das aktuell im Dropdown ausgewählte Modell 
+ * und die zugehörige Laufzeit zurück.
+ */
+export function getCurrentModelInfo() {
+    // dom.modelSelect ist global in diesem Modul verfügbar
+    const [apiName] = dom.modelSelect.value.split('|');
+    
+    // currentRunTimeISO ist ebenfalls global in diesem Modul
+    return {
+        apiName: apiName || 'auto', // Fallback auf 'auto'
+        runTimeISO: currentRunTimeISO || 'latest'
+    };
 }

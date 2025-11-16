@@ -243,6 +243,21 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     if (hasForecastParams) console.log(`Forecast-Params: ${apiParams.forecast.hourly}`);
     if (hasMarineParams) console.log(`Marine-Params: ${apiParams.marine.hourly}`);
 
+    let forecastDays = 7; // Standard-Fallback (z.B. für 'auto')
+    
+    // Prüfe, ob ein spezifisches Modell (nicht 'auto') gewählt wurde
+    if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
+        // Lese die maxDays aus unserer Config
+        forecastDays = WEATHER_MODELS.MODEL_PROPERTIES[modelApiName].maxDays || 7;
+    } else if (modelApiName !== 'auto') {
+        // Fallback für Modelle, die wir in config.js vergessen haben (z.B. GEM)
+        // Wir müssen raten. 7 ist oft zu viel, 2 ist sicherer.
+        // Update: Wir haben GEM in der config.js, also sollte der erste Block greifen.
+        // Wir behalten 7 als Standard.
+        console.warn(`[weather.js] Modell ${modelApiName} nicht in MODEL_PROPERTIES (config.js) gefunden. Nutze Standard ${forecastDays} Tage.`);
+    }
+    console.log(`[weather.js] Angeforderte Prognosetage für ${modelApiName}: ${forecastDays}`);
+
     // 5. Sequenzielle Schleife (API-URL-Bau)
     for (const chunk of pointChunks) {
         const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
@@ -460,7 +475,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                     // noch die Graph-Aggregation (Min/Max) beeinflusst.
                     value = null;
                 }
-                
+
                 // --- NEU (1B): ALARM-PUNKTE SAMMELN (per-location check) ---
                 // (Diese Logik ist dupliziert aus Schritt 3, 
                 // aber sie prüft JEDEN Punkt und speichert den Ort)
