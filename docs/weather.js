@@ -184,7 +184,7 @@ export function getGridPoints(geojson, resolutionKm) {
 
         // 1. Startwert für Rastergröße (in km)
         // Nutze übergebene Auflösung oder Standard 10km
-        let cellSide = resolutionKm || 10; 
+        let cellSide = resolutionKm || 10;
 
         let gridPoints = null;
         let attempts = 0;
@@ -192,13 +192,13 @@ export function getGridPoints(geojson, resolutionKm) {
         // 2. Schleife: Raster vergrößern, bis wir unter dem Limit sind
         while (true) {
             const options = { units: 'kilometers' };
-            
+
             // Erstelle Raster
             const pointGrid = turf.pointGrid(bbox, cellSide, options);
-            
+
             // Filtere Punkte innerhalb des Polygons
             const pointsInside = turf.pointsWithinPolygon(pointGrid, geojson);
-            
+
             const count = pointsInside.features.length;
 
             // Check: Haben wir wenige genug Punkte? (Oder Notbremse nach 10 Versuchen)
@@ -207,7 +207,7 @@ export function getGridPoints(geojson, resolutionKm) {
                 if (attempts > 0) {
                     console.warn(`[getGridPoints] Sicherheitsventil aktiv! Auflösung von ${resolutionKm}km auf ${cellSide.toFixed(1)}km reduziert, um ${count} Punkte zu erhalten.`);
                 } else {
-                     console.log(`[getGridPoints] Raster berechnet: ${cellSide}km Auflösung -> ${count} Punkte.`);
+                    console.log(`[getGridPoints] Raster berechnet: ${cellSide}km Auflösung -> ${count} Punkte.`);
                 }
                 break;
             }
@@ -217,7 +217,7 @@ export function getGridPoints(geojson, resolutionKm) {
             attempts++;
         }
 
-        return { gridPoints: gridPoints }; 
+        return { gridPoints: gridPoints };
 
     } catch (e) {
         console.error("Turf.js Fehler in getGridPoints:", e);
@@ -231,7 +231,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     const modelApiName = modelInfo ? modelInfo.apiName : 'auto';
     const modelRunISO = modelInfo ? modelInfo.runTimeISO : 'latest';
     const cacheKey = `${profile.id}_${modelApiName}_${modelRunISO}_day${forecastDay || 0}`;
-    
+
     // 2. Cache-Prüfung (Unverändert)
     try {
         const cachedData = await getCache(cacheKey);
@@ -276,7 +276,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     if (hasMarineParams) console.log(`Marine-Params: ${apiParams.marine.hourly}`);
 
     let forecastDays = 7; // Standard-Fallback (z.B. für 'auto')
-    
+
     // Prüfe, ob ein spezifisches Modell (nicht 'auto') gewählt wurde
     if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
         // Lese die maxDays aus unserer Config
@@ -444,7 +444,13 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
             summary[key].hourlyAlarms[hour] = new Set();
 
             // Setze Startwert für Graph-Aggregation
-            summary[key].hourlyData[h] = (metric.checkType === 'min') ? Infinity : -Infinity;
+            if (metric.checkType === 'min') {
+                summary[key].hourlyData[h] = Infinity;
+            } else if (metric.checkType === 'code_match') {
+                summary[key].hourlyData[h] = 0; // Startwert 0 für Wetter-Codes (NSW)
+            } else {
+                summary[key].hourlyData[h] = -Infinity; // Startwert für Max-Checks (Wind, etc.)
+            }
         });
         summary.combined.hourlyStatus[hour] = 'no-data';
     });
