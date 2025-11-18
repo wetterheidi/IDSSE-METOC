@@ -170,22 +170,54 @@ export function getEmptySummary() {
 
 /**
  * Berechnet die Sampling-Punkte (graue Punkte) für ein GeoJSON.
- * (Unverändert)
+ * NEU: Mit variabler Auflösung und Sicherheitsventil (Max 200 Punkte).
  */
-export function getGridPoints(geojson) {
-    // KUGELSICHERER CHECK (behebt den 'type'/'geometry' TypeError)
+export function getGridPoints(geojson, resolutionKm) {
+    // KUGELSICHERER CHECK
     if (!geojson || !geojson.geometry) {
         return { error: "Ungültiges GeoJSON (vielleicht null)." };
     }
+
     try {
         const bbox = turf.bbox(geojson); // [minLon, minLat, maxLon, maxLat]
-        const cellSide = 10; // km
-        const options = { units: 'kilometers' };
-        const pointGrid = turf.pointGrid(bbox, cellSide, options);
+        const MAX_POINTS = 200; // Unser Sicherheitsventil
 
-        const pointsInside = turf.pointsWithinPolygon(pointGrid, geojson);
+        // 1. Startwert für Rastergröße (in km)
+        // Nutze übergebene Auflösung oder Standard 10km
+        let cellSide = resolutionKm || 10; 
 
-        return { gridPoints: pointsInside }; // Gibt die GeoJSON-Punkte zurück
+        let gridPoints = null;
+        let attempts = 0;
+
+        // 2. Schleife: Raster vergrößern, bis wir unter dem Limit sind
+        while (true) {
+            const options = { units: 'kilometers' };
+            
+            // Erstelle Raster
+            const pointGrid = turf.pointGrid(bbox, cellSide, options);
+            
+            // Filtere Punkte innerhalb des Polygons
+            const pointsInside = turf.pointsWithinPolygon(pointGrid, geojson);
+            
+            const count = pointsInside.features.length;
+
+            // Check: Haben wir wenige genug Punkte? (Oder Notbremse nach 10 Versuchen)
+            if (count <= MAX_POINTS || attempts > 10) {
+                gridPoints = pointsInside;
+                if (attempts > 0) {
+                    console.warn(`[getGridPoints] Sicherheitsventil aktiv! Auflösung von ${resolutionKm}km auf ${cellSide.toFixed(1)}km reduziert, um ${count} Punkte zu erhalten.`);
+                } else {
+                     console.log(`[getGridPoints] Raster berechnet: ${cellSide}km Auflösung -> ${count} Punkte.`);
+                }
+                break;
+            }
+
+            // Falls zu viele Punkte: Raster vergrößern (z.B. * 1.5) und nochmal versuchen
+            cellSide = cellSide * 1.5;
+            attempts++;
+        }
+
+        return { gridPoints: gridPoints }; 
 
     } catch (e) {
         console.error("Turf.js Fehler in getGridPoints:", e);

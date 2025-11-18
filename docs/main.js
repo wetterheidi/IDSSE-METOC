@@ -75,7 +75,7 @@ async function handleModelChange(apiName, runTimeISO) {
     currentWeatherModel = { apiName, runTimeISO };
 
     // --- (Smart-Reset Block) ---
-    let maxDays = 7; 
+    let maxDays = 7;
     if (apiName !== 'auto') {
         const modelProps = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
         if (modelProps && modelProps.maxDays) {
@@ -90,7 +90,7 @@ async function handleModelChange(apiName, runTimeISO) {
         currentForecastDay = resetToDay;
         timeSlider.resetDaySelector();
         timeSlider.setForecastDay(resetToDay);
-        currentSliderHour = 0; 
+        currentSliderHour = 0;
         timeSlider.setSliderHour(0);
     }
     // --- ENDE SMART-RESET ---
@@ -101,7 +101,7 @@ async function handleModelChange(apiName, runTimeISO) {
         console.log(`[Modell-Wechsel] Führe manuelle Prüfung für "${currentManualProfile.name}" mit neuem Modell aus.`);
         await handleManualCheck(currentManualProfile);
     }
-    
+
     // (Der Aufruf von runAndUpdateDashboard() wird hier entfernt,
     // da er nichts mit der UI-Modellauswahl zu tun hat)
 }
@@ -125,8 +125,8 @@ async function handleDayChange(e) {
     console.log(`Main.js: Prognosetag geändert auf ${currentForecastDay}`);
 
     timeSlider.setForecastDay(currentForecastDay);
-    currentSliderHour = 0; 
-    timeSlider.setSliderHour(0); 
+    currentSliderHour = 0;
+    timeSlider.setSliderHour(0);
 
     // --- KORREKTUR: Rufe beide Systeme sicher auf ---
 
@@ -156,10 +156,12 @@ async function runAndUpdateDashboard() {
 
     // --- LÖSUNG: Feste Modell-Konfiguration für das Dashboard ---
     // (Stellt sicher, dass der Auto-Monitor immer 'icon_seamless' verwendet)
-    const dashboardModelInfo = { 
-        apiName: 'icon_seamless', 
-        runTimeISO: 'latest' 
+    const dashboardModelInfo = {
+        apiName: 'icon_seamless',
+        runTimeISO: 'latest'
     };
+
+    const dashboardResolution = WEATHER_MODELS.MODEL_PROPERTIES['icon_seamless'].resolutionKm || 10;
 
     const profiles = await db.getProfiles();
     const results = [];
@@ -187,7 +189,7 @@ async function runAndUpdateDashboard() {
             continue;
         }
 
-        const { gridPoints, error } = await gridPointGetter(profileData.geojson);
+        const { gridPoints, error } = await gridPointGetter(profileData.geojson, dashboardResolution);
         if (error) {
             results.push({ profile: profileData, summary: weather_LIVE.getEmptySummary() });
             continue;
@@ -200,10 +202,10 @@ async function runAndUpdateDashboard() {
         // --- KORRIGIERTER AUFRUF ---
         // (Verwendet das 'dashboardModelInfo')
         const summary = await getWeatherModule().fetchAndCheckProfile(
-            profileData, 
+            profileData,
             dashboardModelInfo, // <-- HIER IST DIE ÄNDERUNG
-            gridPoints, 
-            activeMetrics, 
+            gridPoints,
+            activeMetrics,
             currentForecastDay
         );
         results.push({ profile: profileData, summary: summary });
@@ -230,20 +232,21 @@ async function handleManualCheck(profileData) {
         return;
     }
 
-   // 1. Aktualisiere die Modell-Liste (wie bisher)
+    // 1. Aktualisiere die Modell-Liste (wie bisher)
     try {
         const coords = profileData.geojson.geometry.coordinates[0][0];
         const lng = coords[0];
         const lat = coords[1];
         await timeSlider.updateAvailableModelsForArea(lat, lng);
 
-        // 2. HOLE das (jetzt aktualisierte) Modell vom TimeSlider
-        // und setze es als *aktuelles* Modell für DIESEN Check.
+        // Hole das Modell, das der User (oder der Auto-Fallback) gewählt hat
         currentWeatherModel = timeSlider.getCurrentModelInfo();
-        console.log(`[handleManualCheck] Modell-Liste aktualisiert. Verwende jetzt: ${currentWeatherModel.apiName}`);
+        console.log(`[handleManualCheck] Verwende Modell: ${currentWeatherModel.apiName}`);
 
     } catch (e) {
         console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
+        // Fallback, falls Update fehlschlägt
+        currentWeatherModel = { apiName: 'auto', runTimeISO: 'latest' };
     }
 
     await clearAllManualOverrides();
@@ -280,41 +283,39 @@ async function handleManualCheck(profileData) {
 
     map.drawProfileBoundary(profileData.geojson);
 
-    // --- DEBUG 2 ---
-    console.log("--- DEBUG [main.js]: Rufe getGridPoints auf...");
+    // --- NEU: Auflösung ermitteln & Punkte berechnen ---
 
-    // 1. Punkte "offline" berechnen (Demo-Modus-kompatibel)
-    const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson);
+    // 2a. Ermittle die Auflösung aus der Config
+    let resolutionKm = 10; // Standard
+    const modelApiName = currentWeatherModel.apiName;
 
-    // --- DEBUG 3 ---
-    console.log("--- DEBUG [main.js]: getGridPoints BEENDET.");
-    console.log("GridPoints gefunden:", gridPoints ? gridPoints.features.length : 'null');
-    console.log("Error:", error);
+    if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
+        resolutionKm = WEATHER_MODELS.MODEL_PROPERTIES[modelApiName].resolutionKm || 10;
+    }
+
+    console.log(`[handleManualCheck] Berechne Punkte für ${modelApiName} mit Wunsch-Auflösung ${resolutionKm}km...`);
+
+    // 2b. Rufe getGridPoints MIT der Auflösung auf
+    const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson, resolutionKm);
+    // --- ENDE NEU ---
+
 
     if (error) {
         ui.setManualMonitorMessage(`<p>Fehler beim Berechnen der Punkte: ${error}</p>`);
         return;
     }
 
-    // 2. Graue Punkte zeichnen
+    // 3. Punkte zeichnen & Engine aufrufen (wie bisher)
     map.drawSamplePoints(gridPoints, profileData.geojson);
     map.zoomToGeoJSON(profileData.geojson);
 
-    // --- DEBUG 4 ---
-    console.log("--- DEBUG [main.js]: Rufe fetchAndCheckProfile auf...");
-
-    // 3. Engine aufrufen (MIT den Punkten)
-    // Finde HIER heraus, welche Metriken für DIESES Profil aktiv sind
     const activeMetrics = getActiveMetrics(profileData.rules);
 
-    console.log(`[DEBUG 3] handleManualCheck ruft fetch auf mit forecastDay: ${currentForecastDay}`);
-
-    // 3. Engine aufrufen (MIT den Punkten UND den gefilterten Metriken)
     const summary = await getWeatherModule().fetchAndCheckProfile(
-        profileData, 
-        currentWeatherModel, // <-- Verwendet jetzt das korrekte, aktualisierte Modell
-        gridPoints, 
-        activeMetrics, 
+        profileData,
+        currentWeatherModel,
+        gridPoints,
+        activeMetrics,
         currentForecastDay
     );
     // --- DEBUG 5 ---
@@ -723,9 +724,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             onSliderChange: handleSliderChange,
             onModelChange: handleModelChange,
             onAutoupdateChange: handleAutoupdateChange,
-            onDayChange: debouncedHandleDayChange 
+            onDayChange: debouncedHandleDayChange
         });
-        
+
         // --- LÖSUNG (FIX FÜR START-FEHLER) ---
         // Hole das initial geladene Modell (für Berlin)
         // damit 'currentWeatherModel' nicht 'null' ist.

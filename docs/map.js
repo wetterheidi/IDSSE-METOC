@@ -272,6 +272,7 @@ export const onMapCreate = (callback) => {
  * Zeichnet die Alarm-Punkte für EINE BESTIMMTE STUNDE.
  * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
  * NEU: Signatur geändert -> benötigt jetzt 'profile'.
+ * KORRIGIERT (Step 19): Prüft den Status (Matrix) VOR den Punkten (Karte).
  */
 export const visualizeWarnings = (profile, summary, hour) => {
     warningAreasLayer.clearLayers();
@@ -279,54 +280,32 @@ export const visualizeWarnings = (profile, summary, hour) => {
     // Wenn kein Summary oder Profil da ist, tu nichts.
     if (!profile || !summary) return;
 
+    const rules = profile.rules;
+
     const hourInt = parseInt(hour, 10);
     const hourString = hourInt.toString();
 
     // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
     const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
     if (!summary[firstMetricKey] || !summary[firstMetricKey].hourlyStatus) return;
+
+    // ['0', '1', '2'...]
     const hours = Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b));
 
-    // --- Helfer: getAlarmLocations (Angepasst) ---
-    // (Findet Alarm-Standorte, auch für manuelle Overrides ohne autom. Alarm)
-    const getAlarmLocations = (summaryKey, currentHourString, autoAlarms) => {
-        const blendedStatus = getBlendedStatus(summary, summaryKey, currentHourString);
-
-        if (autoAlarms && autoAlarms.size > 0) {
-            return autoAlarms;
-        }
-
-        if (blendedStatus === 'alarm' || blendedStatus === 'warn') {
-            const reversedHours = hours.slice(0, hours.indexOf(currentHourString)).reverse();
-            for (const h of reversedHours) {
-                const prevAlarms = summary[summaryKey].hourlyAlarms[h];
-                if (prevAlarms && prevAlarms.size > 0) {
-                    return prevAlarms;
-                }
-            }
-        }
-        return null;
-    };
-
-    // --- Helfer: getPointFeatures (Unverändert) ---
-    const getPointFeatures = (alarmSet) => {
-        const points = [];
-        if (!alarmSet) return turf.featureCollection(points);
-        alarmSet.forEach(locationString => {
-            const coords = locationString.split(','); // "lat,lon"
-            points.push(turf.point([parseFloat(coords[1]), parseFloat(coords[0])])); // Turf: [lon, lat]
-        });
-        return turf.featureCollection(points);
-    };
-
-    // --- Helfer: drawWarningArea (Unverändert) ---
-    const drawWarningArea = (pointFeatures, color, tooltipText) => {
+    // --- Helfer 1: drawWarningArea (Angepasst für 'style' Objekt) ---
+    // (Dieser Helfer ist von unserem letzten Schritt, er ist korrekt)
+    const drawWarningArea = (pointFeatures, style, tooltipText) => {
         if (pointFeatures.features.length < 3) {
             if (pointFeatures.features.length >= 1) {
                 pointFeatures.features.forEach(feature => {
                     const coords = feature.geometry.coordinates; // [lon, lat]
                     L.circleMarker([coords[1], coords[0]], { // Leaflet: [lat, lon]
-                        radius: 8, color: color, fillColor: color, fillOpacity: 0.8
+                        radius: 8,
+                        color: style.color,
+                        fillColor: style.fillColor,
+                        fillOpacity: (style.fillOpacity || 0.2) + 0.4,
+                        weight: style.weight,
+                        dashArray: style.dashArray
                     }).bindTooltip(tooltipText).addTo(warningAreasLayer);
                 });
             }
@@ -336,43 +315,111 @@ export const visualizeWarnings = (profile, summary, hour) => {
             const hull = turf.convex(pointFeatures);
             if (hull) {
                 L.geoJSON(hull, {
-                    style: { color: color, weight: 2, opacity: 0.8, fillColor: color, fillOpacity: 0.2 }
+                    style: style
                 }).bindTooltip(tooltipText, { sticky: true }).addTo(warningAreasLayer);
             }
         } catch (e) {
             console.error("Turf.js Fehler beim Erstellen der konvexen Hülle:", e);
         }
     };
+    // --- Ende Helfer 1 ---
+
+    // --- Helfer 2: getPointFeatures (Unverändert) ---
+    const getPointFeatures = (alarmSet) => {
+        const points = [];
+        if (!alarmSet) return turf.featureCollection(points);
+        alarmSet.forEach(locationString => {
+            const coords = locationString.split(','); // "lat,lon"
+            points.push(turf.point([parseFloat(coords[1]), parseFloat(coords[0])])); // Turf: [lon, lat]
+        });
+        return turf.featureCollection(points);
+    };
+    // --- Ende Helfer 2 ---
+
+    // --- Helfer 3: getFallbackLocations (Angepasst) ---
+    // (Findet Alarm-Standorte, NUR für Fallbacks wie manuelle Overrides)
+    const getFallbackLocations = (summaryKey, currentHourString) => {
+        // Sucht in *vorherigen* Stunden nach Punkten
+        const reversedHours = hours.slice(0, hours.indexOf(currentHourString)).reverse();
+        for (const h of reversedHours) {
+            const prevAlarms = summary[summaryKey].hourlyAlarms[h];
+            if (prevAlarms && prevAlarms.size > 0) {
+                return prevAlarms; // Punkte aus vorheriger Stunde gefunden
+            }
+        }
+        return null; // Keine Fallback-Punkte gefunden
+    };
+    // --- Ende Helfer 3 ---
 
     const visibleMetrics = getVisibleChartMetrics();
 
-    // --- DYNAMISCHE SCHLEIFE statt 5 harter Blöcke ---
+    // --- DYNAMISCHE SCHLEIFE (NEUE KORRIGIERTE LOGIK) ---
     for (const metric of Object.values(METRICS_CONFIG)) {
         const { summaryKey, ruleName, displayName, chartColor, formatter } = metric;
 
-        // Überspringe das Zeichnen, wenn die Metrik im Graphen ausgeblendet ist
+        // 1. Überspringen, wenn Metrik im Graphen ausgeblendet ist
         if (!visibleMetrics.has(summaryKey)) {
             continue;
         }
 
-        // Überspringen, wenn die Regel im Profil nicht aktiv ist
-        if ((profile.rules[ruleName + '_alarm'] === null || profile.rules[ruleName + '_alarm'] === undefined) &&
-            (profile.rules[ruleName + '_warn'] === null || profile.rules[ruleName + '_warn'] === undefined)) {
+        // 2. Überspringen, wenn die Regel im Profil (rules) nicht aktiv ist
+        const ruleCheck_Alarm = rules[ruleName + '_alarm'];
+        const ruleCheck_Warn = rules[ruleName + '_warn'];
+
+        const isMinMaxRuleActive = (ruleCheck_Alarm !== null && ruleCheck_Alarm !== undefined) ||
+            (ruleCheck_Warn !== null && ruleCheck_Warn !== undefined);
+
+        const isCodeMatchRuleActive = (metric.checkType === 'code_match') &&
+            ((ruleCheck_Alarm?.length > 0) || (ruleCheck_Warn?.length > 0));
+
+        if (!isMinMaxRuleActive && !isCodeMatchRuleActive) {
             continue;
         }
 
-        // Finde die Alarme für diese Metrik
-        const alarms = getAlarmLocations(summaryKey, hourString, summary[summaryKey].hourlyAlarms[hourString]);
+        // 3. Status (Ampel) zuerst prüfen
+        const blendedStatus = getBlendedStatus(summary, summaryKey, hourString);
 
-        if (alarms && alarms.size > 0) {
-            const blendedStatus = getBlendedStatus(summary, summaryKey, hourString);
+        // Wenn Status OK oder N/A, nichts zeichnen
+        if (blendedStatus === 'ok' || blendedStatus === 'no-data') {
+            continue;
+        }
 
-            // NEU: Nutze den Formatter aus der Config für den Tooltip
-            // .value ist der aggregierte Min/Max-Wert aus weather.js
+        // 4. Status ist 'warn' or 'alarm'. Finde die Punkte.
+        let alarmPoints = summary[summaryKey].hourlyAlarms[hourString];
+
+        // 5. Fallback: Wenn für diese Stunde keine Punkte da sind (z.B. Manual Override oder Sync-Problem)
+        if (!alarmPoints || alarmPoints.size === 0) {
+            alarmPoints = getFallbackLocations(summaryKey, hourString);
+        }
+
+        // 6. Wenn wir (jetzt) Punkte haben, zeichne sie
+        if (alarmPoints && alarmPoints.size > 0) {
+
+            // 7. Definiere die Stile (basierend auf dem Matrix-Status)
+            let style = {
+                color: chartColor, // Metrik-Farbe (z.B. Rot für Wind)
+                weight: 2,
+                opacity: 0.8,
+                fillColor: chartColor,
+                fillOpacity: 0.2,     // <-- Leichte Füllung (WARN)
+                dashArray: '5, 5'     // <-- Gestrichelt (WARN)
+            };
+
+            if (blendedStatus === 'alarm') {
+                style.weight = 3;       // <-- Dicker (ALARM)
+                style.fillOpacity = 0.4; // <-- Dunkler (ALARM)
+                style.dashArray = null; // <-- Solide (ALARM)
+            }
+
+            // (Tooltip-Logik bleibt gleich)
             const { value, unit } = formatter(summary[summaryKey].value, profile);
-
             const tooltip = `${displayName} (${hourString}h): ${blendedStatus.toUpperCase()} (Wert: ${value} ${unit})`;
-            drawWarningArea(getPointFeatures(alarms), chartColor, tooltip);
+
+            drawWarningArea(getPointFeatures(alarmPoints), style, tooltip);
+
+        } else {
+            // Debug-Log: Matrix sagt 'warn', aber wir finden keine Punkte
+            console.warn(`[map.js] Matrix-Status ist '${blendedStatus}' für ${summaryKey} @ ${hourString}h, aber es wurden keine Alarmpunkte (weder aktuell noch Fallback) gefunden.`);
         }
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---

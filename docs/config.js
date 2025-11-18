@@ -82,61 +82,74 @@ export const WEATHER_MODELS = {
         // DWD-Modelle (ICON)
         'icon_seamless': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 7
         },
         'icon_global': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 11
         },
         'icon_eu': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 5
+            maxDays: 5,
+            resolutionKm: 7
         },
         'icon_d2': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 2
+            maxDays: 2,
+            resolutionKm: 2.2
         },
 
         // ECMWF-Modelle
         'ecmwf_ifs025': {
             pressureLevels: [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 25
         },
         'ecmwf_aifs025_single': {
             pressureLevels: [1000, 925, 850, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 28
         },
 
         // NCEP-Modelle (GFS)
         'gfs_seamless': {
             pressureLevels: [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325, 300, 275, 250],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 25
         },
         'gfs_global': {
             pressureLevels: [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325, 300, 275, 250],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 25
         },
         'gfs_hrrr': {
             pressureLevels: [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325, 300, 275, 250],
-            maxDays: 2
+            maxDays: 2,
+            resolutionKm: 3
         },
         'gfs_graphcast025': {
             pressureLevels: [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 350, 325, 300, 275, 250],
-            maxDays: 7
+            maxDays: 7,
+            resolutionKm: 25
         },
 
         // (Andere Modelle - wir weisen ihnen Standard-Level zu, bis wir es besser wissen)
         'arome_france': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
-            maxDays: 2
+            maxDays: 2,
+            resolutionKm: 2.5
         },
         'gem_hrdps_continental': {
             pressureLevels: [1015, 1000, 985, 970, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200],
-            maxDays: 2
+            maxDays: 2,
+            resolutionKm: 15
         },
         'gem_regional': {
             pressureLevels: [1015, 1000, 985, 970, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200],
-            maxDays: 3
+            maxDays: 3,
+            resolutionKm: 2.5
         }
     }
 };
