@@ -178,18 +178,18 @@ function updateModelSelect(models, preferredModelApiName = null) {
     // 3. Fallback: Wenn das bevorzugte Modell nicht gefunden wurde
     if (!preferredModelFound) {
         console.log(`[timeSlider] Bevorzugtes Modell (${preferredModelApiName}) nicht gefunden.`);
-        
+
         // --- KORRIGIERTER FALLBACK ---
         // Unser bester Fallback ist 'icon_seamless', da es Druckstufen unterstützt
         if (iconSeamlessAvailable) {
             dom.modelSelect.querySelector('option[value="icon_seamless|latest"]').selected = true;
             console.log(`[timeSlider] Fallback auf 'icon_seamless' (global).`);
-        } 
+        }
         // Wenn selbst das nicht da ist, versuchen wir das 'auto'
         else if (preferredModelApiName === 'auto') {
-             autoOption.selected = true;
-             console.log(`[timeSlider] Fallback auf 'auto'.`);
-        } 
+            autoOption.selected = true;
+            console.log(`[timeSlider] Fallback auf 'auto'.`);
+        }
         // Wenn alles fehlschlägt, nimm das erste in der Liste (z.B. HRRR in den USA)
         else {
             const firstAvailableModel = dom.modelSelect.querySelector('option:nth-child(2)');
@@ -310,7 +310,17 @@ async function checkAvailableModels(lat, lng) {
             const response = await fetch(url);
 
             if (response.ok) {
-                const data = await response.json();
+                let data;
+                try {
+                    // Der 'text()' Schritt erlaubt uns, den Inhalt zu sehen, falls JSON fehlschlägt
+                    const rawText = await response.text();
+                    data = JSON.parse(rawText);
+                } catch (jsonError) {
+                    // Hier fangen wir den "Unexpected token 'a'" (nan) Fehler ab
+                    // Wir loggen es nur als Warnung, nicht als Fehler.
+                    // console.warn(`[timeSlider] Modell '${apiName}' lieferte ungültiges JSON (vermutlich out-of-bounds):`, jsonError);
+                    continue; // Nächstes Modell prüfen
+                }
                 // Prüfe, ob die API tatsächlich Daten zurückgibt
                 if (data.hourly && data.hourly.temperature_2m && data.hourly.temperature_2m.some(t => t !== null)) {
                     availableModels.push({
@@ -537,7 +547,7 @@ export async function initTimeSlider(callbacks) {
  * Löst den onModelChange-Callback aus, wenn die Liste aktualisiert wurde.
  */
 export async function updateAvailableModelsForArea(lat, lng) {
-    if (!dom.modelSelect) return; 
+    if (!dom.modelSelect) return;
     console.log(`[timeSlider] Aktualisiere Modelle für Standort: ${lat}, ${lng}`);
 
     // --- KORREKTUR: Aktuell ausgewähltes Modell merken ---
@@ -573,7 +583,7 @@ export async function updateAvailableModelsForArea(lat, lng) {
 export function getCurrentModelInfo() {
     // dom.modelSelect ist global in diesem Modul verfügbar
     const [apiName] = dom.modelSelect.value.split('|');
-    
+
     // currentRunTimeISO ist ebenfalls global in diesem Modul
     return {
         apiName: apiName || 'auto', // Fallback auf 'auto'
