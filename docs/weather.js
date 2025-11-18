@@ -1,7 +1,7 @@
 // weather.js (Version 2.0 - Config-Driven)
 import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
 // Importiere das NEUE "Gehirn"
-import { METRICS_CONFIG, getApiParams } from './metricsConfig.js';
+import { METRICS_CONFIG, getApiParams, getMetricRules } from './metricsConfig.js'; // <-- getMetricRules dazu
 import { WEATHER_MODELS, API_URLS, getModelMaxDays } from './config.js';
 import * as Utils from './utils.js'; // <-- NEU
 import { STANDARD_PRESSURE_LEVELS } from './utils.js'; // <-- NEU
@@ -521,15 +521,13 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                 }
 
                 // --- NEU (1B): ALARM-PUNKTE SAMMELN (per-location check) ---
-                // (Diese Logik ist dupliziert aus Schritt 3, 
-                // aber sie prüft JEDEN Punkt und speichert den Ort)
                 if (value !== null && isFinite(value)) {
+                    
+                    // --- KORREKTUR: Regeln zentral holen ---
+                    const { alarm: limit_alarm, warn: limit_warn, checkType } = getMetricRules(metric, rules);
+                    // --- ENDE KORREKTUR ---
+                    
                     const ruleName = metric.ruleName;
-                    const limit_alarm = rules[ruleName + '_alarm'];
-                    const limit_warn = rules[ruleName + '_warn'];
-
-                    // (Lese den dynamischen Check-Typ, genau wie in Schritt 3)
-                    const checkType = rules[metric.ruleName + '_checkType'] || metric.checkType;
                     const locationString = `${locationData.latitude},${locationData.longitude}`;
 
                     let locationStatus = 'ok';
@@ -543,10 +541,11 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                         else if (limit_warn !== null && value > limit_warn) locationStatus = 'warn';
 
                     } else if (metric.checkType === 'code_match') {
-                        const forbiddenCodes_alarm = rules[ruleName + '_alarm'];
-                        const forbiddenCodes_warn = rules[ruleName + '_warn'];
+                        // Nutzt die Arrays, die von getMetricRules geliefert wurden
+                        const forbiddenCodes_alarm = limit_alarm; 
+                        const forbiddenCodes_warn = limit_warn;
                         const valueStr = value.toString();
-
+                        
                         if ((!forbiddenCodes_alarm || forbiddenCodes_alarm.length === 0) &&
                             (!forbiddenCodes_warn || forbiddenCodes_warn.length === 0)) {
                             locationStatus = 'no-data';
@@ -561,9 +560,8 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
 
                     // Wenn dieser Punkt ausgelöst hat, speichere den Ort
                     if (locationStatus === 'alarm' || locationStatus === 'warn') {
-                        const hourString = timeStamps[h].toString(); // <-- NEU: Key als String
+                        const hourString = timeStamps[h].toString(); 
 
-                        // Stelle sicher, dass das Set existiert (Sicherheitscheck)
                         if (!summary[summaryKey].hourlyAlarms[hourString]) {
                             summary[summaryKey].hourlyAlarms[hourString] = new Set();
                         }

@@ -411,6 +411,35 @@ export const getApiParams = (metrics, modelInfo) => {
 };
 
 /**
+ * Holt alle relevanten Regelwerte (Alarm, Warn, CheckType) für eine Metrik.
+ */
+export const getMetricRules = (metric, rules) => {
+    if (!rules || !metric) return {};
+    
+    const ruleName = metric.ruleName;
+    const checkType = rules[ruleName + '_checkType'] || metric.checkType;
+
+    // Spezielle Handhabung für Min/Max (Wert) vs. Code-Match (Array)
+    let alarmValue, warnValue;
+
+    if (metric.checkType === 'code_match') {
+        // Code-Match liefert ein Array von Strings (darf auch null sein)
+        alarmValue = rules[ruleName + '_alarm'] || null;
+        warnValue = rules[ruleName + '_warn'] || null;
+    } else {
+        // Min/Max liefert einen numerischen Wert
+        alarmValue = (rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ? rules[ruleName + '_alarm'] : null;
+        warnValue = (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined) ? rules[ruleName + '_warn'] : null;
+    }
+
+    return {
+        alarm: alarmValue,
+        warn: warnValue,
+        checkType: checkType
+    };
+};
+
+/**
  * NEU: Zentrale Prüfung, ob eine Metrik im Profil aktiv ist.
  * (Ersetzt die duplizierten if-Abfragen in map.js, charts.js, ui.js, main.js)
  */
