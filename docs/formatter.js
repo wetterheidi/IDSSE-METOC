@@ -201,3 +201,69 @@ export function formatOktas(value_perc, profile) {
     }
     return { value: value_oktas.toFixed(0), unit: 'Achtel' };
 }
+
+/**
+ * Konvertiert einen "Display"-Wert (z.B. 12 kt) in den "Engine"-Wert (z.B. 22.2 km/h)
+ * (Wird VOR dem Speichern genutzt)
+ */
+export function toMetric(displayValue, metricConfig, unitMode) {
+    if (displayValue === null || isNaN(displayValue) || unitMode === 'metric') {
+        return displayValue; // Ist schon metrisch oder null
+    }
+
+    // (Aviation Mode)
+    if (metricConfig.formatter === formatSpeed) {
+        // Von kt -> km/h
+        return displayValue / CONVERSIONS.KMH_TO_KTS;
+    }
+    if (metricConfig.formatter === formatOktas) {
+        // Konvertiere Achtel (z.B. 4) in Prozent (z.B. 50)
+        return oktasToPercent(displayValue);
+    }
+
+    if (metricConfig.formatter === formatAltitude_FT || 
+        metricConfig.formatter === formatWaveHeight) 
+    {
+        // Von ft -> m
+        return displayValue / CONVERSIONS.METER_TO_FEET;
+    }
+
+    return displayValue; // (z.B. Temp, Percent)
+}
+
+/**
+ * Konvertiert einen "Engine"-Wert (z.B. 22.2 km/h) in den "Display"-Wert (z.B. 12 kt)
+ * (Wird VOR dem Anzeigen genutzt)
+ */
+export function fromMetric(metricValue, metricConfig, unitMode) {
+    if (metricValue === null || isNaN(metricValue) || unitMode === 'metric') {
+        return metricValue; // Ist schon metrisch oder null
+    }
+
+    // (Aviation Mode)
+    if (metricConfig.formatter === formatSpeed) {
+        // Von km/h -> kt (und runden)
+        const val = metricValue * CONVERSIONS.KMH_TO_KTS;
+        return Math.round(val);
+    }
+    if (metricConfig.formatter === formatOktas) {
+        // Konvertiere Prozent (z.B. 50) in Achtel (z.B. 4)
+        return percentToOktas(metricValue);
+    }
+
+    // Fall 1: Wolkenuntergrenze (m -> ft, runden auf 100)
+    if (metricConfig.formatter === formatAltitude_FT) {
+        const val = metricValue * CONVERSIONS.METER_TO_FEET;
+        // Rundet auf die nächsten 100ft
+        return Math.round(val / 100) * 100;
+    }
+    
+    // Fall 2: Wellenhöhe (m -> ft, runden auf 0.1)
+    if (metricConfig.formatter === formatWaveHeight) {
+        const val = metricValue * CONVERSIONS.METER_TO_FEET;
+        // Rundet auf eine Dezimalstelle
+        return Math.round(val * 10) / 10; 
+    }
+
+    return metricValue; // (z.B. Temp, Percent)
+}

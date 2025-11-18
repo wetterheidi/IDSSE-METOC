@@ -1,11 +1,22 @@
 // ui.js (Version 2.0 - Config-Driven)
 import * as db from './db.js';
-import * as formatter from './formatter.js';
-import { formatAltitude_M, formatAltitude_FT, formatWaveHeight, formatSigWx, formatOktas, oktasToPercent, percentToOktas } from './formatter.js';
-import { UNITS, CONVERSIONS } from './config.js';
+import * as timeSlider from './timeSlider.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
-// NEU: Importiere das "Gehirn"
-import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js'; 
+import { UNITS, CONVERSIONS } from './config.js'; 
+import { toMetric, fromMetric } from './formatter.js'; 
+
+// --- DIESER BLOCK MUSS FÜR DIE UI-ANZEIGE WIEDER EINGEFÜGT WERDEN ---
+import * as formatter from './formatter.js'; // Behebt 'formatter is not defined'
+import { 
+    formatAltitude_FT, 
+    formatAltitude_M, 
+    formatSpeed, 
+    formatWaveHeight, 
+    formatOktas, 
+    formatSigWx 
+} from './formatter.js'; // Behebt 'formatAltitude_FT is not defined' und andere Vergleiche
+
 
 export const uiElements = {};
 
@@ -1288,78 +1299,6 @@ export const activateManualMonitorTab = () => {
     if (showMatrixTab) showMatrixTab.classList.add('active');
     if (showGraphTab) showGraphTab.classList.remove('active');
 };
-
-/**
- * Konvertiert einen "Display"-Wert (z.B. 12 kt) in den "Engine"-Wert (z.B. 22.2 km/h)
- * (Wird VOR dem Speichern genutzt)
- */
-function toMetric(displayValue, metricConfig, unitMode) {
-    if (displayValue === null || isNaN(displayValue) || unitMode === 'metric') {
-        return displayValue; // Ist schon metrisch oder null
-    }
-
-    // (Aviation Mode)
-    if (metricConfig.formatter === formatter.formatSpeed) {
-        // Von kt -> km/h
-        return displayValue / CONVERSIONS.KMH_TO_KTS;
-    }
-    if (metricConfig.formatter === formatOktas) {
-        // Konvertiere Achtel (z.B. 4) in Prozent (z.B. 50)
-        return oktasToPercent(displayValue);
-    }
-
-    // --- KORREKTUR HIER ---
-    // ALT: if (metricConfig.formatter === formatter.formatAltitude) {
-    // NEU: Wir prüfen auf die ECHTEN importierten Formatierer
-    if (metricConfig.formatter === formatAltitude_FT ||
-        metricConfig.formatter === formatWaveHeight) {
-        // Von ft -> m
-        return displayValue / CONVERSIONS.METER_TO_FEET;
-    }
-    // --- ENDE KORREKTUR ---
-
-    return displayValue; // (z.B. Temp, Percent)
-}
-
-/**
- * Konvertiert einen "Engine"-Wert (z.B. 22.2 km/h) in den "Display"-Wert (z.B. 12 kt)
- * (Wird VOR dem Anzeigen genutzt)
- */
-function fromMetric(metricValue, metricConfig, unitMode) {
-    if (metricValue === null || isNaN(metricValue) || unitMode === 'metric') {
-        return metricValue; // Ist schon metrisch oder null
-    }
-
-    // (Aviation Mode)
-    if (metricConfig.formatter === formatter.formatSpeed) {
-        // Von km/h -> kt (und runden, wie der Formatter es tun würde)
-        const val = metricValue * CONVERSIONS.KMH_TO_KTS;
-        return Math.round(val);
-    }
-    if (metricConfig.formatter === formatOktas) {
-        // Konvertiere Prozent (z.B. 50) in Achtel (z.B. 4)
-        return percentToOktas(metricValue);
-    }
-
-    // NEU: Fall 1: Wolkenuntergrenze (m -> ft, runden auf 100)
-    // (nutzt formatAltitude_FT)
-    if (metricConfig.formatter === formatAltitude_FT) {
-        const val = metricValue * CONVERSIONS.METER_TO_FEET;
-        // Rundet auf die nächsten 100ft, wie es der Formatter tut
-        return Math.round(val / 100) * 100;
-    }
-
-    // NEU: Fall 2: Wellenhöhe (m -> ft, runden auf 0.1)
-    // (nutzt formatWaveHeight)
-    if (metricConfig.formatter === formatWaveHeight) {
-        const val = metricValue * CONVERSIONS.METER_TO_FEET;
-        // Rundet auf eine Dezimalstelle (der formatter.js macht toFixed(1))
-        return Math.round(val * 10) / 10;
-    }
-    // --- ENDE KORREKTUR ---
-
-    return metricValue; // (z.B. Temp, Percent)
-}
 
 export const clearTemplateNameInput = () => {
     if (uiElements.templateNameInput) {
