@@ -2,7 +2,7 @@
 import { getCache, setCache } from './db.js'; // Importiere Cache-Helfer
 // Importiere das NEUE "Gehirn"
 import { METRICS_CONFIG, getApiParams } from './metricsConfig.js';
-import { WEATHER_MODELS, API_URLS } from './config.js';
+import { WEATHER_MODELS, API_URLS, getModelMaxDays } from './config.js';
 import * as Utils from './utils.js'; // <-- NEU
 import { STANDARD_PRESSURE_LEVELS } from './utils.js'; // <-- NEU
 
@@ -275,7 +275,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     if (hasForecastParams) console.log(`Forecast-Params: ${apiParams.forecast.hourly}`);
     if (hasMarineParams) console.log(`Marine-Params: ${apiParams.marine.hourly}`);
 
-    let forecastDays = 7; // Standard-Fallback (z.B. für 'auto')
+    let forecastDays = getModelMaxDays(modelApiName);
 
     // Prüfe, ob ein spezifisches Modell (nicht 'auto') gewählt wurde
     if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
@@ -299,12 +299,17 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
         // --- URL 1: FORECAST (Wind, Temp, etc.) ---
         if (hasForecastParams) {
-            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=7`;
+            // SICHERSTELLEN, DASS HIER 'let' STEHT!
+            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
+
+            // Fortlaufende Zuweisungen mit '+=' sind erlaubt, da 'forecastUrl' als 'let' deklariert ist.
             if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
             if (apiParams.forecast.daily.length > 0) forecastUrl += `&daily=${apiParams.forecast.daily}`;
 
-            forecastUrl += `&models=${apiParams.forecast.models}`; // (z.B. auto oder icon_seamless)
+            forecastUrl += `&models=${apiParams.forecast.models}`;
+
             if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
+                // Dies ist Zeile 283 (Die Fehlerzeile)
                 forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
             fetchPromises.push(fetch(forecastUrl));
@@ -312,9 +317,10 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
         // --- URL 2: MARINE (Wellen, etc.) ---
         if (hasMarineParams) {
-            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=7`;
-            marineUrl += `&hourly=${apiParams.marine.hourly}`; // (z.B. wave_height)
-            marineUrl += `&models=${apiParams.marine.models}`; // (z.B. ecmwf_wam025)
+            // SICHERSTELLEN, DASS HIER 'let' STEHT!
+            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
+            marineUrl += `&hourly=${apiParams.marine.hourly}`;
+            marineUrl += `&models=${apiParams.marine.models}`;
             fetchPromises.push(fetch(marineUrl));
         }
 

@@ -1,8 +1,8 @@
 // charts.js (Version 2.0 - Config-Driven)
 import { getManualOverrides, handleChartVisibilityUpdate } from './main.js';
-// NEU: Importiere das "Gehirn"
-import { METRICS_CONFIG } from './metricsConfig.js';
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 import * as formatter from './formatter.js';
+import { getBlendedCombinedStatus } from './ui.js';
 
 let weatherChart = null; // Globale Chart-Instanz
 
@@ -73,25 +73,7 @@ export function updateWeatherChart(profile, summary) {
     const rules = profile.rules;
 
     // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
-    const activeMetrics = Object.values(METRICS_CONFIG).filter(metric => {
-        const ruleName = metric.ruleName; // Helfer-Variable
-        if (metric.checkType === 'min' || metric.checkType === 'max') {
-            const hasAlarm = rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined;
-            const hasWarn = rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined;
-            return hasAlarm || hasWarn;
-        }
-        else if (metric.checkType === 'code_match') {
-            // DIESER TEIL IST ENTSCHEIDEND:
-            const hasAlarm = rules[ruleName + '_alarm'] !== null &&
-                rules[ruleName + '_alarm'] !== undefined &&
-                rules[ruleName + '_alarm'].length > 0;
-            const hasWarn = rules[ruleName + '_warn'] !== null &&
-                rules[ruleName + '_warn'] !== undefined &&
-                rules[ruleName + '_warn'].length > 0;
-            return hasAlarm || hasWarn;
-        }
-        return false;
-    });
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(metric => isMetricActive(metric, rules));
 
     if (activeMetrics.length === 0) {
         return; // Keine Regeln aktiv, nichts zu zeichnen
@@ -112,7 +94,6 @@ export function updateWeatherChart(profile, summary) {
     };
     const annotationLimits = [];
 
-    // Helfer für Limit-Linien
     // Helfer für Limit-Linien
     const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, labelContent, summaryKey) => ({
         type: 'line',
@@ -158,7 +139,7 @@ export function updateWeatherChart(profile, summary) {
         }
 
         // Nur fortfahren, wenn die Regel im Profil aktiv ist
-        if (!isRuleActive) {
+        if (!isMetricActive(metric, rules)) {
             continue;
         }
 
@@ -169,14 +150,14 @@ export function updateWeatherChart(profile, summary) {
         if (summaryKey === 'sigWx') {
             // Für sigWx: Daten sind die Roh-Codes, aber an y=90 positioniert
             data = summary[summaryKey].hourlyData.map((code, index) => {
-                
+
                 // --- KORREKTUR START ---
                 if (code === null || code === 0 || code === undefined) { // 0 ist 'NSW'
                     pointStyles[index] = false; // Kein Symbol
-                    
+
                     // ALT (verursacht den Fehler beim Hovern):
                     // return null; 
-                    
+
                     // NEU: Gib ein valides Objekt mit 'null' Y-Wert zurück.
                     // Chart.js überspringt das Zeichnen von 'null'-Y-Werten
                     return {
@@ -188,19 +169,19 @@ export function updateWeatherChart(profile, summary) {
                 // --- KORREKTUR ENDE ---
 
                 // Erstelle das Bild-Objekt
-                const img = new Image(20, 20); 
+                const img = new Image(20, 20);
                 const codeString = code.toString().padStart(2, '0');
                 img.src = `../img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
-                
+
                 pointStyles[index] = img; // Speichere das Bild-Objekt
 
                 return {
                     x: index,
-                    y: 90,    
-                    code: code  
+                    y: 90,
+                    code: code
                 };
             });
-            unit = 'WMO'; 
+            unit = 'WMO';
         } else {
             // Normaler Pfad für alle anderen Metriken
             // Hole die Rohdaten (z.B. [10, 12, 99999, 15])
@@ -316,74 +297,13 @@ export function updateWeatherChart(profile, summary) {
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
 
-// --- 3. Override-Blending für Hintergrund-Bänder (KORRIGIERTE LOGIK) ---
+    // --- 3. Override-Blending für Hintergrund-Bänder (KORRIGIERTE LOGIK) ---
     // Diese Logik spiegelt exakt getBlendedCombinedStatus() aus ui.js wider.
-    
+
     const logicMode = rules.logicMode || 'OR';
-    const hourlyCombinedStatus = {}; // Ein Objekt zum Sammeln
-
-    // Wir brauchen ein Array von 0-23 als Strings
-    const hoursAsStrings = Array.from({ length: 24 }, (_, h) => h.toString());
-
-    hoursAsStrings.forEach(hour => {
-        let combinedStatusForHour = 'no-data';
-        let activeRuleStati = []; // Speichert den geblendeten Status aller *aktiven* Regeln
-
-        // 1. Sammle den *geblendeten* Status aller METRIK-Regeln
-        for (const metric of Object.values(METRICS_CONFIG)) {
-            const ruleName = metric.ruleName;
-            const summaryKey = metric.summaryKey;
-
-            // KORREKTE PRÜFUNG: Ist die Regel (egal welche) im Profil aktiv?
-            let isRuleActive = false;
-            if (metric.checkType === 'min' || metric.checkType === 'max') {
-                isRuleActive = (rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-                               (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined);
-            } else if (metric.checkType === 'code_match') {
-                isRuleActive = (rules[ruleName + '_alarm']?.length > 0) || 
-                               (rules[ruleName + '_warn']?.length > 0);
-            }
-
-            // Nur wenn die Regel aktiv ist UND das Summary Daten hat
-            if (isRuleActive && summary[summaryKey]) {
-                const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
-                activeRuleStati.push(blendedRuleStatus);
-            }
-        }
-
-        // 1b. Prüfe die manuelle Zeile (customRow), falls aktiviert
-        if (rules.customRow && rules.customRow.enabled) {
-            const customRowKey = "customRow";
-            const overrides = getManualOverrides();
-            const manualStatus = (overrides[customRowKey] ? overrides[customRowKey][hour] : null);
-            const blendedCustomRowStatus = manualStatus || 'no-data';
-            activeRuleStati.push(blendedCustomRowStatus);
-        }
-
-        // 2. Wende die "UND" / "ODER" Logik an
-        if (activeRuleStati.length === 0) {
-            combinedStatusForHour = 'no-data';
-        } else if (logicMode === 'AND') {
-            if (activeRuleStati.some(s => s === 'ok')) {
-                combinedStatusForHour = 'ok';
-            } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
-                combinedStatusForHour = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
-            } else {
-                combinedStatusForHour = 'no-data';
-            }
-        } else { // OR (Standard)
-            let orStatus = 'no-data';
-            activeRuleStati.forEach(status => {
-                orStatus = getWorseStatus(orStatus, status);
-            });
-            combinedStatusForHour = orStatus;
-        }
-
-        hourlyCombinedStatus[hour] = combinedStatusForHour;
-    });
-
-    // Wandle das { '0': 'ok', '1': 'warn' } Objekt in ein Array ['ok', 'warn'] um
+    const hourlyCombinedStatus = getBlendedCombinedStatus(profile, summary); 
     const combinedBlendedStatus = Object.values(hourlyCombinedStatus);
+    
     // --- ENDE KORREKTUR ---
 
     // Alarm-Bänder erstellen (unverändert in der Logik)

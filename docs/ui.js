@@ -5,7 +5,7 @@ import { formatAltitude_M, formatAltitude_FT, formatWaveHeight, formatSigWx, for
 import { UNITS, CONVERSIONS } from './config.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
 // NEU: Importiere das "Gehirn"
-import { METRICS_CONFIG } from './metricsConfig.js';
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 
 export const uiElements = {};
 
@@ -531,15 +531,8 @@ export const displayManualWarning = (profile, summary) => {
     let tableHtml = "";
     const blendedCombinedStatus = getBlendedCombinedStatus(profile, summary);
 
-    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
-        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
-        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined) ||
-        // (Sicherstellen, dass sigWx auch hier geprüft wird)
-        (m.checkType === 'code_match' &&
-            ((rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined && rules[m.ruleName + '_alarm'].length > 0) ||
-                (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined && rules[m.ruleName + '_warn'].length > 0))
-        )
-    );
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(m => isMetricActive(m, rules));
+
 
     console.log("[ui.js] Gefilterte 'activeMetrics':", activeMetrics);
 
@@ -568,28 +561,11 @@ export const displayManualWarning = (profile, summary) => {
 
         // --- NEUE DYNAMISCHE SCHLEIFE ---
         // Einzel-Parameter (nutzt die globale, override-fähige buildRow)
-        for (const metric of Object.values(METRICS_CONFIG)) { // ALT: activeMetrics
+        for (const metric of Object.values(METRICS_CONFIG)) {
             const ruleName = metric.ruleName;
 
-            let isRuleActive = false;
-            if (metric.checkType === 'min' || metric.checkType === 'max') {
-                isRuleActive = (rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-                    (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined);
-            }
-            // DIESER BLOCK IST ENTSCHEIDEND:
-            else if (metric.checkType === 'code_match') {
-                // KORREKTUR: Prüfe die _alarm und _warn Arrays
-                const hasAlarm = rules[ruleName + '_alarm'] !== null &&
-                    rules[ruleName + '_alarm'] !== undefined &&
-                    rules[ruleName + '_alarm'].length > 0;
-                const hasWarn = rules[ruleName + '_warn'] !== null &&
-                    rules[ruleName + '_warn'] !== undefined &&
-                    rules[ruleName + '_warn'].length > 0;
-                isRuleActive = hasAlarm || hasWarn;
-            }
-
-            // Zeile nur bauen, wenn Regel im Profil aktiv ist
-            if (isRuleActive) {
+            // (NEU: Einzeiler)
+            if (isMetricActive(metric, rules)) {
                 tableHtml += buildRow(metric.displayName, summary[metric.summaryKey].hourlyStatus, hours, metric.summaryKey);
             }
         }
@@ -1151,10 +1127,9 @@ function createBlendedStatus(summary, summaryKey) { // <-- Nimmt jetzt summaryKe
 /**
  * Hilfsfunktion zum Finden des schlechtesten Status
  */
-function getWorseStatus(s1, s2) {
+function getWorseStatus(s1, s2) { 
     if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
     if (s1 === 'warn' || s2 === 'warn') return 'warn';
-    // NEUE REGEL: 'ok' gewinnt über 'no-data'
     if (s1 === 'ok' || s2 === 'ok') return 'ok';
     return 'no-data';
 }
@@ -1162,9 +1137,9 @@ function getWorseStatus(s1, s2) {
 /**
  * Gibt den geblendeten Status für eine einzelne Regel und Stunde zurück.
  */
-function getBlendedStatus(summary, summaryKey, hour) { // <-- Nimmt jetzt summaryKey
+function getBlendedStatus(summary, summaryKey, hour) { 
     const overrides = getManualOverrides();
-    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hour]) || 'no-data'; // <-- Default 'no-data'
+    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hour]) || 'no-data'; 
     const manual = overrides[summaryKey] ? overrides[summaryKey][hour] : null;
     return manual || autoStatus;
 }
@@ -1173,7 +1148,7 @@ function getBlendedStatus(summary, summaryKey, hour) { // <-- Nimmt jetzt summar
  * Berechnet den finalen, kombinierten Status (Auto + Overrides) für jede Stunde.
  * NEU: Berücksichtigt den "AND" / "OR" Logik-Modus aus dem Profil.
  */
-function getBlendedCombinedStatus(profile, summary) {
+export function getBlendedCombinedStatus(profile, summary) {
     const rules = profile.rules;
     const combinedStatus = {};
 

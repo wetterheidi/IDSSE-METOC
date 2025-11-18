@@ -409,3 +409,29 @@ export const getApiParams = (metrics, modelInfo) => {
         }
     };
 };
+
+/**
+ * NEU: Zentrale Prüfung, ob eine Metrik im Profil aktiv ist.
+ * (Ersetzt die duplizierten if-Abfragen in map.js, charts.js, ui.js, main.js)
+ */
+export const isMetricActive = (metric, rules) => {
+    if (!rules) return false;
+
+    const ruleName = metric.ruleName;
+    
+    // 1. Min/Max Checks
+    if (metric.checkType === 'min' || metric.checkType === 'max') {
+        const hasAlarm = rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined;
+        const hasWarn = rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined;
+        return hasAlarm || hasWarn;
+    }
+    
+    // 2. Code Match Checks (SigWx)
+    if (metric.checkType === 'code_match') {
+        const hasAlarm = rules[ruleName + '_alarm'] && rules[ruleName + '_alarm'].length > 0;
+        const hasWarn = rules[ruleName + '_warn'] && rules[ruleName + '_warn'].length > 0;
+        return hasAlarm || hasWarn;
+    }
+
+    return false;
+};

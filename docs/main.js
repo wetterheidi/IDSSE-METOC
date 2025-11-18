@@ -10,7 +10,6 @@ function debounce(func, delay) {
     };
 }
 
-import { AUTO_CHECK_INTERVAL } from './config.js';
 import * as db from './db.js';
 import * as weather_LIVE from './weather.js';
 import * as weather_MOCK from './weather_mock.js';
@@ -18,8 +17,8 @@ import * as map from './map.js';
 import * as ui from './ui.js';
 import * as timeSlider from './timeSlider.js';
 import * as charts from './charts.js'; // <-- NEU
-import { WEATHER_MODELS } from './config.js';
-import { METRICS_CONFIG } from './metricsConfig.js';
+import { WEATHER_MODELS, AUTO_CHECK_INTERVAL, getModelResolution, getModelMaxDays } from './config.js';
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 
 // --- Globaler App-Zustand ---
 // (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
@@ -161,8 +160,7 @@ async function runAndUpdateDashboard() {
         runTimeISO: 'latest'
     };
 
-    const dashboardResolution = WEATHER_MODELS.MODEL_PROPERTIES['icon_seamless'].resolutionKm || 10;
-
+    const dashboardResolution = getModelResolution('icon_seamless');
     const profiles = await db.getProfiles();
     const results = [];
 
@@ -286,14 +284,10 @@ async function handleManualCheck(profileData) {
     // --- NEU: Auflösung ermitteln & Punkte berechnen ---
 
     // 2a. Ermittle die Auflösung aus der Config
-    let resolutionKm = 10; // Standard
-    const modelApiName = currentWeatherModel.apiName;
+    const resolutionKm = getModelResolution(currentWeatherModel.apiName);
 
-    if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
-        resolutionKm = WEATHER_MODELS.MODEL_PROPERTIES[modelApiName].resolutionKm || 10;
-    }
-
-    console.log(`[handleManualCheck] Berechne Punkte für ${modelApiName} mit Wunsch-Auflösung ${resolutionKm}km...`);
+    // KORREKTUR: Die Konsole muss jetzt currentWeatherModel.apiName verwenden
+    console.log(`[handleManualCheck] Berechne Punkte für ${currentWeatherModel.apiName} mit Wunsch-Auflösung ${resolutionKm}km...`);
 
     // 2b. Rufe getGridPoints MIT der Auflösung auf
     const { gridPoints, error } = await getWeatherModule().getGridPoints(profileData.geojson, resolutionKm);
@@ -662,29 +656,11 @@ export function handleChartVisibilityUpdate(chart) {
 }
 
 /**
- * NEU: Filtert die METRICS_CONFIG, um nur Metriken zurückzugeben,
- * die im Profil (rules) aktiv sind (Alarm oder Warnung gesetzt).
+ * Filtert die METRICS_CONFIG für aktive Regeln.
+ * (NEU: Nutzt die zentrale Logik)
  */
 function getActiveMetrics(rules) {
-    return Object.values(METRICS_CONFIG).filter(metric => {
-        if (metric.checkType === 'min' || metric.checkType === 'max') {
-            // Bisherige Logik für Min/Max
-            const hasAlarm = rules[metric.ruleName + '_alarm'] !== null && rules[metric.ruleName + '_alarm'] !== undefined;
-            const hasWarn = rules[metric.ruleName + '_warn'] !== null && rules[metric.ruleName + '_warn'] !== undefined;
-            return hasAlarm || hasWarn;
-        }
-        else if (metric.checkType === 'code_match') {
-            // KORREKTUR: Prüfe die _alarm und _warn Arrays, die von ui.js gespeichert werden
-            const hasAlarm = rules[metric.ruleName + '_alarm'] !== null &&
-                rules[metric.ruleName + '_alarm'] !== undefined &&
-                rules[metric.ruleName + '_alarm'].length > 0;
-            const hasWarn = rules[metric.ruleName + '_warn'] !== null &&
-                rules[metric.ruleName + '_warn'] !== undefined &&
-                rules[metric.ruleName + '_warn'].length > 0;
-            return hasAlarm || hasWarn;
-        }
-        return false; // Fallback für unbekannte Typen
-    });
+    return Object.values(METRICS_CONFIG).filter(metric => isMetricActive(metric, rules));
 }
 
 export const getCurrentManualSummary = () => currentManualSummary;

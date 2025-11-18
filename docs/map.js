@@ -1,7 +1,7 @@
 // map.js (Version 2.0 - Config-Driven)
 import { getManualOverrides, getVisibleChartMetrics } from './main.js';
 // NEU: Importiere das "Gehirn"
-import { METRICS_CONFIG } from './metricsConfig.js';
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js'; // <-- isMetricActive dazu
 import { forward } from 'https://cdn.jsdelivr.net/npm/mgrs@latest/mgrs.min.js';
 
 // Modul-interne Variablen für die Karten-Objekte
@@ -363,16 +363,7 @@ export const visualizeWarnings = (profile, summary, hour) => {
         }
 
         // 2. Überspringen, wenn die Regel im Profil (rules) nicht aktiv ist
-        const ruleCheck_Alarm = rules[ruleName + '_alarm'];
-        const ruleCheck_Warn = rules[ruleName + '_warn'];
-
-        const isMinMaxRuleActive = (ruleCheck_Alarm !== null && ruleCheck_Alarm !== undefined) ||
-            (ruleCheck_Warn !== null && ruleCheck_Warn !== undefined);
-
-        const isCodeMatchRuleActive = (metric.checkType === 'code_match') &&
-            ((ruleCheck_Alarm?.length > 0) || (ruleCheck_Warn?.length > 0));
-
-        if (!isMinMaxRuleActive && !isCodeMatchRuleActive) {
+        if (!isMetricActive(metric, rules)) {
             continue;
         }
 

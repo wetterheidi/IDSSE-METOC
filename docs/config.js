@@ -160,3 +160,21 @@ export const API_URLS = {
     MARINE: "https://marine-api.open-meteo.com/v1/marine",
     ELEVATION: "https://api.open-meteo.com/v1/elevation"
 };
+
+/**
+ * Gibt die Auflösung für ein Modell zurück (mit sicherem Fallback auf 10km).
+ */
+export const getModelResolution = (apiName) => {
+    if (apiName === 'auto') return 10;
+    const props = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
+    return (props && props.resolutionKm) ? props.resolutionKm : 10;
+};
+
+/**
+ * Gibt die max. Vorhersagetage zurück (mit sicherem Fallback auf 7).
+ */
+export const getModelMaxDays = (apiName) => {
+    if (apiName === 'auto') return 7;
+    const props = WEATHER_MODELS.MODEL_PROPERTIES[apiName];
+    return (props && props.maxDays) ? props.maxDays : 7;
+};
