@@ -16,8 +16,8 @@ let profileBoundaryLayer;
  */
 export const initMap = () => {
     map = L.map('map').setView([48.711, 8.78], 8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.opentopomap.org/copyright">OpenStreetMap</a> contributors',
         minZoom: 3,
     }).addTo(map);
 

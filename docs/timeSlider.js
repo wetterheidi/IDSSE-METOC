@@ -219,9 +219,19 @@ function populateDaySelector(maxDays = 7) {
         let dayName;
         if (i === 0) dayName = 'Heute';
         else if (i === 1) dayName = 'Morgen';
-        else dayName = date.toLocaleDateString('de-DE', { weekday: 'short' });
-
-        const dateString = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+        else {
+            // --- KORREKTUR 1: Wochentag in UTC berechnen ---
+            // ALT: dayName = date.toLocaleDateString('de-DE', { weekday: 'short' });
+            dayName = date.toLocaleDateString('de-DE', {
+                weekday: 'short',
+                timeZone: 'UTC' // <-- WICHTIG
+            });
+        }
+        const dateString = date.toLocaleDateString('de-DE', {
+            day: '2-digit',
+            month: '2-digit',
+            timeZone: 'UTC' // <-- WICHTIG: Ignoriert deine lokale PC-Zeit
+        });
 
         const option = document.createElement('option');
         option.value = i; // Wichtig: Der Wert ist der Offset (0, 1, 2...)
