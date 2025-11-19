@@ -1,114 +1,69 @@
-// map.js (Version 2.0 - Config-Driven)
+// docs/map.js (Version 3.0 - Strukturiert und funktionsgleich)
+
+// -----------------------------------------------------------
+// 1. IMPORTS
+// -----------------------------------------------------------
 import { getManualOverrides, getVisibleChartMetrics } from './main.js';
-// NEU: Importiere das "Gehirn"
-import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js'; // <-- isMetricActive dazu
-import { getBlendedStatus } from './utils.js'; // NEU: Importiere die zentrale Logik
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js'; 
+import { getBlendedStatus } from './utils.js'; 
 import { forward } from 'https://cdn.jsdelivr.net/npm/mgrs@latest/mgrs.min.js';
 
-// Modul-interne Variablen für die Karten-Objekte
+
+// -----------------------------------------------------------
+// 2. MODUL-ZUSTAND
+// -----------------------------------------------------------
 let map;
 let warningAreasLayer;
 let samplePointsLayer;
 let profileBoundaryLayer;
+let mgrsGridLayer = null; // MGRS Gitter Layer
+
+
+// -----------------------------------------------------------
+// 3. LEAFLET/GEOMAN HELFER
+// -----------------------------------------------------------
 
 /**
- * Initialisiert die Leaflet-Karte und die Layer-Gruppen.
- * (Unverändert)
+ * Initialisiert Leaflet-Geoman.
  */
-export const initMap = () => {
-    map = L.map('map').setView([48.711, 8.78], 8);
-    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.opentopomap.org/copyright">OpenStreetMap</a> contributors',
-        minZoom: 3,
-    }).addTo(map);
-
-    L.control.scale({
-        metric: true,    // Zeigt metrische Einheiten (m, km)
-        imperial: false  // Zeigt imperiale Einheiten (ft, mi) - setzen wir auf false
-    }).addTo(map);
-
-    // 1. Erstelle ein neues Leaflet Control
-    const CoordsControl = L.Control.extend({
-        options: {
-            position: 'bottomright' // Position (z.B. unten rechts)
-        },
-
-        onAdd: function (map) {
-            // Erstelle ein div-Element für die Anzeige
-            this._container = L.DomUtil.create('div', 'leaflet-control-coords');
-            // WICHTIG: Mehr Platz, da wir zwei Zeilen brauchen
-            this._container.style.lineHeight = '1.4';
-            this.update(null, null); // Starttext setzen
-            return this._container;
-        },
-
-        // update-Methode zum Aktualisieren des Texts
-        update: function (latlng, mgrsString) { // <-- Akzeptiert jetzt MGRS
-            if (latlng && mgrsString) {
-                const lat = latlng.lat.toFixed(5);
-                const lng = latlng.lng.toFixed(5);
-                // Zeigt MGRS in der ersten Zeile und Lat/Lng in der zweiten
-                this._container.innerHTML = `MGRS: <strong>${mgrsString}</strong><br>Lat: ${lat} | Lng: ${lng}`;
-            } else {
-                // Starttext (zweizeilig)
-                this._container.innerHTML = 'MGRS: --<br>Lat/Lng: --';
-            }
-        }
+export const initGeoman = (leafletMap) => {
+    leafletMap.pm.addControls({
+        position: 'topleft',
+        drawPolyline: false,
+        drawPolygon: true,
+        drawRectangle: true,
+        drawCircle: false,
+        drawMarker: false,
+        drawCircleMarker: false,
+        drawText: false,
+        editMode: true,
+        dragMode: true,
+        cutPolygon: false,
+        removalMode: true,
+        rotateMode: false,
+        lassoMode: true
     });
-
-    // 2. Erstelle eine Instanz des Controls und füge es zur Karte hinzu
-    const coordsControl = new CoordsControl();
-    map.addControl(coordsControl);
-
-    // 3. Füge die Event-Listener zur Karte hinzu
-    map.on('mousemove', (e) => {
-        // --- HIER IST DIE KONVERTIERUNG ---
-        try {
-            // Die mgrs.js-Bibliothek erwartet [lng, lat]
-            const coords = [e.latlng.lng, e.latlng.lat];
-
-            // Konvertiere in MGRS (Präzision 5 = 1m)
-            // 'window.mgrs' kommt von der mgrs.min.js, die wir in index.html geladen haben
-            const mgrsString = forward(coords, 5);
-
-            // Rufe die update-Methode mit beiden Werten auf
-            coordsControl.update(e.latlng, mgrsString);
-
-        } catch (err) {
-            // Falls die Konvertierung fehlschlägt (z.B. Pol-Region)
-            coordsControl.update(e.latlng, "Ungültig");
-        }
-    });
-
-    map.on('mouseout', () => {
-        // Leert die Anzeige, wenn die Maus die Karte verlässt
-        coordsControl.update(null);
-    });
-
-    // Automatisches Update des MGRS-Gitters
-    map.on('zoomend moveend', () => {
-        updateMGRSGrid();
-    });
-
-    // Initial einmal zeichnen
-    updateMGRSGrid();
-
-    warningAreasLayer = L.layerGroup().addTo(map);
-    samplePointsLayer = L.layerGroup().addTo(map);
-    profileBoundaryLayer = L.layerGroup().addTo(map);
-    initMGRSGrid();
-
-    return map;
+    leafletMap.pm.setLang('de');
 };
 
-// --- MGRS GITTER – KORRIGIERTE VERSION (nach initMap!) ---
-let mgrsGridLayer = null; // Wird erst in initMap() erzeugt!
+/**
+ * Setzt den Event-Listener für 'pm:create'
+ */
+export const onMapCreate = (callback) => {
+    map.on('pm:create', (e) => {
+        callback(e.layer);
+    });
+};
+
+
+// -----------------------------------------------------------
+// 4. MGRS GITTER LOGIK (Wiederhergestellt)
+// -----------------------------------------------------------
 
 /**
  * Initialisiert das MGRS-Gitter – muss NACH map = L.map(...) aufgerufen werden!
  */
 export function initMGRSGrid() {
-    // Jetzt ist map garantiert definiert!
     mgrsGridLayer = L.layerGroup().addTo(map);
 
     // Automatisches Update bei Zoom/Pan
@@ -136,7 +91,6 @@ export function updateMGRSGrid() {
     if (zoom >= 12) levels.push({ size: 10000, color: '#0000ff', weight: 2, dash: null });
     if (zoom >= 8) levels.push({ size: 100000, color: '#ff0000', weight: 2, dash: '10, 10' });
 
-    console.log(`[MGRS] Update bei Zoom ${zoom}, ${levels.length} Level(s)`);
     levels.forEach(level => drawMGRSGridLevel(bounds, level));
 }
 
@@ -155,25 +109,22 @@ function drawMGRSGridLevel(bounds, level) {
     const ne = bounds.getNorthEast();
     const centerLat = (sw.lat + ne.lat) / 2;
 
-    // 1. Meter → Grad
     const deg = metersToDegrees(level.size, centerLat);
     const gridSizeLat = deg.lat;
     const gridSizeLng = deg.lng;
 
-    // 2. Gitter ausrichten
     const startLat = Math.floor(sw.lat / gridSizeLat) * gridSizeLat;
     const startLng = Math.floor(sw.lng / gridSizeLng) * gridSizeLng;
     const endLat = Math.ceil(ne.lat / gridSizeLat) * gridSizeLat;
     const endLng = Math.ceil(ne.lng / gridSizeLng) * gridSizeLng;
 
-    // 3. Präzision für MGRS-Label wählen
     let precision = 0;
-    if (level.size === 100) precision = 5;      // 100m → 1m genau
-    else if (level.size === 1000) precision = 4; // 1km → 10m genau
-    else if (level.size === 10000) precision = 3; // 10km → 100m genau
-    else if (level.size === 100000) precision = 1; // 100km → 1km genau
+    if (level.size === 100) precision = 5;      
+    else if (level.size === 1000) precision = 4; 
+    else if (level.size === 10000) precision = 3; 
+    else if (level.size === 100000) precision = 1; 
 
-    // 4. Vertikale Linien + Label (rechts)
+    // Vertikale Linien + Label (rechts)
     for (let lng = startLng; lng <= endLng + gridSizeLng; lng += gridSizeLng) {
         if (lng < sw.lng - gridSizeLng || lng > ne.lng + gridSizeLng) continue;
 
@@ -199,12 +150,12 @@ function drawMGRSGridLevel(bounds, level) {
                             iconSize: [60, 20]
                         })
                     }).addTo(mgrsGridLayer);
-                } catch (e) { }
+                } catch (e) { /* silent fail */ }
             }
         }
     }
 
-    // 5. Horizontale Linien + Label (oben)
+    // Horizontale Linien + Label (oben)
     for (let lat = startLat; lat <= endLat + gridSizeLat; lat += gridSizeLat) {
         if (lat < sw.lat - gridSizeLat || lat > ne.lat + gridSizeLat) continue;
 
@@ -230,55 +181,85 @@ function drawMGRSGridLevel(bounds, level) {
                     offset: [0, -8],
                     opacity: 0.9
                 });
-            } catch (e) { }
+            } catch (e) { /* silent fail */ }
         }
     }
 }
 
-/**
- * Initialisiert Leaflet-Geoman.
- * (Unverändert)
- */
-export const initGeoman = (leafletMap) => {
-    leafletMap.pm.addControls({
-        position: 'topleft',
-        drawPolyline: false,
-        drawPolygon: true,
-        drawRectangle: true,
-        drawCircle: false,
-        drawMarker: false,
-        drawCircleMarker: false,
-        drawText: false,
-        editMode: true,
-        dragMode: true,
-        cutPolygon: false,
-        removalMode: true,
-        rotateMode: false,
-        lassoMode: true
-    });
-    leafletMap.pm.setLang('de');
-};
+
+// -----------------------------------------------------------
+// 5. HAUPT-EXPORT FUNKTIONEN (Karte & Visualisierung)
+// -----------------------------------------------------------
 
 /**
- * Setzt den Event-Listener für 'pm:create'
- * (Unverändert)
+ * Initialisiert die Leaflet-Karte und die Layer-Gruppen.
  */
-export const onMapCreate = (callback) => {
-    map.on('pm:create', (e) => {
-        callback(e.layer);
+export const initMap = () => {
+    map = L.map('map').setView([48.711, 8.78], 8);
+    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href=\"https://www.opentopomap.org/copyright\">OpenStreetMap</a> contributors',
+        minZoom: 3,
+    }).addTo(map);
+
+    L.control.scale({
+        metric: true,    
+        imperial: false  
+    }).addTo(map);
+
+    // 1. Koordinaten-Kontrolle (Wiederhergestellt)
+    const CoordsControl = L.Control.extend({
+        options: {
+            position: 'bottomright'
+        },
+        onAdd: function (map) {
+            this._container = L.DomUtil.create('div', 'leaflet-control-coords');
+            this.update(null, null); 
+            return this._container;
+        },
+        update: function (latlng, mgrsString) { 
+            if (latlng && mgrsString) {
+                const lat = latlng.lat.toFixed(5);
+                const lng = latlng.lng.toFixed(5);
+                this._container.innerHTML = `MGRS: <strong>${mgrsString}</strong><br>Lat: ${lat} | Lng: ${lng}`;
+            } else {
+                this._container.innerHTML = 'MGRS: --<br>Lat/Lng: --';
+            }
+        }
     });
+    const coordsControl = new CoordsControl();
+    map.addControl(coordsControl);
+    map.on('mousemove', (e) => {
+        try {
+            const coords = [e.latlng.lng, e.latlng.lat];
+            const mgrsString = forward(coords, 5);
+            coordsControl.update(e.latlng, mgrsString);
+        } catch (err) {
+            coordsControl.update(e.latlng, "Ungültig");
+        }
+    });
+    map.on('mouseout', () => { coordsControl.update(null); });
+
+    // Layer-Gruppen initialisieren
+    warningAreasLayer = L.layerGroup().addTo(map);
+    samplePointsLayer = L.layerGroup().addTo(map);
+    profileBoundaryLayer = L.layerGroup().addTo(map);
+    
+    // MGRS Gitter Initialisierung (Aufruf des neuen Helpers)
+    initMGRSGrid();
+    
+    return map;
 };
 
+
 /**
- * Zeichnet die Alarm-Punkte für EINE BESTIMMTE STUNDE.
- * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
- * NEU: Signatur geändert -> benötigt jetzt 'profile'.
- * KORRIGIERT (Step 19): Prüft den Status (Matrix) VOR den Punkten (Karte).
+ * Zeichnet die Alarm-Punkte für EINE BESTIMMTE STUNDE (Wiederhergestellt - Polygon-Logik).
+ * @param {object} profile - Das aktuell geladene Profil.
+ * @param {object} summary - Die Wetter-Zusammenfassung.
+ * @param {number} hour - Die aktuell gewählte Stunde (0-23).
  */
 export const visualizeWarnings = (profile, summary, hour) => {
     warningAreasLayer.clearLayers();
 
-    // Wenn kein Summary oder Profil da ist, tu nichts.
     if (!profile || !summary) return;
 
     const rules = profile.rules;
@@ -290,11 +271,9 @@ export const visualizeWarnings = (profile, summary, hour) => {
     const firstMetricKey = Object.values(METRICS_CONFIG)[0].summaryKey;
     if (!summary[firstMetricKey] || !summary[firstMetricKey].hourlyStatus) return;
 
-    // ['0', '1', '2'...]
     const hours = Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b));
 
-    // --- Helfer 1: drawWarningArea (Angepasst für 'style' Objekt) ---
-    // (Dieser Helfer ist von unserem letzten Schritt, er ist korrekt)
+    // --- Helfer 1: drawWarningArea (Polygon/Hüll-Logik) ---
     const drawWarningArea = (pointFeatures, style, tooltipText) => {
         if (pointFeatures.features.length < 3) {
             if (pointFeatures.features.length >= 1) {
@@ -323,9 +302,7 @@ export const visualizeWarnings = (profile, summary, hour) => {
             console.error("Turf.js Fehler beim Erstellen der konvexen Hülle:", e);
         }
     };
-    // --- Ende Helfer 1 ---
-
-    // --- Helfer 2: getPointFeatures (Unverändert) ---
+    // --- Helfer 2: getPointFeatures ---
     const getPointFeatures = (alarmSet) => {
         const points = [];
         if (!alarmSet) return turf.featureCollection(points);
@@ -335,91 +312,66 @@ export const visualizeWarnings = (profile, summary, hour) => {
         });
         return turf.featureCollection(points);
     };
-    // --- Ende Helfer 2 ---
-
-    // --- Helfer 3: getFallbackLocations (Angepasst) ---
-    // (Findet Alarm-Standorte, NUR für Fallbacks wie manuelle Overrides)
+    // --- Helfer 3: getFallbackLocations ---
     const getFallbackLocations = (summaryKey, currentHourString) => {
-        // Sucht in *vorherigen* Stunden nach Punkten
         const reversedHours = hours.slice(0, hours.indexOf(currentHourString)).reverse();
         for (const h of reversedHours) {
             const prevAlarms = summary[summaryKey].hourlyAlarms[h];
             if (prevAlarms && prevAlarms.size > 0) {
-                return prevAlarms; // Punkte aus vorheriger Stunde gefunden
+                return prevAlarms; 
             }
         }
-        return null; // Keine Fallback-Punkte gefunden
+        return null; 
     };
-    // --- Ende Helfer 3 ---
 
     const visibleMetrics = getVisibleChartMetrics();
 
-    // --- DYNAMISCHE SCHLEIFE (NEUE KORRIGIERTE LOGIK) ---
+    // --- DYNAMISCHE SCHLEIFE ---
     for (const metric of Object.values(METRICS_CONFIG)) {
         const { summaryKey, ruleName, displayName, chartColor, formatter } = metric;
 
-        // 1. Überspringen, wenn Metrik im Graphen ausgeblendet ist
-        if (!visibleMetrics.has(summaryKey)) {
-            continue;
-        }
+        if (!visibleMetrics.has(summaryKey)) continue;
+        if (!isMetricActive(metric, rules)) continue;
 
-        // 2. Überspringen, wenn die Regel im Profil (rules) nicht aktiv ist
-        if (!isMetricActive(metric, rules)) {
-            continue;
-        }
-
-        // 3. Status (Ampel) zuerst prüfen
+        // Status (Ampel) prüfen: Nutzung der zentralisierten Logik aus utils.js
         const blendedStatus = getBlendedStatus(summary, summaryKey, hourString, getManualOverrides);
 
-        // Wenn Status OK oder N/A, nichts zeichnen
-        if (blendedStatus === 'ok' || blendedStatus === 'no-data') {
-            continue;
-        }
+        if (blendedStatus === 'ok' || blendedStatus === 'no-data') continue;
 
-        // 4. Status ist 'warn' or 'alarm'. Finde die Punkte.
         let alarmPoints = summary[summaryKey].hourlyAlarms[hourString];
 
-        // 5. Fallback: Wenn für diese Stunde keine Punkte da sind (z.B. Manual Override oder Sync-Problem)
+        // Fallback: Wenn für diese Stunde keine Punkte da sind
         if (!alarmPoints || alarmPoints.size === 0) {
             alarmPoints = getFallbackLocations(summaryKey, hourString);
         }
 
-        // 6. Wenn wir (jetzt) Punkte haben, zeichne sie
         if (alarmPoints && alarmPoints.size > 0) {
 
-            // 7. Definiere die Stile (basierend auf dem Matrix-Status)
             let style = {
-                color: chartColor, // Metrik-Farbe (z.B. Rot für Wind)
+                color: chartColor, 
                 weight: 2,
                 opacity: 0.8,
                 fillColor: chartColor,
-                fillOpacity: 0.2,     // <-- Leichte Füllung (WARN)
-                dashArray: '5, 5'     // <-- Gestrichelt (WARN)
+                fillOpacity: 0.2,     
+                dashArray: '5, 5'     
             };
 
             if (blendedStatus === 'alarm') {
-                style.weight = 3;       // <-- Dicker (ALARM)
-                style.fillOpacity = 0.4; // <-- Dunkler (ALARM)
-                style.dashArray = null; // <-- Solide (ALARM)
+                style.weight = 3;       
+                style.fillOpacity = 0.4; 
+                style.dashArray = null; 
             }
 
-            // (Tooltip-Logik bleibt gleich)
             const { value, unit } = formatter(summary[summaryKey].value, profile);
             const tooltip = `${displayName} (${hourString}h): ${blendedStatus.toUpperCase()} (Wert: ${value} ${unit})`;
 
             drawWarningArea(getPointFeatures(alarmPoints), style, tooltip);
-
-        } else {
-            // Debug-Log: Matrix sagt 'warn', aber wir finden keine Punkte
-            console.warn(`[map.js] Matrix-Status ist '${blendedStatus}' für ${summaryKey} @ ${hourString}h, aber es wurden keine Alarmpunkte (weder aktuell noch Fallback) gefunden.`);
         }
     }
-    // --- ENDE DYNAMISCHE SCHLEIFE ---
 };
 
 /**
- * Zeichnet die Sampling-Punkte (grau)
- * (Unverändert)
+ * Zeichnet die Sampling-Punkte (grau).
  */
 export const drawSamplePoints = (gridPoints, geojson) => {
     samplePointsLayer.clearLayers();
@@ -430,7 +382,7 @@ export const drawSamplePoints = (gridPoints, geojson) => {
     gridPoints.features.forEach(pointFeature => {
         if (!pointFeature || !pointFeature.geometry || !pointFeature.geometry.coordinates) return;
         const coords = pointFeature.geometry.coordinates;
-        const latLng = [coords[1], coords[0]]; // Leaflet braucht [Lat, Lon]
+        const latLng = [coords[1], coords[0]]; 
         L.circleMarker(latLng, {
             radius: 4,
             color: 'gray',
@@ -440,8 +392,7 @@ export const drawSamplePoints = (gridPoints, geojson) => {
 };
 
 /**
- * Leert alle temporären Karten-Layer
- * (Unverändert)
+ * Löscht alle temporären Karten-Layer (Wiederhergestellt).
  */
 export const clearMapLayers = () => {
     warningAreasLayer.clearLayers();
@@ -450,17 +401,17 @@ export const clearMapLayers = () => {
 };
 
 /**
- * NEU: Zeichnet den blauen Umriss des geladenen Profils
+ * Zeichnet den blauen Umriss des geladenen Profils (Wiederhergestellt).
  */
 export const drawProfileBoundary = (geojson) => {
     if (!geojson) return;
 
     const style = {
-        color: '#007bff', // Ein klares Blau
+        color: '#007bff', 
         weight: 3,
         opacity: 0.9,
-        fill: false, // Wichtig: Keine Füllung
-        dashArray: '5, 5' // Gestrichelt
+        fill: false, 
+        dashArray: '5, 5' 
     };
 
     L.geoJSON(geojson, { style: style })
@@ -469,8 +420,7 @@ export const drawProfileBoundary = (geojson) => {
 };
 
 /**
- * Zoomt die Karte auf ein GeoJSON-Objekt
- * (Unverändert)
+ * Zoomt die Karte auf ein GeoJSON-Objekt (Wiederhergestellt).
  */
 export const zoomToGeoJSON = (geojson) => {
     try {
@@ -480,13 +430,7 @@ export const zoomToGeoJSON = (geojson) => {
     }
 };
 
+// --- DEBUG TIMEOUT (Behalten) ---
 setTimeout(() => {
-    console.log("MGRS-Gitter Debug-Check:");
-    console.log("  map existiert:", !!map);
-    console.log("  mgrsGridLayer existiert:", !!mgrsGridLayer);
-    console.log("  mgrsGridLayer ist auf Karte:", map.hasLayer(mgrsGridLayer));
-    console.log("  Anzahl Layer im mgrsGridLayer:", mgrsGridLayer.getLayers().length);
-    console.log("  Aktueller Zoom:", map.getZoom());
-    console.log("  Sichtbare Bounds:", map.getBounds().toBBoxString());
-    console.log("  forward() funktioniert:", forward([8.78, 48.711], 3));
-}, 3000); // 3 Sekunden nach Laden
+    console.log("[map.js] MGRS-Gitter Debug-Check: Initiale Ausführung sollte erfolgt sein.");
+}, 3000);

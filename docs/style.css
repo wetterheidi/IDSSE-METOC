@@ -1,3 +1,8 @@
+/* docs/style.css (Version 3.0 - Final Strukturiert) */
+
+/* -----------------------------------------------------------
+   1. ROOT VARIABLEN & FARBPALETTE
+----------------------------------------------------------- */
 :root {
     /* Farben */
     --color-primary: #4da8da;
@@ -11,12 +16,10 @@
     --background-main: #f8f9fa;
     --background-surface: #ffffff;
     --background-interactive: #e9ecef;
-    /* Wichtig für den Slider! */
-    --background-dark: #343a40;
+    --background-dark: #343a40; /* Wichtig für den Slider! */
 
     /* Text-Farben */
     --text-primary: #212529;
-    /* Wichtig für die Schrift! */
     --text-secondary: #6c757d;
     --text-on-dark: #ffffff;
     --text-on-primary: #ffffff;
@@ -30,7 +33,11 @@
     --footer-height: 150px;
 }
 
-/* --- GRUNDGERÜST (Version 2.0: Mit Footer) --- */
+
+/* -----------------------------------------------------------
+   2. GRUNDGERÜST (Grid Layout)
+----------------------------------------------------------- */
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
@@ -38,13 +45,11 @@ body {
     overflow: hidden;
 }
 
-/* Das NEUE Haupt-Layout (CSS Grid) */
 .page-container {
     display: grid;
-    /* Zeilen: 95px (Header), 1fr (Rest), 250px (Footer) */
+    /* Zeilen: Header, Content, Footer */
     grid-template-rows: 100px 1fr var(--footer-height);
-    /* Maximalhöhe auf 80px gesetzt */
-    /* Spalten: 350px (Sidebar), 1fr (Rest) */
+    /* Spalten: Sidebar, Map */
     grid-template-columns: 350px 1fr;
     height: 100vh;
 }
@@ -52,44 +57,50 @@ body {
 .page-header {
     grid-row: 1;
     grid-column: 1 / span 2;
-    /* Volle Breite */
-
-    /* NEU: Helles Layout, das die Variablen nutzt */
     background: var(--background-surface);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
-
     position: relative; 
-
     padding: 5px 15px;
     font-size: 1.2em;
     z-index: 2;
-
-    /* NEU: Einhaltung der Höhe sicherstellen */
     height: 90px;
-
     display: grid;
     grid-template-columns: auto 1fr;
     align-items: center;
 }
 
-/* --- SIDEBAR & KARTE (Mittlere Zeile) --- */
+/* Linker Teil des Headers (Titel & Demo-Modus) */
+.header-left-compact {
+    grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+#demoModeCompact {
+    font-size: 0.8em;
+    margin-top: 5px;
+    line-height: 1;
+}
+
+/* -----------------------------------------------------------
+   3. HAUPTBEREICH (Sidebar & Map)
+----------------------------------------------------------- */
+
 #sidebar {
     grid-row: 2;
     grid-column: 1;
-    /* KORRIGIERT: Saubere, weiße Oberfläche */
     background: var(--background-surface);
     padding: 0;
-    /* Padding in die Panels verschoben */
     border-right: 1px solid var(--border-color);
-
     display: flex;
     flex-direction: column;
     height: 100%;
     min-height: 0;
     overflow-y: auto;
-    position: relative; /* NEU: Erzwingt Stacking Context */
-    z-index: 1;         /* NEU: Liegt HINTER dem Header */
+    position: relative;
+    z-index: 1;
 }
 
 #map {
@@ -97,146 +108,106 @@ body {
     grid-column: 2;
     height: 100%;
     width: 100%;
-    position: relative; /* NEU: Erzwingt Stacking Context */
-    z-index: 1;         /* NEU: Liegt HINTER dem Header */
+    position: relative;
+    z-index: 1;
 }
 
-/* --- DER NEUE FOOTER --- */
+
+/* -----------------------------------------------------------
+   4. FOOTER & TABS
+----------------------------------------------------------- */
+
 .page-footer {
     grid-row: 3;
     grid-column: 1 / span 2;
-    /* NEU: Der Footer wird zum Grid, das die 2 Spalten der Seite nachbildet */
     position: relative;
-    display: grid;
-    grid-template-columns: 350px 1fr;
+    display: flex;
+    flex-direction: column;
     height: 100%;
+    padding: 0;
 }
 
 #footer-resize-handle {
     position: absolute;
-    /* Geht 5px über die obere Kante des Footers (Trennlinie) */
     top: -5px;
     left: 0;
     right: 0;
     height: 10px;
-    /* Zieh-Bereich */
     cursor: ns-resize;
-    /* Zeigt, dass vertikal gezogen werden kann */
     z-index: 20;
     border-top: 2px solid var(--color-primary);
-    /* Macht den Handle sichtbar */
     background: transparent;
 }
 
-/* Der Monitor-Container selbst */
-#manualWarningMonitor {
-    grid-column: 1;
-    width: 100%;
-}
-
-#chartContainer {
-    grid-column: 2;
-    height: 100%;
-    /* Füllt die 400px Höhe aus */
-    padding-left: 10px;
-    /* Optional: Etwas Abstand zur linken Spalte */
-}
-
-/* --- AKKORDEON (Flexbox-Version) --- */
-.accordion-header {
-    background-color: var(--background-interactive);
-    /* Hellerer, neutraler Header */
-    color: var(--text-primary);
-    cursor: pointer;
-    padding: 10px 15px;
-    width: 100%;
-    border: none;
-    text-align: left;
-    font-size: 0.9em;
-    font-weight: bold;
-    margin-top: 0;
-    /* Margin entfernt */
-    border-radius: 0;
+/* Tab Navigation */
+.footer-tabs {
     flex-shrink: 0;
-
-    /* NEU: Flexbox und Pfeil-Indikator */
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    background: #e9ecef;
     border-bottom: 1px solid var(--border-color);
-    border-top: 1px solid var(--border-color);
-    /* Trennung zur Header-Border */
+    padding-left: 10px;
 }
 
-
-
-.accordion-header:hover,
-.accordion-header.active {
-    background-color: #e2e6ea;
-}
-
-.accordion-panel {
+.footer-tab {
+    width: auto;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-bottom: 3px solid transparent;
     padding: 10px 15px;
-    background-color: white;
-    border: 1px solid #ddd;
-    border-top: none;
-    border-radius: 0 0 3px 3px;
-    display: none;
-    overflow-y: auto;
-    flex-grow: 1;
-    min-height: 0;
+    margin: 0;
+    font-size: 1em;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 0;
 }
 
-.accordion-panel.open {
+.footer-tab:hover {
+    background: #fff;
+    color: var(--text-primary);
+}
+
+.footer-tab.active {
+    background: var(--background-surface);
+    color: var(--color-primary);
+    border-bottom: 3px solid var(--color-primary);
+}
+
+/* Tab Inhalte */
+.footer-content {
+    flex-grow: 1;
+    position: relative;
+    overflow: auto;
+}
+
+.footer-tab-content {
+    display: none;
+    padding: 10px;
+}
+
+.footer-tab-content.active {
     display: block;
 }
 
-/* Ausnahme für das Auto-Monitor-Panel.
-   Es soll NICHT den restlichen Platz füllen (flex-grow: 0),
-   sondern sich an der Höhe seines Inhalts (#autoWarnDashboard) orientieren,
-   welcher auf max. 250px begrenzt ist. */
-#auto-monitor-panel {
-    flex-grow: 0;
-    flex-shrink: 0;
-    /* Verhindert auch, dass es kleiner wird als sein Inhalt */
+#manualWarningMonitor {
+    /* Nutzt das Padding des Eltern-Containers */
+    padding: 0;
 }
 
-/* Pfeil-Indikator */
-.accordion-header:after {
-    content: '\25BC';
-    /* UTF-8 Abwärtspfeil */
-    font-size: 10px;
-    transition: transform 0.3s ease;
-    padding-left: 10px;
+#graphContainer {
+    position: relative;
+    height: 97%;
+    width: 97%;
 }
 
-.accordion-header.active:after {
-    transform: rotate(180deg);
-    /* Pfeil dreht sich beim Öffnen */
+#weatherChartCanvas {
+    height: 100%;
+    width: 100%;
 }
 
-.accordion-panel {
-    padding: 10px 15px;
-    background-color: var(--background-surface);
-    border: none;
-    /* Border entfernt */
-    border-radius: 0;
-    display: none;
-    overflow-y: auto;
-    flex-grow: 1;
-    min-height: 0;
-}
 
-/* --- STYLING DER INHALTE (Buttons, Inputs etc.) --- */
-
-#profileList {
-    padding-left: 15px;
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px dashed #ccc;
-    padding-top: 5px;
-    padding-bottom: 5px;
-}
+/* -----------------------------------------------------------
+   5. ALLGEMEINE KOMPONENTEN (Inputs, Buttons)
+----------------------------------------------------------- */
 
 input[type="text"],
 input[type="number"],
@@ -252,7 +223,7 @@ button {
 button {
     font-size: 14px;
     font-weight: bold;
-    color: var(--text-inverted);
+    color: var(--text-on-primary);
     background: var(--color-primary);
     border: none;
     border-radius: 8px;
@@ -278,55 +249,199 @@ button:hover {
     background: #218838;
 }
 
-/* --- AMPEL-TABELLE --- */
-.ampel-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-    table-layout: fixed;
+#modelSelect, #daySelect {
+    font-size: 14px;
+    padding: 2px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--background-surface);
+    width: 180px;
+    max-width: 180px;
 }
 
-.ampel-table th,
-.ampel-table td {
-    border: 1px solid #ccc;
-    padding: 4px;
-    text-align: center;
+
+/* -----------------------------------------------------------
+   6. SIDEBAR KOMPONENTEN (Akkordeon, Profile)
+----------------------------------------------------------- */
+
+/* Akkordeon Header */
+.accordion-header {
+    background-color: var(--background-interactive);
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 10px 15px;
+    width: 100%;
+    border: none;
+    text-align: left;
+    font-size: 0.9em;
+    font-weight: bold;
+    margin-top: 0;
+    border-radius: 0;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-color);
+}
+
+.accordion-header:hover,
+.accordion-header.active {
+    background-color: #e2e6ea;
+}
+
+.accordion-header:after {
+    content: '\25BC';
+    font-size: 10px;
+    transition: transform 0.3s ease;
+    padding-left: 10px;
+}
+
+.accordion-header.active:after {
+    transform: rotate(180deg);
+}
+
+/* Akkordeon Panel */
+.accordion-panel {
+    padding: 10px 15px;
+    background-color: var(--background-surface);
+    border: none;
+    border-radius: 0;
+    display: none;
+    overflow-y: auto;
+    flex-grow: 1;
+    min-height: 0;
+}
+
+.accordion-panel.open {
+    display: block;
+}
+
+/* Spezifische Panel-Ausnahmen */
+#auto-monitor-panel {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+/* Profil Liste */
+#profileList {
+    padding-left: 15px;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px dashed #ccc;
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+#profileList li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    padding: 2px 0;
+}
+
+.profile-list-name {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 10px;
+}
+
+.profile-button-container {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 5px;
+}
+
+.delete-profile-button {
+    background: transparent;
+    border: none;
+    color: var(--color-danger);
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 0 4px;
+    margin: 0;
+    width: auto;
+    font-weight: normal;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.delete-profile-button:hover {
+    background: #f0f0f0;
+    color: #a71d2a;
+}
+
+
+/* -----------------------------------------------------------
+   7. REGEL-INPUTS (Dual Threshold)
+----------------------------------------------------------- */
+
+.rule-input-container {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 10px;
+}
+
+.rule-input-group {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 10px;
     font-size: 0.9em;
 }
 
-.ampel-table th:first-child {
-    text-align: left;
-    width: 150px;
-}
-
-.status-ok {
-    background-color: #c8e6c9;
-}
-
-.status-warn {
-    background-color: #fff9c4;
-}
-
-.status-alarm {
-    background-color: #ffcdd2;
-}
-
-/* "Gesamt-Status" Zeile */
-.ampel-table tr.summary-row td {
-    border-top: 2px solid #333;
-    border-bottom: 2px solid #333;
+.rule-input-group label {
     font-weight: bold;
+    margin-bottom: 3px;
+    text-align: left;
 }
 
-.ampel-table tr.summary-row strong {
-    color: #000;
+.rule-input-fields {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 5px;
 }
 
+.rule-input-fields input[type="number"] {
+    width: 40%;
+    text-align: right;
+    margin: 0;
+    padding: 3px;
+    height: auto;
+    border: 2px solid var(--border-color);
+}
+
+.rule-input-fields input:focus {
+    outline: none;
+}
+
+input[id$="_alarm"] {
+    border-color: var(--color-danger);
+}
+
+input[id$="_warn"] {
+    border-color: var(--color-warning);
+}
+
+.rule-input-fields span {
+    width: 15%;
+    text-align: left;
+    white-space: nowrap;
+}
+
+
+/* -----------------------------------------------------------
+   8. SLIDER & ZEIT-ANZEIGE
+----------------------------------------------------------- */
 
 #slider-container {
     grid-column: 2;
     flex-grow: 1;
-    /* Slider nimmt den mittleren Platz ein */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -349,39 +464,9 @@ button:hover {
     align-items: center;
     width: 100%;
     gap: 10px;
-    /* Abstand reduziert */
     margin-bottom: 10px;
-    /* Abstand zum Slider reduziert */
     font-size: 0.9em;
-    /* Schriftgröße leicht reduziert */
     position: relative;
-}
-
-.slider-wrapper {
-    position: relative;
-    width: 100%;
-    margin-bottom: 0; /* Verhindert das Überlaufen nach unten */
-    margin-top: 0;  /* Redundanten Abstand entfernt */
-    /* Platz für Labels oben (wie im letzten Schritt) */
-}
-
-#slider-labels {
-    position: absolute;
-    top: -5px;
-    /* Unter dem Slider */
-    left: 0;
-    right: 0;
-    height: 20px;
-    pointer-events: none;
-}
-
-.slider-label {
-    position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-    font-size: 10px;
-    color: var(--text-primary);
-    white-space: nowrap;
 }
 
 #selectedTime {
@@ -389,18 +474,10 @@ button:hover {
     color: var(--text-primary);
     white-space: nowrap;
     font-weight: bold;
-    /* Macht die Zeit besser lesbar */
-}
-
-#modelLabel {
-    font-size: 14px;
-    color: var(--text-primary);
-    white-space: nowrap;
 }
 
 #autoupdateToggle label {
     font-size: 20px;
-    /* Von 24px reduziert */
     color: var(--color-primary);
     font-weight: bold;
     cursor: pointer;
@@ -409,7 +486,13 @@ button:hover {
 
 #autoupdateCheckbox {
     display: none;
-    /* Wir verstecken die Box, nur das Label ist sichtbar */
+}
+
+.slider-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 0; 
+    margin-top: 0;
 }
 
 #timeSlider {
@@ -429,7 +512,6 @@ button:hover {
     width: 100%;
     height: 6px;
     background: var(--background-interactive);
-    /* Der graue Balken */
     border-radius: 3px;
     border: none;
 }
@@ -470,15 +552,22 @@ button:hover {
     z-index: 1;
 }
 
-#modelSelect, #daySelect {
-    font-size: 14px;
-    padding: 2px;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    background: var(--background-surface);
-    /* NEU: Erzwinge eine feste, kompakte Breite (z.B. 180px) */
-    width: 180px;
-    max-width: 180px;
+#slider-labels {
+    position: absolute;
+    top: -5px;
+    left: 0;
+    right: 0;
+    height: 20px;
+    pointer-events: none;
+}
+
+.slider-label {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--text-primary);
+    white-space: nowrap;
 }
 
 .info-button-shared {
@@ -512,148 +601,48 @@ button:hover {
     z-index: 3000;
 }
 
-/* --- NEU: Footer-Tab-System --- */
-.page-footer {
-    /* Wir überschreiben das alte Padding und nutzen Flexbox */
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-}
 
-.footer-tabs {
-    flex-shrink: 0;
-    /* Verhindert, dass die Tabs schrumpfen */
-    background: #e9ecef;
-    /* Helles Grau */
-    border-bottom: 1px solid var(--border-color);
-    padding-left: 10px;
-}
+/* -----------------------------------------------------------
+   9. AMPEL-TABELLE & STATUS HELFER
+----------------------------------------------------------- */
 
-.footer-tab {
-    /* Setzt Button-Styles zurück, die wir global gesetzt haben */
-    width: auto;
-    background: transparent;
-    color: var(--text-secondary);
-    border: none;
-    border-bottom: 3px solid transparent;
-    padding: 10px 15px;
-    margin: 0;
-    font-size: 1em;
-    font-weight: bold;
-    cursor: pointer;
-    border-radius: 0;
-}
-
-.footer-tab:hover {
-    background: #fff;
-    color: var(--text-primary);
-}
-
-.footer-tab.active {
-    background: var(--background-surface);
-    /* Weiß */
-    color: var(--color-primary);
-    /* Blau */
-    border-bottom: 3px solid var(--color-primary);
-}
-
-.footer-content {
-    flex-grow: 1;
-    /* Füllt den Rest des Footers */
-    position: relative;
-    /* Wichtig für Umschaltung */
-    overflow: auto;
-    /* HIER wird gescrollt */
-}
-
-.footer-tab-content {
-    display: none;
-    /* Alle Inhalte standardmäßig versteckt */
-    padding: 10px;
-}
-
-.footer-tab-content.active {
-    display: block;
-    /* Nur der aktive Inhalt wird gezeigt */
-}
-
-/* Anpassung für den Monitor, da er jetzt ein Tab ist */
-#manualWarningMonitor {
-    /* Das Padding kommt jetzt vom Eltern-Container */
-    padding: 0;
-}
-
-/* Wichtig: Sorgt dafür, dass der Graph nicht überläuft */
-#graphContainer {
-    position: relative;
-    height: 97%;
-    width: 97%;
-}
-
-#weatherChartCanvas {
-    height: 100%;
+.ampel-table {
     width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    table-layout: fixed;
 }
 
-/* NEU: Kompakte linke Seite für Titel und Demo-Modus */
-.header-left-compact {
-    /* --- ÄNDERUNG 3: Spalten-Zuweisung --- */
-    /* NEU: Weist das Logo der linken Spalte zu */
-    grid-column: 1;
-
-    /* (Rest bleibt gleich) */
-    display: flex;
-    flex-direction: column;
-    /* Stapelt Titel und Demo untereinander */
-    align-items: flex-start;
-}
-
-#demoModeCompact {
-    font-size: 0.8em;
-    /* Kleinere Schrift */
-    margin-top: 5px;
-    /* Abstand zum Titel */
-    line-height: 1;
-}
-
-/* NEU: Styling für die Regel-Input-Gruppen */
-.rule-input-container {
-    padding: 10px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
-    margin-bottom: 10px;
-}
-
-.rule-input-group {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 5px;
+.ampel-table th,
+.ampel-table td {
+    border: 1px solid #ccc;
+    padding: 4px;
+    text-align: center;
     font-size: 0.9em;
 }
 
-.rule-input-group label {
-    flex-grow: 1;
+.ampel-table th:first-child {
     text-align: left;
-    padding-right: 10px;
-    /* NEU: Stellt sicher, dass der Text nicht umbricht */
-    white-space: nowrap;
+    width: 150px;
 }
 
-.rule-input-group input[type="number"] {
-    width: 90px;
-    /* Feste Breite für die Werteingabe */
-    text-align: right;
-    margin: 0;
-    padding: 3px;
-    height: auto;
+/* Status Farben */
+.status-ok {
+    background-color: #c8e6c9;
 }
 
+.status-warn {
+    background-color: #fff9c4;
+}
+
+.status-alarm {
+    background-color: #ffcdd2;
+}
+
+/* Kein Daten Status (mit leichter Textur) */
 .status-no-data {
     background-color: #d8d8d8;
-    /* Helles Grau */
     cursor: default;
-    /* Fügt eine leichte Textur hinzu, um es von 'ok' zu unterscheiden */
     background-image: repeating-linear-gradient(-45deg,
             #f0f0f0,
             #f0f0f0 5px,
@@ -662,160 +651,38 @@ button:hover {
     opacity: 0.8;
 }
 
-/* Klickbarer Bereich für Zellen, die Daten haben, aber nicht "no-data" sind */
 .manual-override-cell {
     cursor: pointer;
 }
 
 .status-no-data.manual-override-cell {
-    /* Wichtig: Auch wenn die Zelle als klickbar markiert ist, 
-       soll der Cursor bei fehlenden Modelldaten neutral sein.
-       Die Klick-Logik in ui.js erlaubt das Überschreiben aber trotzdem. */
     cursor: pointer;
 }
 
-/* src/style.css */
-
-/* --- NEU: Styling für die Profil-Liste --- */
-
-/* 1. Das <li>-Element als Flex-Container (Text links, Buttons rechts) */
-#profileList li {
-    display: flex;
-    justify-content: space-between;
-    /* Text links, Buttons rechts */
-    align-items: center;
-    /* Vertikal zentrieren */
-    margin-bottom: 5px;
-    padding: 2px 0;
-}
-
-/* 2. Der Name-Span (stellt sicher, dass er bei langen Namen nicht überläuft) */
-.profile-list-name {
-    flex-grow: 1;
-    /* Nimmt den restlichen Platz ein */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    /* Schneidet lange Namen mit '...' ab */
-    padding-right: 10px;
-    /* Abstand zu den Buttons */
-}
-
-/* 3. Der Button-Container (rechtsbündig, Buttons nebeneinander) */
-.profile-button-container {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    /* Verhindert, dass er gequetscht wird */
-    gap: 5px;
-    /* Abstand zwischen "Prüfen" und "Löschen" */
-}
-
-/* 4. Der neue Papierkorb-Button */
-.delete-profile-button {
-    /* Globale Button-Styles zurücksetzen */
-    background: transparent;
-    border: none;
-    color: var(--color-danger);
-    /* Nutzt die Standard-Gefahrenfarbe */
-    font-size: 1.2em;
-    /* Macht das Icon etwas größer */
-    cursor: pointer;
-    padding: 0 4px;
-    /* Klickbereich etwas vergrößern */
-    margin: 0;
-
-    /* Globale Button-Styles überschreiben */
-    width: auto;
-    font-weight: normal;
-    border-radius: 4px;
-    line-height: 1;
-    /* Wichtig für vertikale Zentrierung des Icons */
-}
-
-.delete-profile-button:hover {
-    background: #f0f0f0;
-    /* Leichter grauer Hover-Effekt */
-    color: #a71d2a;
-    /* Dunkleres Rot */
-}
-
-/* 5. (Optional) Aufräumen des "Prüfen"-Buttons */
-/* (Wir entfernen den inline-style 'marginLeft' aus ui.js, CSS steuert das jetzt) */
-.check-profile-button {
-    margin-left: 0;
-}
-
-/* src/style.css (am Ende der Datei hinzufügen) */
-
-.rule-input-group {
-    /* ALT: display: flex; justify-content: space-between; */
-    /* NEU: Wir stapeln Label und Inputs untereinander */
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 10px;
-    font-size: 0.9em;
-}
-
-.rule-input-group label {
+/* Gesamt-Status Zeile */
+.ampel-table tr.summary-row td {
+    border-top: 2px solid #333;
+    border-bottom: 2px solid #333;
     font-weight: bold;
-    margin-bottom: 3px;
-    text-align: left;
 }
 
-/* NEU: Ein Flex-Container für die beiden Input-Felder + Einheit */
-.rule-input-fields {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 5px;
-    /* Abstand zwischen den Elementen */
+.ampel-table tr.summary-row strong {
+    color: #000;
 }
 
-/* NEU: Styling für die 2 Input-Felder */
-.rule-input-fields input[type="number"] {
-    width: 40%;
-    /* Jedes Feld nimmt 40% der Breite ein */
-    text-align: right;
-    margin: 0;
-    padding: 3px;
-    height: auto;
 
-    /* NEU: Visuelle Unterscheidung (Rot/Gelb) */
-    border: 2px solid var(--border-color);
-}
-
-.rule-input-fields input:focus {
-    outline: none;
-}
-
-/* Roter Rand für das Alarm-Feld */
-input[id$="_alarm"] {
-    border-color: var(--color-danger);
-}
-
-/* Gelber Rand für das Warn-Feld */
-input[id$="_warn"] {
-    border-color: var(--color-warning);
-}
-
-/* NEU: Das Einheiten-Span */
-.rule-input-fields span {
-    width: 15%;
-    /* Nimmt den Restplatz ein */
-    text-align: left;
-    white-space: nowrap;
-}
+/* -----------------------------------------------------------
+   10. MAP LEAFLET CUSTOM STYLES
+----------------------------------------------------------- */
 
 .leaflet-control-coords {
     background-color: rgba(255, 255, 255, 0.7);
-    padding: 5px 8px; /* Etwas mehr Platz (war 2px 5px) */
+    padding: 5px 8px; 
     border-radius: 3px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 12px;
-    box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
     color: var(--text-primary);
-    /* NEU: Verhindert, dass der Text bei der Mausbewegung umbricht */
     white-space: nowrap; 
 }
 
@@ -829,7 +696,7 @@ input[id$="_warn"] {
     padding: 2px 5px !important;
     border-radius: 3px !important;
     border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     white-space: nowrap;
 }
 

@@ -1,4 +1,8 @@
-// ui.js (Version 2.0 - Config-Driven)
+// ui.js (Version 3.0 - Final Strukturiert)
+
+// -----------------------------------------------------------
+// 1. IMPORTS & KONSTANTEN
+// -----------------------------------------------------------
 import * as db from './db.js';
 import * as timeSlider from './timeSlider.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
@@ -6,16 +10,18 @@ import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 import { UNITS, CONVERSIONS } from './config.js'; 
 import * as formatter from './formatter.js';
 import { 
-    getWorseStatus, // NEU: Importiert von utils.js
-    getBlendedStatus, // NEU: Importiert von utils.js
-    getBlendedCombinedStatus // NEU: Importiert von utils.js
+    getWorseStatus,
+    getBlendedStatus,
+    getBlendedCombinedStatus
 } from './utils.js'; 
 
 export const uiElements = {};
-
 const STATUS_CYCLE = ['ok', 'warn', 'alarm', null];
 
-// --- 1. NEU: Dynamische UI-Generierung ---
+
+// -----------------------------------------------------------
+// 2. EXPORTIERTE FUNKTIONEN: INITIALISIERUNG & DYNAMISCHE GENERIERUNG
+// -----------------------------------------------------------
 
 /**
  * Erstellt die HTML-Eingabefelder für die Regeln dynamisch
@@ -124,9 +130,6 @@ export function generateDynamicRuleInputs(isMaritime) {
     }
     container.innerHTML = html;
 }
-
-
-// --- 2. Initialisierungs-Funktion ---
 
 /**
  * Hängt alle Event-Listener an die UI-Elemente.
@@ -343,10 +346,10 @@ export const initUI = (handlers) => {
     initMapStatusPlaceholder();
 };
 
+// -----------------------------------------------------------
+// 3. EXPORTIERTE FUNKTIONEN: UI-STATUS-UPDATES
+// -----------------------------------------------------------
 
-// --- 3. UI-Update-Funktionen (von main.js aufgerufen) ---
-
-// Footer-Resize-Logik (Unverändert)
 export function initResizeHandle() {
     const handle = document.getElementById('footer-resize-handle');
     const pageContainer = document.querySelector('.page-container');
@@ -489,24 +492,6 @@ export const displayAutoWarnings = (alarmResults) => {
         html += `</div>`;
     });
     monitor.innerHTML = html;
-};
-
-/**
- * Initialisiert den Karten-Status-Platzhalter.
- * (Unverändert)
- */
-export const initMapStatusPlaceholder = () => {
-    uiElements.mapStatusContainer.style.borderColor = 'var(--border-color-strong)';
-    uiElements.mapStatusContainer.style.backgroundColor = 'transparent';
-    // Passe den Text an die neue Schritt-Zählung an
-    uiElements.mapStatusText.innerHTML = '⚠️ Bitte zuerst eine Area auf der Karte definieren.';
-    uiElements.saveButton.disabled = true;
-
-    // --- NEU: Verstecke den Regel-Container ---
-    const rulesContainer = document.getElementById('rules-workflow-container');
-    if (rulesContainer) {
-        rulesContainer.style.display = 'none';
-    }
 };
 
 /**
@@ -769,7 +754,6 @@ export const applyRulesToInputs = (rules, profileName) => {
     }
 };
 
-
 /**
  * Füllt die Input-Felder basierend auf einer Vorlage.
  * (Angepasst: Nutzt jetzt die neue Helfer-Funktion)
@@ -784,27 +768,27 @@ export const applyTemplateToInputs = (template) => {
     uiElements.templateNameInput.value = template.name;
 };
 
-// --- 4. Interne Hilfsfunktionen ---
-
-export const setDashboardMessage = (html) => {
-    if (uiElements.autoWarnDashboard) {
-        uiElements.autoWarnDashboard.innerHTML = html;
-    }
-};
-export const setManualMonitorMessage = (html) => {
-    if (uiElements.manualWarningMonitor) {
-        uiElements.manualWarningMonitor.innerHTML = html;
-    }
-};
-
-export const enableSaveButton = () => {
-    uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
-    uiElements.mapStatusContainer.style.backgroundColor = '#d4edda';
+/**
+ * Initialisiert den Karten-Status-Platzhalter.
+ * (Unverändert)
+ */
+export const initMapStatusPlaceholder = () => {
+    uiElements.mapStatusContainer.style.borderColor = 'var(--border-color-strong)';
+    uiElements.mapStatusContainer.style.backgroundColor = 'transparent';
     // Passe den Text an die neue Schritt-Zählung an
-    uiElements.mapStatusText.innerHTML = '✅ **Schritt 1 abgeschlossen:** Area ist bereit.';
-    uiElements.saveButton.disabled = false;
+    uiElements.mapStatusText.innerHTML = '⚠️ Bitte zuerst eine Area auf der Karte definieren.';
+    uiElements.saveButton.disabled = true;
+
+    // --- NEU: Verstecke den Regel-Container ---
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'none';
+    }
 };
 
+/**
+ * Setzt die Profil-Input-Felder zurück.
+ */
 export const resetProfileInputs = () => {
     uiElements.profileNameInput.value = '';
 
@@ -911,6 +895,138 @@ export const getRulesFromInputs = () => {
     return rules;
 };
 
+/**
+ * NEU: Exportierte Funktion, um das "Profil erstellen"-Panel
+ * per Code zu öffnen.
+ */
+export const openProfileEditorAccordion = () => {
+    if (!uiElements.accordions || uiElements.accordions.length < 2) return;
+
+    const editorHeader = uiElements.accordions[0]; if (editorHeader) {
+        const panel = editorHeader.nextElementSibling;
+        const isOpen = panel.classList.contains('open');
+
+        if (!isOpen) {
+            // Alle anderen schließen
+            uiElements.accordions.forEach(otherAcc => {
+                otherAcc.classList.remove('active');
+                otherAcc.nextElementSibling.classList.remove('open');
+            });
+            // Dieses öffnen
+            editorHeader.classList.add('active');
+            panel.classList.add('open');
+        }
+    }
+};
+
+/**
+ * NEU: Erzwingt die Aktivierung des "Detail-Prüfung" (Matrix)-Tabs.
+ * Wird von main.js aufgerufen, wenn 'handleManualCheck' startet.
+ */
+export const activateManualMonitorTab = () => {
+    // Finde die Elemente (nur die, die wir brauchen)
+    const showAutoTab = document.getElementById('showAutoTab');
+    const autoContent = document.getElementById('autoWarnDashboard');
+    const showMatrixTab = document.getElementById('showMatrixTab');
+    const matrixContent = document.getElementById('manualWarningMonitor');
+    const showGraphTab = document.getElementById('showGraphTab');
+    const graphContent = document.getElementById('graphContainer'); // <-- DIESE ZEILE HINZUFÜGEN
+
+    // Inhalte umschalten
+    if (autoContent) autoContent.classList.remove('active');
+    if (matrixContent) matrixContent.classList.add('active');
+    if (graphContent) graphContent.classList.remove('active'); // <-- DIESE ZEILE HINZUFÜGEN
+
+    // Tabs umschalten
+    if (showAutoTab) showAutoTab.classList.remove('active');
+    if (showMatrixTab) showMatrixTab.classList.add('active');
+    if (showGraphTab) showGraphTab.classList.remove('active');
+};
+
+/**
+ * Löscht den Text im Vorlagen-Namen-Feld.
+ */
+export const clearTemplateNameInput = () => {
+    if (uiElements.templateNameInput) {
+        uiElements.templateNameInput.value = '';
+    }
+};
+
+/**
+ * NEU: Löst den Download einer JSON-Datei für den Export aus.
+ * (Behebt den Absturz in main.js)
+ */
+export const triggerExportDownload = (dataToExport, suggestedFileName) => {
+    try {
+        // 1. Daten in einen "schön lesbaren" JSON-String umwandeln
+        const jsonString = JSON.stringify(dataToExport, null, 2);
+
+        // 2. Einen "Blob" (quasi eine Datei im Speicher) erstellen
+        const blob = new Blob([jsonString], { type: 'application/json' });
+
+        // 3. Temporären Link im Browser erstellen
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+
+        a.href = url;
+        a.download = suggestedFileName || 'idsse-m-profile-export.json';
+
+        // 4. Download auslösen (simulierter Klick)
+        document.body.appendChild(a); // Link muss im DOM sein
+        a.click();
+
+        // 5. Aufräumen
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+    } catch (err) {
+        console.error("Fehler beim Erstellen des Export-Downloads:", err);
+        alert("Fehler beim Erstellen der Export-Datei.");
+    }
+};
+
+/**
+ * Zeigt den "Speichern"-Button als aktiv an, wenn eine Fläche gezeichnet wurde.
+ */
+export const enableSaveButton = () => {
+    uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
+    uiElements.mapStatusContainer.style.backgroundColor = '#d4edda';
+    // Passe den Text an die neue Schritt-Zählung an
+    uiElements.mapStatusText.innerHTML = '✅ **Schritt 1 abgeschlossen:** Area ist bereit.';
+    uiElements.saveButton.disabled = false;
+};
+
+// -----------------------------------------------------------
+// 4. INTERNE HELFER: DOM & LOGIK
+// -----------------------------------------------------------
+
+export const setDashboardMessage = (html) => {
+    if (uiElements.autoWarnDashboard) {
+        uiElements.autoWarnDashboard.innerHTML = html;
+    }
+};
+
+export const setManualMonitorMessage = (html) => {
+    if (uiElements.manualWarningMonitor) {
+        uiElements.manualWarningMonitor.innerHTML = html;
+    }
+};
+
+/**
+ * Erstellt den geblendeten hourlyStatus für die Zeitbereich-Funktion (displayAutoWarnings).
+ */
+function createBlendedStatus(summary, summaryKey) { 
+    const blended = {};
+    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus) || {};
+    const overrides = getManualOverrides()[summaryKey] || {};
+    const hours = Object.keys(autoStatus).sort((a, b) => parseInt(a) - parseInt(b));
+    hours.forEach(hour => {
+        const auto = autoStatus[hour] || 'no-data';
+        const manual = overrides[hour];
+        blended[hour] = manual || auto;
+    });
+    return blended;
+}
 
 /**
  * Verarbeitet die Import-Datei.
@@ -1000,7 +1116,6 @@ function updateRuleInputLabels() {
         span.textContent = unit;
     }
 }
-
 
 /**
  * Berechnet die konsolidierte Zeitspanne, in der ein Alarm aktiv ist.
@@ -1108,109 +1223,3 @@ function handleManualOverrideClick(event) {
     const nextStatus = STATUS_CYCLE[nextIndex];
     updateManualOverride(ruleKey, hour, nextStatus);
 }
-
-
-// --- Blending-Logik (Unverändert, aber nutzt jetzt summaryKey) ---
-
-/**
- * Erstellt den geblendeten hourlyStatus für die Zeitbereich-Funktion (displayAutoWarnings).
- */
-function createBlendedStatus(summary, summaryKey) { 
-    const blended = {};
-    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus) || {};
-    const overrides = getManualOverrides()[summaryKey] || {};
-    const hours = Object.keys(autoStatus).sort((a, b) => parseInt(a) - parseInt(b));
-    hours.forEach(hour => {
-        const auto = autoStatus[hour] || 'no-data';
-        const manual = overrides[hour];
-        blended[hour] = manual || auto;
-    });
-    return blended;
-}
-
-/**
- * NEU: Exportierte Funktion, um das "Profil erstellen"-Panel
- * per Code zu öffnen.
- */
-export const openProfileEditorAccordion = () => {
-    if (!uiElements.accordions || uiElements.accordions.length < 2) return;
-
-    const editorHeader = uiElements.accordions[0]; if (editorHeader) {
-        const panel = editorHeader.nextElementSibling;
-        const isOpen = panel.classList.contains('open');
-
-        if (!isOpen) {
-            // Alle anderen schließen
-            uiElements.accordions.forEach(otherAcc => {
-                otherAcc.classList.remove('active');
-                otherAcc.nextElementSibling.classList.remove('open');
-            });
-            // Dieses öffnen
-            editorHeader.classList.add('active');
-            panel.classList.add('open');
-        }
-    }
-};
-
-/**
- * NEU: Erzwingt die Aktivierung des "Detail-Prüfung" (Matrix)-Tabs.
- * Wird von main.js aufgerufen, wenn 'handleManualCheck' startet.
- */
-export const activateManualMonitorTab = () => {
-    // Finde die Elemente (nur die, die wir brauchen)
-    const showAutoTab = document.getElementById('showAutoTab');
-    const autoContent = document.getElementById('autoWarnDashboard');
-    const showMatrixTab = document.getElementById('showMatrixTab');
-    const matrixContent = document.getElementById('manualWarningMonitor');
-    const showGraphTab = document.getElementById('showGraphTab');
-    const graphContent = document.getElementById('graphContainer'); // <-- DIESE ZEILE HINZUFÜGEN
-
-    // Inhalte umschalten
-    if (autoContent) autoContent.classList.remove('active');
-    if (matrixContent) matrixContent.classList.add('active');
-    if (graphContent) graphContent.classList.remove('active'); // <-- DIESE ZEILE HINZUFÜGEN
-
-    // Tabs umschalten
-    if (showAutoTab) showAutoTab.classList.remove('active');
-    if (showMatrixTab) showMatrixTab.classList.add('active');
-    if (showGraphTab) showGraphTab.classList.remove('active');
-};
-
-export const clearTemplateNameInput = () => {
-    if (uiElements.templateNameInput) {
-        uiElements.templateNameInput.value = '';
-    }
-};
-
-/**
- * NEU: Löst den Download einer JSON-Datei für den Export aus.
- * (Behebt den Absturz in main.js)
- */
-export const triggerExportDownload = (dataToExport, suggestedFileName) => {
-    try {
-        // 1. Daten in einen "schön lesbaren" JSON-String umwandeln
-        const jsonString = JSON.stringify(dataToExport, null, 2);
-
-        // 2. Einen "Blob" (quasi eine Datei im Speicher) erstellen
-        const blob = new Blob([jsonString], { type: 'application/json' });
-
-        // 3. Temporären Link im Browser erstellen
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-
-        a.href = url;
-        a.download = suggestedFileName || 'idsse-m-profile-export.json';
-
-        // 4. Download auslösen (simulierter Klick)
-        document.body.appendChild(a); // Link muss im DOM sein
-        a.click();
-
-        // 5. Aufräumen
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-    } catch (err) {
-        console.error("Fehler beim Erstellen des Export-Downloads:", err);
-        alert("Fehler beim Erstellen der Export-Datei.");
-    }
-};

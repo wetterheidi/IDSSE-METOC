@@ -1,25 +1,39 @@
 // charts.js (Version 2.0 - Config-Driven)
+// -----------------------------------------------------------
+// 1. IMPORTS
+// -----------------------------------------------------------
+
 import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 import * as formatter from './formatter.js';
 
+// -----------------------------------------------------------
+// 2. MODUL-ZUSTAND (ZUR AUFLÖSUNG ZIRKULÄRER ABHÄNGIGKEITEN)
+// -----------------------------------------------------------
+let weatherChart = null; // Globale Chart-Instanz
 let legendClickCallback = () => { };
 let getManualOverridesFunc = () => ({});
 
-let weatherChart = null; // Globale Chart-Instanz
+// -----------------------------------------------------------
+// 3. EXPORTIERTE SETTER (Dependency Injection)
+// -----------------------------------------------------------
 
 /**
- * NEU: Setter für die Funktion, die die manuellen Overrides liefert.
+ * Registriert die Funktion aus main.js, um die manuellen Overrides zu laden.
  */
 export function setGetManualOverrides(func) {
     getManualOverridesFunc = func;
 }
 
 /**
- * NEU: Setter für den Callback, der bei Legendenklick ausgelöst wird.
+ * Registriert den Callback aus main.js, der bei Klick auf die Legende ausgelöst wird.
  */
 export function setLegendClickCallback(callback) {
     legendClickCallback = callback;
 }
+
+// -----------------------------------------------------------
+// 4. INTERNE HILFSFUNKTIONEN
+// -----------------------------------------------------------
 
 /**
  * NEU: Wandelt Hex-Farbcode in RGBA um.
@@ -42,6 +56,9 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r},${g},${b},${alpha || 0.1})`;
 }
 
+/**
+ * Helfer: Löscht die Chart-Instanz.
+ */
 function clearChart() {
     if (weatherChart) {
         weatherChart.destroy();
@@ -50,33 +67,37 @@ function clearChart() {
 }
 
 /**
- * Hilfsfunktion zum Finden des schlechtesten Status
- * (Angepasst: 'ok' gewinnt über 'no-data')
+ * Helfer: Erzeugt ein Chart.js Annotation-Objekt für eine Limit-Linie.
  */
-function getWorseStatus(s1, s2) {
-    if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
-    if (s1 === 'warn' || s2 === 'warn') return 'warn';
-    if (s1 === 'ok' || s2 === 'ok') return 'ok';
-    return 'no-data';
-}
+const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, labelContent, summaryKey) => ({
+    type: 'line',
+    yMin: value,
+    yMax: value,
+    yScaleID: yAxisID,
+    borderColor: borderColor,   
+    borderWidth: borderWidth, 
+    borderDash: borderDash,   
+    label: {
+        content: labelContent,  
+        enabled: true,
+        position: 'end',
+        font: {
+            weight: 'bold'
+        },
+        color: borderColor
+    },
+    summaryKey: summaryKey
+});
 
-/**
- * Hilfsfunktion zum Blenden des Status (Modell + Override)
- * NEU: Nutzt die injizierte Funktion `getManualOverridesFunc`.
- */
-function getBlendedStatus(summary, summaryKey, hour) {
-    // NUTZT: Die injizierte Funktion
-    const overrides = getManualOverridesFunc();
-    const hourString = hour.toString();
-    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hourString]) || 'no-data';
-    const manualStatus = overrides[summaryKey] ? overrides[summaryKey][hourString] : null;
-
-    return manualStatus || autoStatus;
-}
+// -----------------------------------------------------------
+// 5. HAUPTEXPORT: CHART AKTUALISIEREN
+// -----------------------------------------------------------
 
 /**
  * Zeichnet oder aktualisiert den 24h-Wettergraphen mit ECHTEN Daten.
- * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
+ * @param {object} profile - Das aktuelle Profil.
+ * @param {object} summary - Die Wetter-Zusammenfassung (Summary).
+ * @param {function} getBlendedCombinedStatusFunc - Funktion zur Abfrage des Gesamtstatus (injiziert).
  */
 export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFunc) {
     clearChart(); // Alten Graphen löschen
@@ -84,19 +105,18 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
     const ctx = document.getElementById('weatherChartCanvas').getContext('2d');
 
     if (!profile || !profile.rules) {
-        return; // Nichts zu zeichnen, wenn das Profil oder die Regeln fehlen
+        return; 
     }
     const rules = profile.rules;
 
-    // Finde einen Referenz-Key (z.B. 'wind'), um die Stunden-Arrays zu prüfen
     const activeMetrics = Object.values(METRICS_CONFIG).filter(metric => isMetricActive(metric, rules));
 
     if (activeMetrics.length === 0) {
-        return; // Keine Regeln aktiv, nichts zu zeichnen
+        return; 
     }
     const firstMetricKey = activeMetrics[0].summaryKey;
     if (!summary || !profile || !summary[firstMetricKey].hourlyData || summary[firstMetricKey].hourlyData.length === 0) {
-        return; // Nichts zu zeichnen
+        return; 
     }
 
     const hours = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
@@ -109,29 +129,7 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
         }
     };
     const annotationLimits = [];
-
-    // Helfer für Limit-Linien
-    const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, labelContent, summaryKey) => ({
-        type: 'line',
-        yMin: value,
-        yMax: value,
-        yScaleID: yAxisID,
-        borderColor: borderColor,   // <-- Parameter
-        borderWidth: borderWidth, // <-- Parameter
-        borderDash: borderDash,   // <-- Parameter
-        label: {
-            content: labelContent,  // <-- Parameter
-            enabled: true,
-            position: 'end',
-            // (Optional) Sorge dafür, dass die Schriftfarbe auch passt
-            font: {
-                weight: 'bold'
-            },
-            color: borderColor
-        },
-        summaryKey: summaryKey
-    });
-
+    
     // --- 2. DYNAMISCHE SCHLEIFE: Metriken hinzufügen ---
     let axisGridCounter = 0; // Zähler, damit nur die erste Achse ein Gitter zeichnet
 
@@ -167,22 +165,14 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
             // Für sigWx: Daten sind die Roh-Codes, aber an y=90 positioniert
             data = summary[summaryKey].hourlyData.map((code, index) => {
 
-                // --- KORREKTUR START ---
                 if (code === null || code === 0 || code === undefined) { // 0 ist 'NSW'
                     pointStyles[index] = false; // Kein Symbol
-
-                    // ALT (verursacht den Fehler beim Hovern):
-                    // return null; 
-
-                    // NEU: Gib ein valides Objekt mit 'null' Y-Wert zurück.
-                    // Chart.js überspringt das Zeichnen von 'null'-Y-Werten
                     return {
                         x: index,
                         y: null, // <--- Der entscheidende Punkt
                         code: 0
                     };
                 }
-                // --- KORREKTUR ENDE ---
 
                 // Erstelle das Bild-Objekt
                 const img = new Image(20, 20);
@@ -200,25 +190,20 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
             unit = 'WMO';
         } else {
             // Normaler Pfad für alle anderen Metriken
-            // Hole die Rohdaten (z.B. [10, 12, 99999, 15])
             const rawData = summary[summaryKey].hourlyData;
             let processedData;
 
-            // --- NEUE PRÜFUNG FÜR WOLKENUNTERGRENZE ---
+            // --- PRÜFUNG FÜR WOLKENUNTERGRENZE ---
             if (summaryKey === 'cloudBase') {
                 // Wandle 99999 (unser SKC-Wert) in 'null' um
                 processedData = rawData.map(val => (val >= 99999) ? null : val);
             } else {
-                // Alle anderen Parameter (Wind, Temp) bleiben wie sie sind
                 processedData = rawData;
             }
-            // --- ENDE NEU ---
 
             // Formatiere die bereinigten Daten
             const formattedData = processedData.map(val => metric.formatter(val, profile));
 
-            // 'N/A' (was von metric.formatter für 'null' zurückgegeben wird)
-            // zu 'null' konvertieren, damit der Graph die Linie unterbricht
             data = formattedData.map(fd => (fd.value === 'N/A') ? null : fd.value);
 
             // Einheit sicher bestimmen (selbst wenn der erste Wert 'null' ist)
@@ -228,7 +213,6 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
         const label = `${metric.displayName} (${unit})`;
 
         // A. Datensatz erstellen
-        // (Der 'if (summaryKey !== 'sigWx')' Filter ist entfernt)
         datasets.push({
             label: label,
             data: data,
@@ -246,7 +230,6 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
         });
 
         // B. Achse (Scale) erstellen
-        // (Dieser Code ist von der letzten Iteration, er ist korrekt)
         if (!scales[opts.axisId]) {
             scales[opts.axisId] = {
                 type: 'linear',
@@ -258,12 +241,12 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 }
             };
 
-            if (opts.axisId === 'yOktas') { // Wir verwenden die neue ID
+            if (opts.axisId === 'yOktas') { 
                 scales[opts.axisId].min = 0;
                 scales[opts.axisId].max = 8; // Skala 0-8
             }
 
-            // WICHTIG: Skala für sigWx-Achse (von letzter Iteration)
+            // Skala für sigWx-Achse
             if (opts.axisId === 'ySigWx') {
                 scales[opts.axisId].min = 0;
                 scales[opts.axisId].max = 100;
@@ -272,12 +255,11 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
             axisGridCounter++;
         }
 
-        // C. Limit-Linie(n) (Annotation) erstellen (NEUE LOGIK)
+        // C. Limit-Linie(n) (Annotation) erstellen
         if (metric.checkType === 'min' || metric.checkType === 'max') {
             const limitValue_alarm = rules[metric.ruleName + '_alarm'];
             const limitValue_warn = rules[metric.ruleName + '_warn'];
 
-            // Hole die Farbe des Parameters (z.B. Orange für Wind Speed)
             const paramColor = metric.chartColor;
 
             // 2. Erstelle die ALARM-Linie (Solide, 3px)
@@ -285,12 +267,12 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 const { value: formattedVal } = metric.formatter(limitValue_alarm, profile);
 
                 annotationLimits.push(createLimitLine(
-                    formattedVal,                 // Wert
-                    opts.axisId,                  // Y-Achse
-                    paramColor,                   // Farbe = Parameter-Farbe
-                    3,                            // Dicke = 3px
-                    [],                           // Strichelung = Solide
-                    `Alarm (${formattedVal})`,     // Label-Text
+                    formattedVal,                 
+                    opts.axisId,                  
+                    paramColor,                   
+                    3,                            
+                    [],                           
+                    `Alarm (${formattedVal})`,     
                     metric.summaryKey
                 ));
             }
@@ -300,29 +282,24 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 const { value: formattedVal } = metric.formatter(limitValue_warn, profile);
 
                 annotationLimits.push(createLimitLine(
-                    formattedVal,                 // Wert
-                    opts.axisId,                  // Y-Achse
-                    paramColor,                   // Farbe = Parameter-Farbe
-                    2,                            // Dicke = 2px
-                    [6, 3],                       // Strichelung = Gestrichelt (6px Linie, 3px Lücke)
-                    `Warn (${formattedVal})`,      // Label-Text
+                    formattedVal,                 
+                    opts.axisId,                  
+                    paramColor,                   
+                    2,                            
+                    [6, 3],                       
+                    `Warn (${formattedVal})`,      
                     metric.summaryKey
                 ));
             }
-        } // <-- ENDE NEU
+        } 
     }
     // --- ENDE DYNAMISCHE SCHLEIFE ---
 
-    // --- 3. Override-Blending für Hintergrund-Bänder (KORRIGIERTE LOGIK) ---
-    // Diese Logik spiegelt exakt getBlendedCombinedStatus() aus ui.js wider.
-
-    const logicMode = rules.logicMode || 'OR';
+    // --- 3. Override-Blending für Hintergrund-Bänder ---
     const hourlyCombinedStatus = getBlendedCombinedStatusFunc(profile, summary);
     const combinedBlendedStatus = Object.values(hourlyCombinedStatus);
 
-    // --- ENDE KORREKTUR ---
-
-    // Alarm-Bänder erstellen (unverändert in der Logik)
+    // Alarm-Bänder erstellen
     const alarmBands = combinedBlendedStatus.map((status, index) => {
         if (status === 'alarm' || status === 'warn') {
             return {
@@ -368,23 +345,17 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
 
                             // --- Spezialbehandlung für sigWx ---
                             if (context.dataset.summaryKey === 'sigWx') {
-                                // context.raw ist das Objekt, das wir oben erstellt haben:
-                                // {x: 5, y: 90, code: 80}
                                 const dataPoint = context.raw;
 
                                 if (dataPoint && dataPoint.code !== undefined) {
-                                    // Wir rufen den Formatter (der oben importiert ist)
-                                    // mit dem Roh-Code auf
                                     const formatted = formatter.formatSigWx(dataPoint.code, profile);
 
-                                    // Gibt z.B. "Signifikantes Wetter (WMO): SHRA (80)" zurück
                                     return `${datasetLabel}: ${formatted.value}${formatted.unit}`;
                                 }
                                 return `${datasetLabel}: N/A`; // Fallback
                             }
 
                             // --- Standard-Verhalten für alle anderen (Wind, Temp etc.) ---
-                            // (z.B. "Windböe (km/h): 50.0")
                             return `${datasetLabel}: ${context.formattedValue}`;
                         }
                     }
@@ -398,7 +369,6 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                         Chart.defaults.plugins.legend.onClick(e, legendItem, legend);
 
                         // 2. Rufe unseren injizierten Handler in main.js auf, um die Karte zu aktualisieren
-                        // KORREKTUR: Ruft den injizierten Callback auf
                         legendClickCallback(legend.chart); 
 
                         // --- 3. NEU: ANNOTATIONS-LINIEN SYNCHRONISIEREN ---
@@ -407,21 +377,18 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                             const clickedDatasetIndex = legendItem.datasetIndex;
                             const clickedDataset = chart.data.datasets[clickedDatasetIndex];
 
-                            // Finde den 'summaryKey' des geklickten Datensatzes (z.B. 'wind' oder 'windSpeed')
                             const summaryKey = clickedDataset.summaryKey;
-                            if (!summaryKey) return; // Sicherheitshalber
+                            if (!summaryKey) return; 
 
-                            // Finde den NEUEN Sichtbarkeitsstatus
                             const isVisible = chart.isDatasetVisible(clickedDatasetIndex);
 
-                            // Gehe alle Annotationen durch
                             const annotations = chart.options.plugins.annotation.annotations;
                             let changed = false;
 
                             for (const key in annotations) {
                                 const annotation = annotations[key];
 
-                                // KORREKTUR: Suche Linien, die EXAKT denselben 'summaryKey' haben
+                                // Suche Linien, die EXAKT denselben 'summaryKey' haben
                                 if (annotation.type === 'line' && annotation.summaryKey === summaryKey) {
                                     annotation.display = isVisible; // Setze denselben Status
                                     changed = true;

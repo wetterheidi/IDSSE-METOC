@@ -1,4 +1,9 @@
+// docs/utils.js
 // Sammlung von meteorologischen und mathematischen Hilfsfunktionen
+
+// -----------------------------------------------------------
+// 1. IMPORTS & KONSTANTEN
+// -----------------------------------------------------------
 import { METRICS_CONFIG } from './metricsConfig.js';
 
 /**
@@ -9,6 +14,11 @@ export const STANDARD_PRESSURE_LEVELS = [
     775, 750, 725, 700, 650, 600, 550, 500, 475, 
     450, 425, 400, 375, 350, 325, 300, 275, 250, 200
 ];
+
+
+// -----------------------------------------------------------
+// 2. MATHEMATISCHE & ALLGEMEINE HELFER (Wind, Druck, Interpolation)
+// -----------------------------------------------------------
 
 /**
  * Führt eine lineare Interpolation für einen gegebenen Wert durch.
@@ -182,6 +192,10 @@ export function interpolateWindAtAltitude(z, pressureLevels, heights, uComponent
     // KORREKTUR: Der Tippfehler ist hier behoben.
     return { u: u_z, v: v_z };
 }
+
+// -----------------------------------------------------------
+// 3. WOLKENSCHICHT LOGIK
+// -----------------------------------------------------------
 
 /**
  * Analysiert die Roh-Wetterdaten, um für jeden Zeitpunkt dynamische
@@ -512,7 +526,9 @@ export function findCloudLayers(interpolatedData) {
     return reportedLayers;
 }
 
-// ... (bestehender Code in utils.js) ...
+// -----------------------------------------------------------
+// 4. STATUS LOGIK (Zentralisiert)
+// -----------------------------------------------------------
 
 /**
  * Hilfsfunktion zum Finden des schlechtesten Status

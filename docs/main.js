@@ -1,5 +1,49 @@
-// main.js - Der Dirigent
-// NEU: Debounce Helfer
+// docs/main.js - Der Dirigent (Strukturiert)
+
+// -----------------------------------------------------------
+// 1. IMPORTS
+// -----------------------------------------------------------
+
+// A. Kernmodule (Datenquelle)
+import * as db from './db.js';
+import * as weather_LIVE from './weather.js';
+import * as weather_MOCK from './weather_mock.js';
+
+// B. Konfiguration & Metriken
+import { WEATHER_MODELS, AUTO_CHECK_INTERVAL, getModelResolution, getModelMaxDays } from './config.js';
+import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
+import { getBlendedCombinedStatus } from './utils.js';
+
+// C. UI & Display Module
+import * as map from './map.js';
+import * as ui from './ui.js';
+import * as timeSlider from './timeSlider.js';
+import * as charts from './charts.js';
+
+
+// -----------------------------------------------------------
+// 2. GLOBALER APP-ZUSTAND (State)
+// -----------------------------------------------------------
+
+let currentLayer = null;
+let currentManualProfile = null; // Aktuell geladenes Profil (für die manuelle Prüfung)
+let currentManualSummary = null; // Ergebnis der letzten manuellen Prüfung
+let currentSliderHour = 0;       // Aktuell gewählte Stunde (0-23)
+let currentWeatherModel = null;  // Aktuell gewähltes Modell { apiName, runTimeISO }
+let currentForecastDay = 0;      // Aktuell gewählter Prognosetag (0=Heute, 1=Morgen, etc.)
+
+export let manualOverrides = {};
+export let visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
+
+// Getter-Funktionen
+export const getVisibleChartMetrics = () => visibleChartMetrics;
+export const getManualOverrides = () => manualOverrides;
+export const getCurrentManualSummary = () => currentManualSummary;
+
+// -----------------------------------------------------------
+// 3. INTERNE HELFER (Utilities)
+// -----------------------------------------------------------
+
 let debounceTimer;
 function debounce(func, delay) {
     return function (...args) {
@@ -9,33 +53,6 @@ function debounce(func, delay) {
         }, delay);
     };
 }
-
-import * as db from './db.js';
-import * as weather_LIVE from './weather.js';
-import * as weather_MOCK from './weather_mock.js';
-import * as map from './map.js';
-import * as ui from './ui.js';
-import * as timeSlider from './timeSlider.js';
-import * as charts from './charts.js'; // <-- NEU
-import { WEATHER_MODELS, AUTO_CHECK_INTERVAL, getModelResolution, getModelMaxDays } from './config.js';
-import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
-import { getBlendedCombinedStatus } from './utils.js';
-
-// --- Globaler App-Zustand ---
-// (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
-let currentLayer = null;
-let currentManualProfile = null; // NEU: Merkt sich, welches Profil im Footer geladen ist
-let currentManualSummary = null; // NEU: Merkt sich das *Ergebnis* der letzten Prüfung
-let currentSliderHour = 0;       // NEU: Merkt sich die Stunde (0-23)
-let currentWeatherModel = null;  // NEU: Merkt sich { apiName, runTimeISO }
-let currentForecastDay = 0; // <-- NEU (0=Heute, 1=Morgen, etc.)
-export let manualOverrides = {};
-
-// NEU: Speichert, welche Graphen-Layer sichtbar sind.
-// Wir initialisieren es mit *allen* Metrik-Schlüsseln.
-export let visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
-// NEU: Getter-Funktion, damit map.js den Zustand lesen kann.
-export const getVisibleChartMetrics = () => visibleChartMetrics;
 
 /**
  * Die Weiche: Entscheidet, ob wir die echte API oder den Fake benutzen.
@@ -54,6 +71,32 @@ function getWeatherModule() {
     // Standard-Verhalten
     return weather_LIVE;
 }
+
+/**
+ * Filtert die METRICS_CONFIG für aktive Regeln.
+ * (NEU: Nutzt die zentrale Logik)
+ */
+function getActiveMetrics(rules) {
+    return Object.values(METRICS_CONFIG).filter(metric => isMetricActive(metric, rules));
+}
+
+/**
+ * NEU: Helfer-Funktion zum Löschen UND Speichern des gelöschten Zustands.
+ */
+async function clearAllManualOverrides() {
+    // Nur löschen und speichern, wenn es tatsächlich Overrides gibt
+    if (Object.keys(manualOverrides).length > 0) {
+        console.log("Setze alle manuellen Overrides zurück...");
+        manualOverrides = {};
+        await db.setAppState('manualOverrides', manualOverrides);
+    }
+}
+
+// -----------------------------------------------------------
+// 4. HANDLER FUNKTIONEN (Callbacks)
+// -----------------------------------------------------------
+
+// --- Slider & Time Handlers ---
 
 /**
  * HANDLER: Wird von timeSlider.js aufgerufen, wenn der Slider bewegt wird.
@@ -107,11 +150,11 @@ async function handleModelChange(apiName, runTimeISO) {
 }
 
 /**
- * HANDLER: Wird von timeSlider.js aufgerufen, wenn Autoupdate geklickt wird.
+ * HANDLER: Wird aufgerufen, wenn Autoupdate geklickt wird.
+ * (Logik kann später hier ergänzt werden)
  */
 function handleAutoupdateChange(isEnabled) {
     console.log(`Main.js: Autoupdate ist jetzt ${isEnabled ? 'AN' : 'AUS'}`);
-    // (Logik hierfür später)
 }
 
 /**
@@ -141,12 +184,179 @@ async function handleDayChange(e) {
 
 const debouncedHandleDayChange = debounce(handleDayChange, 500); // 500ms Verzögerung
 
-// --- KERN-WORKFLOWS (Die "Orchestrator"-Funktionen) ---
+// --- Map & Profile Handlers ---
 
 /**
- * Führt den automatischen Voll-Check aus und aktualisiert das Dashboard.
- * (Version 3.1: Nutzt ein festes, globales Modell)
+ * Wird aufgerufen, wenn auf der Karte ein Shape gezeichnet wird.
+ * (NEU: async, um den Land/See-Check durchzuführen)
  */
+async function handleMapCreate(layer) {
+    if (currentLayer) {
+        currentLayer.remove();
+    }
+    currentLayer = layer;
+
+    // Wir rufen die eben exportierte Funktion aus ui.js auf
+    const currentRules = ui.getRulesFromInputs();
+
+    // 0. Aktualisiere die Modell-Liste basierend auf der neuen Area
+    console.log("[Modell-Check] Starte Prüfung für neues Gebiet...");
+    const geojson = layer.toGeoJSON();
+    try {
+        const coords = geojson.geometry.coordinates[0][0];
+        const lng = coords[0];
+        const lat = coords[1];
+        await timeSlider.updateAvailableModelsForArea(lat, lng);
+    } catch (e) {
+        console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
+    }
+
+    // --- NEU: Land/See-Check ---
+    console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
+
+    // (Diese Funktion ruft weather.js oder weather_mock.js auf)
+    const { isMaritime, error } = await getWeatherModule().performLandSeaCheck(geojson);
+
+    if (error) {
+        console.error("Land/See-Check fehlgeschlagen:", error);
+    } else if (isMaritime) {
+        console.log("%c[Land/See-Check] ERGEBNIS: Maritimes Gebiet (See) erkannt.", "color: blue; font-weight: bold;");
+    } else {
+        console.log("[Land/See-Check] ERGEBNIS: Reines Land-Gebiet erkannt.");
+    }
+    // 1. Baue die Regeleingabe-Liste basierend auf dem Ergebnis (isMaritime).
+    // (Dieser Aufruf löscht die Werte in der UI)
+    ui.generateDynamicRuleInputs(isMaritime);
+
+    // 2. Mache den Container "Schritt 3: Regeln definieren" sichtbar.
+    const rulesContainer = document.getElementById('rules-workflow-container');
+    if (rulesContainer) {
+        rulesContainer.style.display = 'block';
+    }
+
+    // 3. UI freischalten (wie bisher)
+    ui.enableSaveButton();
+
+    // 4. KORREKTUR SCHRITT 2: Wende die gesicherten Regeln wieder an ---
+    // Wir übergeben 'null' für den Namen, damit das Profil-Namensfeld nicht beeinflusst wird.
+    ui.applyRulesToInputs(currentRules, null);
+}
+
+/**
+ * Wird aufgerufen, wenn der "Speichern"-Knopf geklickt wird.
+ */
+async function handleSaveProfile(profileData) {
+    if (!currentLayer) {
+        alert("Bitte zuerst eine Fläche auf der Karte zeichnen.");
+        return;
+    }
+
+    // --- NEU: Prüfen auf doppelten Namen ---
+    // (Wir rufen die neue Funktion aus db.js auf)
+    const existingProfile = await db.findProfileByName(profileData.name);
+
+    if (existingProfile) {
+        // Wenn ein Profil gefunden wurde, zeige Fehler und brich ab.
+        alert(`Fehler: Ein Profil mit dem Namen "${profileData.name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
+        return; // Stoppt die Funktion hier.
+    }
+
+    // Das GeoJSON-Objekt zwischenspeichern, bevor wir 'currentLayer' löschen
+    const geojson = currentLayer.toGeoJSON();
+
+    const profile = {
+        name: profileData.name,
+        rules: profileData.rules,
+        geojsonString: JSON.stringify(geojson)
+    };
+
+    await db.saveProfile(profile);
+    // 'profile' hat jetzt eine 'id' von der Datenbank
+
+    // Aufräumen (wie bisher)
+    currentLayer.pm.disable();
+    currentLayer = null;
+    ui.resetProfileInputs();
+
+    // UI aktualisieren (wie bisher)
+    await updateProfileList();
+
+    // --- NEU: Profil sofort laden und prüfen ---
+    // Wir bauen das Objekt, das handleManualCheck erwartet:
+    const newProfileData = {
+        id: profile.id, // Die neue ID aus der DB
+        name: profile.name,
+        rules: profile.rules,
+        geojson: geojson // Das geparste GeoJSON-Objekt
+    };
+
+    // Rufen wir die Funktion auf, die auch "Laden & Prüfen" nutzt
+    await handleManualCheck(newProfileData);
+    // --- ENDE NEU ---
+}
+
+// --- Chart & Override Handlers ---
+
+/**
+ * NEU: Aktualisiert den manuellen Status für eine Regel und Stunde.
+ * Wird von ui.js aufgerufen.
+ * @param {string} ruleKey - z.B. 'vis', 'wind', 'cloud'
+ * @param {string} hour - z.B. '07'
+ * @param {string|null} newStatus - 'ok', 'warn', 'alarm', oder null (für 'zurück zum Automatischen')
+ */
+export async function updateManualOverride(ruleKey, hour, newStatus) {
+    if (!manualOverrides[ruleKey]) {
+        manualOverrides[ruleKey] = {};
+    }
+
+    if (newStatus === null) {
+        delete manualOverrides[ruleKey][hour];
+    } else {
+        manualOverrides[ruleKey][hour] = newStatus;
+    }
+
+    await db.setAppState('manualOverrides', manualOverrides);
+
+    // 2. UI neu rendern, falls gerade ein Profil geladen ist
+    if (currentManualProfile && currentManualSummary) {
+        ui.displayManualWarning(currentManualProfile, currentManualSummary);
+
+        // KORREKTUR: Übergabe der benötigten Funktionen an charts.js
+        charts.updateWeatherChart(
+            currentManualProfile,
+            currentManualSummary,
+            (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides)
+        );
+
+        map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
+        runAndUpdateDashboard();
+    }
+}
+
+/**
+ * NEU: Lokaler Handler für den Legenden-Klick im Chart
+ */
+function handleLegendClick(chart) {
+    // 1. Set leeren
+    visibleChartMetrics.clear();
+
+    // 2. Set mit den sichtbaren Metriken neu füllen
+    chart.data.datasets.forEach((dataset, index) => {
+        if (chart.isDatasetVisible(index)) {
+            if (dataset.summaryKey) {
+                visibleChartMetrics.add(dataset.summaryKey);
+            }
+        }
+    });
+
+    // 3. Karte neu zeichnen
+    map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
+}
+
+// -----------------------------------------------------------
+// 5. KERN-WORKFLOWS (Orchestration)
+// -----------------------------------------------------------
+
 /**
  * Führt den automatischen Voll-Check aus und aktualisiert das Dashboard.
  * (Version 3.2: Vollständig korrigiert)
@@ -335,117 +545,11 @@ async function handleManualCheck(profileData) {
         (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides),
         // 2. Die Funktion zum Abrufen der Overrides (wird vom Setter gesetzt, nur zur Sicherheit hier)
         getManualOverrides
-    ); 
+    );
     map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
 }
 
-/**
- * Wird aufgerufen, wenn auf der Karte ein Shape gezeichnet wird.
- * (NEU: async, um den Land/See-Check durchzuführen)
- */
-async function handleMapCreate(layer) {
-    if (currentLayer) {
-        currentLayer.remove();
-    }
-    currentLayer = layer;
-
-    // Wir rufen die eben exportierte Funktion aus ui.js auf
-    const currentRules = ui.getRulesFromInputs();
-
-    // 0. Aktualisiere die Modell-Liste basierend auf der neuen Area
-    console.log("[Modell-Check] Starte Prüfung für neues Gebiet...");
-    const geojson = layer.toGeoJSON();
-    try {
-        const coords = geojson.geometry.coordinates[0][0];
-        const lng = coords[0];
-        const lat = coords[1];
-        await timeSlider.updateAvailableModelsForArea(lat, lng);
-    } catch (e) {
-        console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
-    }
-
-    // --- NEU: Land/See-Check ---
-    console.log("[Land/See-Check] Starte Prüfung für neues Gebiet...");
-
-    // (Diese Funktion ruft weather.js oder weather_mock.js auf)
-    const { isMaritime, error } = await getWeatherModule().performLandSeaCheck(geojson);
-
-    if (error) {
-        console.error("Land/See-Check fehlgeschlagen:", error);
-    } else if (isMaritime) {
-        console.log("%c[Land/See-Check] ERGEBNIS: Maritimes Gebiet (See) erkannt.", "color: blue; font-weight: bold;");
-    } else {
-        console.log("[Land/See-Check] ERGEBNIS: Reines Land-Gebiet erkannt.");
-    }
-    // 1. Baue die Regeleingabe-Liste basierend auf dem Ergebnis (isMaritime).
-    // (Dieser Aufruf löscht die Werte in der UI)
-    ui.generateDynamicRuleInputs(isMaritime);
-
-    // 2. Mache den Container "Schritt 3: Regeln definieren" sichtbar.
-    const rulesContainer = document.getElementById('rules-workflow-container');
-    if (rulesContainer) {
-        rulesContainer.style.display = 'block';
-    }
-
-    // 3. UI freischalten (wie bisher)
-    ui.enableSaveButton();
-
-    // 4. KORREKTUR SCHRITT 2: Wende die gesicherten Regeln wieder an ---
-    // Wir übergeben 'null' für den Namen, damit das Profil-Namensfeld nicht beeinflusst wird.
-    ui.applyRulesToInputs(currentRules, null);
-}
-/**
- * Wird aufgerufen, wenn der "Speichern"-Knopf geklickt wird.
- */
-async function handleSaveProfile(profileData) {
-    if (!currentLayer) {
-        alert("Bitte zuerst eine Fläche auf der Karte zeichnen.");
-        return;
-    }
-
-    // --- NEU: Prüfen auf doppelten Namen ---
-    // (Wir rufen die neue Funktion aus db.js auf)
-    const existingProfile = await db.findProfileByName(profileData.name);
-
-    if (existingProfile) {
-        // Wenn ein Profil gefunden wurde, zeige Fehler und brich ab.
-        alert(`Fehler: Ein Profil mit dem Namen "${profileData.name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
-        return; // Stoppt die Funktion hier.
-    }
-
-    // Das GeoJSON-Objekt zwischenspeichern, bevor wir 'currentLayer' löschen
-    const geojson = currentLayer.toGeoJSON();
-
-    const profile = {
-        name: profileData.name,
-        rules: profileData.rules,
-        geojsonString: JSON.stringify(geojson)
-    };
-
-    await db.saveProfile(profile);
-    // 'profile' hat jetzt eine 'id' von der Datenbank
-
-    // Aufräumen (wie bisher)
-    currentLayer.pm.disable();
-    currentLayer = null;
-    ui.resetProfileInputs();
-
-    // UI aktualisieren (wie bisher)
-    await updateProfileList();
-
-    // --- NEU: Profil sofort laden und prüfen ---
-    // Wir bauen das Objekt, das handleManualCheck erwartet:
-    const newProfileData = {
-        id: profile.id, // Die neue ID aus der DB
-        name: profile.name,
-        rules: profile.rules,
-        geojson: geojson // Das geparste GeoJSON-Objekt
-    };
-
-    // Rufen wir die Funktion auf, die auch "Laden & Prüfen" nutzt
-    await handleManualCheck(newProfileData);
-    // --- ENDE NEU ---
-}
+// --- Datenbank und Listen Manager ---
 
 /**
  * Lädt Profile aus der DB und zeigt sie in der Liste an.
@@ -469,6 +573,14 @@ async function handleDeleteProfile(profile) {
         await updateProfileList(); // Untere Liste neu
         await runAndUpdateDashboard(); // Obere Liste neu
     }
+}
+
+/**
+ * Lädt Vorlagen aus der DB und zeigt sie im Dropdown an.
+ */
+async function updateTemplateList() {
+    const templates = await db.getTemplates();
+    ui.displayTemplateList(templates);
 }
 
 /**
@@ -532,14 +644,6 @@ async function handleDeleteTemplate() {
 }
 
 /**
- * Lädt Vorlagen aus der DB und zeigt sie im Dropdown an.
- */
-async function updateTemplateList() {
-    const templates = await db.getTemplates();
-    ui.displayTemplateList(templates);
-}
-
-/**
  * Wendet eine Vorlage auf die Input-Felder an.
  */
 async function handleTemplateSelect(templateId) {
@@ -597,87 +701,10 @@ async function handleImport(profiles) {
     }
 }
 
-/**
- * NEU: Aktualisiert den manuellen Status für eine Regel und Stunde.
- * Wird von ui.js aufgerufen.
- * @param {string} ruleKey - z.B. 'vis', 'wind', 'cloud'
- * @param {string} hour - z.B. '07'
- * @param {string|null} newStatus - 'ok', 'warn', 'alarm', oder null (für 'zurück zum Automatischen')
- */
-export async function updateManualOverride(ruleKey, hour, newStatus) {
-    if (!manualOverrides[ruleKey]) {
-        manualOverrides[ruleKey] = {};
-    }
+// -----------------------------------------------------------
+// 6. ANWENDUNG STARTEN (Initialization)
+// -----------------------------------------------------------
 
-    if (newStatus === null) {
-        delete manualOverrides[ruleKey][hour];
-    } else {
-        manualOverrides[ruleKey][hour] = newStatus;
-    }
-
-    await db.setAppState('manualOverrides', manualOverrides);
-
-    // 2. UI neu rendern, falls gerade ein Profil geladen ist
-    if (currentManualProfile && currentManualSummary) {
-        ui.displayManualWarning(currentManualProfile, currentManualSummary);
-        
-        // KORREKTUR: Übergabe der benötigten Funktionen an charts.js
-        charts.updateWeatherChart(
-            currentManualProfile, 
-            currentManualSummary, 
-            (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides)
-        ); 
-        
-        map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);        
-        runAndUpdateDashboard();
-    }
-}
-
-/**
- * NEU: Helfer-Funktion zum Löschen UND Speichern des gelöschten Zustands.
- */
-async function clearAllManualOverrides() {
-    // Nur löschen und speichern, wenn es tatsächlich Overrides gibt
-    if (Object.keys(manualOverrides).length > 0) {
-        console.log("Setze alle manuellen Overrides zurück...");
-        manualOverrides = {};
-        await db.setAppState('manualOverrides', manualOverrides);
-    }
-}
-
-export const getManualOverrides = () => manualOverrides;
-
-/**
- * NEU: Lokaler Handler für den Legenden-Klick im Chart
- */
-function handleLegendClick(chart) {
-    // 1. Set leeren
-    visibleChartMetrics.clear();
-
-    // 2. Set mit den sichtbaren Metriken neu füllen
-    chart.data.datasets.forEach((dataset, index) => {
-        if (chart.isDatasetVisible(index)) {
-            if (dataset.summaryKey) {
-                visibleChartMetrics.add(dataset.summaryKey);
-            }
-        }
-    });
-
-    // 3. Karte neu zeichnen
-    map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
-}
-
-/**
- * Filtert die METRICS_CONFIG für aktive Regeln.
- * (NEU: Nutzt die zentrale Logik)
- */
-function getActiveMetrics(rules) {
-    return Object.values(METRICS_CONFIG).filter(metric => isMetricActive(metric, rules));
-}
-
-export const getCurrentManualSummary = () => currentManualSummary;
-
-// --- ANWENDUNG STARTEN ---
 document.addEventListener('DOMContentLoaded', async () => {
     // 0. Zustand laden
     const loadedOverrides = await db.getAppState('manualOverrides');
@@ -689,8 +716,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 1. Karte initialisieren
     const leafletMap = map.initMap();
     map.initGeoman(leafletMap);
-
     ui.initResizeHandle();
+    map.onMapCreate(handleMapCreate);
 
     // 2. UI initialisieren und mit Handlern "füttern"
     ui.initUI({
@@ -705,8 +732,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         onImport: handleImport
     });
 
-    // --- NEU: Schritt 3: Time-Slider initialisieren ---
-    // Wir übergeben unsere Handler als "Steckdosen"
+    // 3. Time-Slider & Chart Callbacks initialisieren
     try {
         await timeSlider.initTimeSlider({
             onSliderChange: handleSliderChange,
@@ -714,20 +740,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             onAutoupdateChange: handleAutoupdateChange,
             onDayChange: debouncedHandleDayChange
         });
-
-        // --- LÖSUNG (FIX FÜR START-FEHLER) ---
-        // Hole das initial geladene Modell (für Berlin)
-        // damit 'currentWeatherModel' nicht 'null' ist.
         currentWeatherModel = timeSlider.getCurrentModelInfo();
         console.log(`[main.js] Initiales Modell geladen: ${currentWeatherModel.apiName}`);
-        // --- ENDE LÖSUNG ---
-
         console.log("Time-Slider erfolgreich initialisiert.");
     } catch (err) {
         console.error("FEHLER bei Initialisierung des Time-Sliders:", err);
     }
 
-    map.onMapCreate(handleMapCreate);
 
     // 3. Callbacks für Charts injizieren
     charts.setLegendClickCallback(handleLegendClick);

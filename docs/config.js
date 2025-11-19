@@ -1,4 +1,7 @@
-// config.js
+// docs/config.js
+// -----------------------------------------------------------
+// 1. ANWENDUNG & DATENBANK KONSTANTEN
+// -----------------------------------------------------------
 export const AUTO_CHECK_INTERVAL = 6000000; // 100 Minute (zum Testen)
 
 export const DB_VERSION = 3;
@@ -9,12 +12,15 @@ export const STORES = {
     weatherCache: 'id'
 };
 
+// -----------------------------------------------------------
+// 2. KONVERTIERUNGEN & EINHEITEN
+// -----------------------------------------------------------
 export const CONVERSIONS = {
     KMH_TO_KTS: 0.539957,
     METER_TO_FEET: 3.28084
 };
 
-// NEU: Einheiten-Labels
+// Einheiten-Labels
 export const UNITS = {
     metric: {
         speed: 'km/h',
@@ -28,7 +34,10 @@ export const UNITS = {
     }
 };
 
-// NEU: Wettermodell-Konstanten
+// -----------------------------------------------------------
+// 3. WETTERMODELL KONSTANTEN & METADATEN
+// -----------------------------------------------------------
+
 export const WEATHER_MODELS = {
     // Liste der Modelle, die auf Verfügbarkeit geprüft werden sollen (Open-Meteo API Name)
     LIST: [
@@ -154,15 +163,23 @@ export const WEATHER_MODELS = {
     }
 };
 
-// NEU: API URLs
+// -----------------------------------------------------------
+// 4. API ENDPUNKTE
+// -----------------------------------------------------------
 export const API_URLS = {
     FORECAST: "https://api.open-meteo.com/v1/forecast",
     MARINE: "https://marine-api.open-meteo.com/v1/marine",
     ELEVATION: "https://api.open-meteo.com/v1/elevation"
 };
 
+// -----------------------------------------------------------
+// 5. HELPER FUNKTIONEN
+// -----------------------------------------------------------
+
 /**
  * Gibt die Auflösung für ein Modell zurück (mit sicherem Fallback auf 10km).
+ * @param {string} apiName - Name des Modells
+ * @returns {number} Auflösung in km
  */
 export const getModelResolution = (apiName) => {
     if (apiName === 'auto') return 10;
@@ -172,6 +189,8 @@ export const getModelResolution = (apiName) => {
 
 /**
  * Gibt die max. Vorhersagetage zurück (mit sicherem Fallback auf 7).
+ * @param {string} apiName - Name des Modells
+ * @returns {number} Maximale Vorhersagetage
  */
 export const getModelMaxDays = (apiName) => {
     if (apiName === 'auto') return 7;

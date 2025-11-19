@@ -1,6 +1,18 @@
 import { WEATHER_MODELS, API_URLS } from './config.js';
 
-// --- 1. Interne Helfer (portiert aus DZMaster/core/utils.js) ---
+// -----------------------------------------------------------
+// 1. MODUL-ZUSTAND
+// -----------------------------------------------------------
+
+// DOM-Elemente werden hier gesammelt, wenn init() aufgerufen wird
+let dom = {};
+let currentRunTimeISO = null;
+let currentDayOffset = 0;
+let registeredCallbacks = {};
+
+// -----------------------------------------------------------
+// 2. FORMATTER & HILFS-RECHNER (DOM-unabhängig)
+// -----------------------------------------------------------
 
 /**
  * Wandelt einen ISO-String (oder Date-Objekt) in "HH:MM" um.
@@ -13,7 +25,7 @@ function formatTime(timestamp) {
 }
 
 /**
- * NEU: Wandelt einen ISO-String (oder Date-Objekt) in "TT.MM." um.
+ * Wandelt einen ISO-String (oder Date-Objekt) in "TT.MM." um.
  */
 function formatDate(timestamp) {
     const date = new Date(timestamp);
@@ -24,53 +36,128 @@ function formatDate(timestamp) {
 }
 
 /**
- * Berechnet die letzten 4 Modell-Laufzeiten (00, 06, 12, 18 UTC)
+ * Formatiert einen ISO-Zeitstempel in das gewünschte Laufzeit-Format.
+ * @param {string} isoString - Der ISO-Zeitstempel.
+ * @returns {string} Das Format YYYY-MM-DD HH:MMZ (z.B. 2025-11-01 12:00Z) oder einen Fehlerstring.
  */
-function calculateModelRunTimes() {
-    const now = new Date();
-    const currentHour = now.getUTCHours();
-    let latestRunHour;
+function formatIsoToRunTime(isoString) {
+    if (!isoString || typeof isoString !== 'string') return 'FEHLER: Ungültige Daten';
 
-    // Finde die letzte abgeschlossene 6-Stunden-Laufzeit
-    // (Mit 3-4 Stunden Puffer für den Lauf)
-    if (currentHour >= 22) latestRunHour = 18;
-    else if (currentHour >= 16) latestRunHour = 12;
-    else if (currentHour >= 10) latestRunHour = 6;
-    else if (currentHour >= 4) latestRunHour = 0;
-    else {
-        // Wir sind vor 4 Uhr UTC, der 00-Lauf ist noch nicht fertig
-        // Nimm den 18-Uhr-Lauf vom Vortag
-        latestRunHour = 18;
-        now.setUTCDate(now.getUTCDate() - 1); // Gehe einen Tag zurück
+    const date = new Date(isoString);
+
+    // KORREKTUR: Prüft auf ungültige Datumsobjekte (new Date(bad string) liefert 'Invalid Date')
+    if (isNaN(date.getTime())) {
+        console.error(`[formatIsoToRunTime] Konnte Datum nicht parsen. Erhalten: ${isoString}`);
+        // Gibt den Originalwert zurück, damit der Benutzer sehen kann, was schiefgelaufen ist.
+        return `FEHLER (NaN): ${isoString}`;
     }
 
-    const runTimes = [];
-    for (let i = 0; i < 4; i++) {
-        const runHour = (latestRunHour - (i * 6) + 24) % 24; // Gehe in 6h-Schritten zurück
-        const runDate = new Date(now);
-        if (latestRunHour - (i * 6) < 0) {
-            runDate.setUTCDate(runDate.getUTCDate() - 1); // Vortag
-        }
-        runDate.setUTCHours(runHour, 0, 0, 0);
+    const year = date.getUTCFullYear();
+    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = date.getUTCDate().toString().padStart(2, '0');
+    const hours = date.getUTCHours().toString().padStart(2, '0');
+    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
 
-        runTimes.push({
-            iso: runDate.toISOString(),
-            label: `${formatTime(runDate)}Z`
-        });
-    }
-    return runTimes;
+    return `${year}-${month}-${day} ${hours}:${minutes}Z`;
 }
 
+// -----------------------------------------------------------
+// 3. MODELL-METADATEN LOGIK
+// -----------------------------------------------------------
 
-// --- 2. Interne DOM-Elemente (spezifisch für den Slider) ---
-// Wir suchen diese Elemente erst, wenn init() aufgerufen wird.
-let dom = {};
-let currentRunTimeISO = null;
-let currentDayOffset = 0;
-let lastModelRun = "N/A (No data)";
-let registeredCallbacks = {};
+/**
+ * Prüft bei Open Meteo, welche Modelle für die BBox verfügbar sind.
+ */
+async function checkAvailableModels(lat, lng) {
+    console.log("[timeSlider] Prüfe verfügbare Modelle...");
 
-// --- 3. Interne Display-Logik (portiert aus DZMaster/displayManager.js) ---
+    const modelList = WEATHER_MODELS.LIST;
+    let availableModels = [];
+
+    // Wir prüfen nur, ob die API uns die Daten für eine Koordinate gibt.
+    for (const apiName of modelList) {
+        try {
+            // Nur eine leichte Testanfrage (temp 2m)
+            const url = `${API_URLS.FORECAST}?latitude=${lat}&longitude=${lng}&hourly=temperature_2m&models=${apiName}&forecast_days=1`;
+            const response = await fetch(url);
+
+            if (response.ok) {
+                let data;
+                try {
+                    // Der 'text()' Schritt erlaubt uns, den Inhalt zu sehen, falls JSON fehlschlägt
+                    const rawText = await response.text();
+                    data = JSON.parse(rawText);
+                } catch (jsonError) {
+                    // Hier fangen wir den "Unexpected token 'a'" (nan) Fehler ab
+                    // Wir loggen es nur als Warnung, nicht als Fehler.
+                    // console.warn(`[timeSlider] Modell '${apiName}' lieferte ungültiges JSON (vermutlich out-of-bounds):`, jsonError);
+                    continue; // Nächstes Modell prüfen
+                }
+                // Prüfe, ob die API tatsächlich Daten zurückgibt
+                if (data.hourly && data.hourly.temperature_2m && data.hourly.temperature_2m.some(t => t !== null)) {
+                    availableModels.push({
+                        apiName: apiName,
+                        name: WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName
+                    });
+                }
+            } else if (response.status === 429) {
+                console.warn(`[timeSlider] API-Limit beim Prüfen von Modell '${apiName}' erreicht.`);
+            } else {
+                console.warn(`[timeSlider] Modell '${apiName}' ist nicht verfügbar (Status: ${response.status})`);
+            }
+        } catch (e) {
+            console.error(`[timeSlider] Netzwerkfehler bei Modellprüfung '${apiName}':`, e);
+        }
+    }
+
+    return availableModels;
+}
+
+/**
+ * Holt die letzte Laufzeit des Modells ab.
+ * Nutzt die API_MAP zur Bestimmung der Metadaten-ID.
+ */
+async function fetchLastRunTime(selectedApiName) {
+    // 1. Sonderfall: Wenn 'auto' gewählt ist, gibt es keine feste Laufzeit-Info.
+    if (selectedApiName === 'auto') {
+        return 'latest';
+    }
+
+    // 2. Die Open-Meteo ID aus der API_MAP holen
+    const modelMetaId = WEATHER_MODELS.API_MAP[selectedApiName];
+    if (!modelMetaId) {
+        console.warn(`[timeSlider] Keine API_MAP-ID für ${selectedApiName} gefunden.`);
+        return 'latest';
+    }
+
+    // 3. Metadaten-URL erstellen
+    // KORREKTUR: Verwende das robuste Format aus dem anderen Projekt
+    const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`;
+
+    try {
+        const metaResponse = await fetch(metaUrl);
+        if (!metaResponse.ok) {
+            // Loggt den Statuscode (z.B. 404) zur besseren Diagnose
+            throw new Error(`Status ${metaResponse.status}`);
+        }
+        const metaData = await metaResponse.json();
+
+        // Zeitstempel ist in Sekunden (UNIX Epoch)
+        const runDate = new Date(metaData.last_run_initialisation_time * 1000);
+
+        // WICHTIG: Rückgabe als ISO-String
+        return runDate.toISOString();
+
+    } catch (e) {
+        // Fallback, wenn der Abruf fehlschlägt
+        console.warn(`[timeSlider] Konnte letzte Laufzeit für ${selectedApiName} nicht abrufen: ${e.message}`);
+        return 'latest';
+    }
+}
+
+// -----------------------------------------------------------
+// 4. UI/DOM HELFER
+// -----------------------------------------------------------
 
 /**
  * Aktualisiert die "03h", "06h" Labels unter dem Slider.
@@ -241,34 +328,6 @@ function populateDaySelector(maxDays = 7) {
 }
 
 /**
- * NEU: Setzt den Slider-Wert extern
- */
-export function setSliderHour(hour) {
-    if (!dom.timeSlider) return;
-    dom.timeSlider.value = hour;
-    updateSelectedTime(hour);
-    updateSliderHighlight(hour);
-}
-
-/**
- * NEU: Setzt den Tages-Offset extern (von main.js)
- */
-export function setForecastDay(dayOffset) {
-    currentDayOffset = dayOffset;
-    // (Wir aktualisieren die UI hier nicht, 
-    // das passiert gleich durch setSliderHour(0))
-}
-
-/**
- * NEU: Setzt das Dropdown-Menü für den Tag visuell zurück.
- */
-export function resetDaySelector() {
-    if (dom.daySelect) {
-        dom.daySelect.value = "0"; // Setzt auf "Heute"
-    }
-}
-
-/**
  * Aktualisiert das Highlight-Band unter dem Slider
  */
 function updateSliderHighlight(value) {
@@ -301,125 +360,9 @@ function updateModelInfoDisplay(apiName, runKey) {
     dom.modelInfoPopup.innerHTML = `<strong>Run:</strong> ${runTimeDisplay}`;
 }
 
-// --- 4. Interne Modell-Logik (portiert aus DZMaster/weatherManager.js) ---
-
-/**
- * Prüft bei Open Meteo, welche Modelle für die BBox verfügbar sind.
- */
-async function checkAvailableModels(lat, lng) {
-    console.log("[timeSlider] Prüfe verfügbare Modelle...");
-
-    const modelList = WEATHER_MODELS.LIST;
-    let availableModels = [];
-
-    // Wir prüfen nur, ob die API uns die Daten für eine Koordinate gibt.
-    for (const apiName of modelList) {
-        try {
-            // Nur eine leichte Testanfrage (temp 2m)
-            const url = `${API_URLS.FORECAST}?latitude=${lat}&longitude=${lng}&hourly=temperature_2m&models=${apiName}&forecast_days=1`;
-            const response = await fetch(url);
-
-            if (response.ok) {
-                let data;
-                try {
-                    // Der 'text()' Schritt erlaubt uns, den Inhalt zu sehen, falls JSON fehlschlägt
-                    const rawText = await response.text();
-                    data = JSON.parse(rawText);
-                } catch (jsonError) {
-                    // Hier fangen wir den "Unexpected token 'a'" (nan) Fehler ab
-                    // Wir loggen es nur als Warnung, nicht als Fehler.
-                    // console.warn(`[timeSlider] Modell '${apiName}' lieferte ungültiges JSON (vermutlich out-of-bounds):`, jsonError);
-                    continue; // Nächstes Modell prüfen
-                }
-                // Prüfe, ob die API tatsächlich Daten zurückgibt
-                if (data.hourly && data.hourly.temperature_2m && data.hourly.temperature_2m.some(t => t !== null)) {
-                    availableModels.push({
-                        apiName: apiName,
-                        name: WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName
-                    });
-                }
-            } else if (response.status === 429) {
-                console.warn(`[timeSlider] API-Limit beim Prüfen von Modell '${apiName}' erreicht.`);
-            } else {
-                console.warn(`[timeSlider] Modell '${apiName}' ist nicht verfügbar (Status: ${response.status})`);
-            }
-        } catch (e) {
-            console.error(`[timeSlider] Netzwerkfehler bei Modellprüfung '${apiName}':`, e);
-        }
-    }
-
-    return availableModels;
-}
-
-/**
- * Holt die letzte Laufzeit des Modells ab.
- * Nutzt die API_MAP zur Bestimmung der Metadaten-ID.
- */
-async function fetchLastRunTime(selectedApiName) {
-    // 1. Sonderfall: Wenn 'auto' gewählt ist, gibt es keine feste Laufzeit-Info.
-    if (selectedApiName === 'auto') {
-        return 'latest';
-    }
-
-    // 2. Die Open-Meteo ID aus der API_MAP holen
-    const modelMetaId = WEATHER_MODELS.API_MAP[selectedApiName];
-    if (!modelMetaId) {
-        console.warn(`[timeSlider] Keine API_MAP-ID für ${selectedApiName} gefunden.`);
-        return 'latest';
-    }
-
-    // 3. Metadaten-URL erstellen
-    // KORREKTUR: Verwende das robuste Format aus dem anderen Projekt
-    const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`;
-
-    try {
-        const metaResponse = await fetch(metaUrl);
-        if (!metaResponse.ok) {
-            // Loggt den Statuscode (z.B. 404) zur besseren Diagnose
-            throw new Error(`Status ${metaResponse.status}`);
-        }
-        const metaData = await metaResponse.json();
-
-        // Zeitstempel ist in Sekunden (UNIX Epoch)
-        const runDate = new Date(metaData.last_run_initialisation_time * 1000);
-
-        // WICHTIG: Rückgabe als ISO-String
-        return runDate.toISOString();
-
-    } catch (e) {
-        // Fallback, wenn der Abruf fehlschlägt
-        console.warn(`[timeSlider] Konnte letzte Laufzeit für ${selectedApiName} nicht abrufen: ${e.message}`);
-        return 'latest';
-    }
-}
-
-/**
- * Formatiert einen ISO-Zeitstempel in das gewünschte Laufzeit-Format.
- * @param {string} isoString - Der ISO-Zeitstempel.
- * @returns {string} Das Format YYYY-MM-DD HH:MMZ (z.B. 2025-11-01 12:00Z) oder einen Fehlerstring.
- */
-function formatIsoToRunTime(isoString) {
-    if (!isoString || typeof isoString !== 'string') return 'FEHLER: Ungültige Daten';
-
-    const date = new Date(isoString);
-
-    // KORREKTUR: Prüft auf ungültige Datumsobjekte (new Date(bad string) liefert 'Invalid Date')
-    if (isNaN(date.getTime())) {
-        console.error(`[formatIsoToRunTime] Konnte Datum nicht parsen. Erhalten: ${isoString}`);
-        // Gibt den Originalwert zurück, damit der Benutzer sehen kann, was schiefgelaufen ist.
-        return `FEHLER (NaN): ${isoString}`;
-    }
-
-    const year = date.getUTCFullYear();
-    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-    const day = date.getUTCDate().toString().padStart(2, '0');
-    const hours = date.getUTCHours().toString().padStart(2, '0');
-    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-
-    return `${year}-${month}-${day} ${hours}:${minutes}Z`;
-}
-
-// --- 5. Die Haupt-Initialisierungs-Funktion (unser "Herz") ---
+// -----------------------------------------------------------
+// 5. EXPORTIERTE FUNKTIONEN
+// -----------------------------------------------------------
 
 /**
  * Initialisiert den Time-Slider und alle seine Events.
@@ -549,6 +492,34 @@ export async function initTimeSlider(callbacks) {
     // 4. Callbacks auslösen (nur den, der übrig geblieben ist)
     if (callbacks.onSliderChange) {
         callbacks.onSliderChange(0);
+    }
+}
+
+/**
+ * Setzt den Slider-Wert extern
+ */
+export function setSliderHour(hour) {
+    if (!dom.timeSlider) return;
+    dom.timeSlider.value = hour;
+    updateSelectedTime(hour);
+    updateSliderHighlight(hour);
+}
+
+/**
+ * NEU: Setzt den Tages-Offset extern (von main.js)
+ */
+export function setForecastDay(dayOffset) {
+    currentDayOffset = dayOffset;
+    // (Wir aktualisieren die UI hier nicht, 
+    // das passiert gleich durch setSliderHour(0))
+}
+
+/**
+ * NEU: Setzt das Dropdown-Menü für den Tag visuell zurück.
+ */
+export function resetDaySelector() {
+    if (dom.daySelect) {
+        dom.daySelect.value = "0"; // Setzt auf "Heute"
     }
 }
 

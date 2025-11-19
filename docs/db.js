@@ -1,5 +1,13 @@
-// db.js
+// docs/db.js
+
+// -----------------------------------------------------------
+// 1. IMPORTS
+// -----------------------------------------------------------
 import { DB_NAME, DB_VERSION, STORES } from './config.js';
+
+// -----------------------------------------------------------
+// 2. DATENBANK INITIALISIERUNG
+// -----------------------------------------------------------
 
 // 1. Datenbank initialisieren und exportieren
 export const db = new Dexie(DB_NAME);
@@ -13,14 +21,17 @@ db.version(3).stores({
 
 console.log("Lokale Dexie-Datenbank initialisiert (Version " + db.verno + ").");
 
-// --- PROFIL-FUNKTIONEN ---
+// -----------------------------------------------------------
+// 3. PROFIL FUNKTIONEN
+// (Getters, Finders, Mutators, Export)
+// -----------------------------------------------------------
 
 export const getProfiles = () => db.profiles.toArray();
 export const getProfileCount = () => db.profiles.count();
 export const getProfile = (id) => db.profiles.get(id);
 
 /**
- * NEU: Sucht ein Profil anhand seines Namens (Groß/Kleinschreibung egal).
+ * Sucht ein Profil anhand seines Namens (Groß/Kleinschreibung egal).
  */
 export const findProfileByName = (name) => {
     if (!name) return null;
@@ -42,26 +53,28 @@ export const getProfilesForExport = async () => {
 };
 
 
-// --- VORLAGEN-FUNKTIONEN ---
+// -----------------------------------------------------------
+// 4. VORLAGEN FUNKTIONEN
+// (Getters, Finders, Mutators)
+// -----------------------------------------------------------
 
 export const getTemplates = () => db.templates.toArray();
 export const getTemplate = (id) => db.templates.get(id);
-export const saveTemplate = (template) => db.templates.add(template);
-export const deleteTemplate = (id) => db.templates.delete(id);
 
 export const findTemplateByName = (name) => {
     if (!name) return null;
     return db.templates.where('name').equalsIgnoreCase(name).first();
 };
 
-export const getCache = (key) => {
-    try {
-        return db.weatherCache.get(key);
-    } catch (e) {
-        console.error("Cache-Lesefehler:", e);
-        return null;
-    }
-};
+export const saveTemplate = (template) => db.templates.add(template);
+export const deleteTemplate = (id) => db.templates.delete(id);
+
+// -----------------------------------------------------------
+// 5. CACHE & APP STATE FUNKTIONEN (Allgemeiner Speicher)
+// -----------------------------------------------------------
+
+// --- Cache (Wetterdaten) ---
+
 export const setCache = (key, summary) => {
     try {
         return db.weatherCache.put({
@@ -74,7 +87,17 @@ export const setCache = (key, summary) => {
     }
 };
 
-// --- NEU: App State Funktionen ---
+export const getCache = (key) => {
+    try {
+        return db.weatherCache.get(key);
+    } catch (e) {
+        console.error("Cache-Lesefehler:", e);
+        return null;
+    }
+};
+
+
+// --- App State (z.B. manuelle Overrides) ---
 
 /**
  * Speichert einen allgemeinen Zustandswert (z.B. manuelle Overrides).

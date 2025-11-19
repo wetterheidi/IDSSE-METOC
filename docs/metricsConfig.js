@@ -1,9 +1,18 @@
-// src/metricsConfig.js
+// docs/metricsConfig.js
 // (Version 1.1: Erweitert um Chart-Optionen)
 
-import * as formatter from './formatter.js';
-import { WMO_TAF_MAP, formatWaveHeight, formatAltitude_M, formatAltitude_FT, formatSigWx, formatOktas } from './formatter.js';
+// -----------------------------------------------------------
+// 1. IMPORTS
+// -----------------------------------------------------------
+
 import { WEATHER_MODELS } from './config.js';
+import * as formatter from './formatter.js';
+import { WMO_TAF_MAP, formatAltitude_FT, formatAltitude_M, formatOktas, formatSigWx, formatWaveHeight } from './formatter.js';
+
+
+// -----------------------------------------------------------
+// 2. ZENTRALE METRIK-KONFIGURATION
+// -----------------------------------------------------------
 
 export const METRICS_CONFIG = {
 
@@ -327,9 +336,13 @@ export const METRICS_CONFIG = {
     },
 };
 
+// -----------------------------------------------------------
+// 3. EXPORTIERTE LOGIK & HELPER FUNKTIONEN
+// -----------------------------------------------------------
+
+
 /**
- * Hilfsfunktion: Gibt alle API-Parameter als String zurück
- * (FINALE VERSION, die 'hourly_per_level' nutzt)
+ * Gibt alle API-Parameter als String-Objekt zurück.
  */
 export const getApiParams = (metrics, modelInfo) => {
     // Tausche die 'groups'-Struktur gegen ein aufgeteiltes Objekt aus
@@ -440,8 +453,7 @@ export const getMetricRules = (metric, rules) => {
 };
 
 /**
- * NEU: Zentrale Prüfung, ob eine Metrik im Profil aktiv ist.
- * (Ersetzt die duplizierten if-Abfragen in map.js, charts.js, ui.js, main.js)
+ * Zentrale Prüfung, ob eine Metrik im Profil aktiv ist.
  */
 export const isMetricActive = (metric, rules) => {
     if (!rules) return false;
