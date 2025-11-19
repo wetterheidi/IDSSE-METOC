@@ -19,6 +19,7 @@ import * as timeSlider from './timeSlider.js';
 import * as charts from './charts.js'; // <-- NEU
 import { WEATHER_MODELS, AUTO_CHECK_INTERVAL, getModelResolution, getModelMaxDays } from './config.js';
 import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
+import { getBlendedCombinedStatus } from './utils.js';
 
 // --- Globaler App-Zustand ---
 // (So wenig wie möglich. 'currentLayer' ist der wichtigste.)
@@ -210,7 +211,7 @@ async function runAndUpdateDashboard() {
     }
 
     const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
-    ui.displayAutoWarnings(activeAlarms);
+    ui.displayAutoWarnings(activeAlarms, getManualOverrides);
 }
 
 /**
@@ -327,7 +328,14 @@ async function handleManualCheck(profileData) {
     visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
 
     ui.displayManualWarning(profileData, summary); // <-- Aktualisiert die Matrix
-    charts.updateWeatherChart(profileData, summary); // <-- HIER IST DIE REPARATUR
+    charts.updateWeatherChart(
+        profileData,
+        summary,
+        // 1. Die Funktion zur kombinierten Statusberechnung 
+        (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides),
+        // 2. Die Funktion zum Abrufen der Overrides (wird vom Setter gesetzt, nur zur Sicherheit hier)
+        getManualOverrides
+    ); 
     map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
 }
 
@@ -612,8 +620,15 @@ export async function updateManualOverride(ruleKey, hour, newStatus) {
     // 2. UI neu rendern, falls gerade ein Profil geladen ist
     if (currentManualProfile && currentManualSummary) {
         ui.displayManualWarning(currentManualProfile, currentManualSummary);
-        charts.updateWeatherChart(currentManualProfile, currentManualSummary);
-        map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);        // NEU: Auto-Check Dashboard neu laden, da sich der Status eines Profils geändert haben könnte
+        
+        // KORREKTUR: Übergabe der benötigten Funktionen an charts.js
+        charts.updateWeatherChart(
+            currentManualProfile, 
+            currentManualSummary, 
+            (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides)
+        ); 
+        
+        map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);        
         runAndUpdateDashboard();
     }
 }
@@ -633,17 +648,15 @@ async function clearAllManualOverrides() {
 export const getManualOverrides = () => manualOverrides;
 
 /**
- * Wird von charts.js aufgerufen, wenn sich die Sichtbarkeit der Legende ändert.
- * Aktualisiert den globalen Zustand und zeichnet die Karte neu.
+ * NEU: Lokaler Handler für den Legenden-Klick im Chart
  */
-export function handleChartVisibilityUpdate(chart) {
+function handleLegendClick(chart) {
     // 1. Set leeren
     visibleChartMetrics.clear();
 
     // 2. Set mit den sichtbaren Metriken neu füllen
     chart.data.datasets.forEach((dataset, index) => {
         if (chart.isDatasetVisible(index)) {
-            // (Wir holen den summaryKey, den wir in Schritt 2 in das Dataset einfügen)
             if (dataset.summaryKey) {
                 visibleChartMetrics.add(dataset.summaryKey);
             }
@@ -651,7 +664,6 @@ export function handleChartVisibilityUpdate(chart) {
     });
 
     // 3. Karte neu zeichnen
-    // (Nutzt die globalen Variablen für Profil, Summary und Stunde)
     map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
 }
 
@@ -716,6 +728,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     map.onMapCreate(handleMapCreate);
+
+    // 3. Callbacks für Charts injizieren
+    charts.setLegendClickCallback(handleLegendClick);
+    charts.setGetManualOverrides(getManualOverrides);
 
     // 4. App-Daten laden
     updateProfileList();

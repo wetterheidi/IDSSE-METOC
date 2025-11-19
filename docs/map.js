@@ -2,6 +2,7 @@
 import { getManualOverrides, getVisibleChartMetrics } from './main.js';
 // NEU: Importiere das "Gehirn"
 import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js'; // <-- isMetricActive dazu
+import { getBlendedStatus } from './utils.js'; // NEU: Importiere die zentrale Logik
 import { forward } from 'https://cdn.jsdelivr.net/npm/mgrs@latest/mgrs.min.js';
 
 // Modul-interne Variablen für die Karten-Objekte
@@ -368,7 +369,7 @@ export const visualizeWarnings = (profile, summary, hour) => {
         }
 
         // 3. Status (Ampel) zuerst prüfen
-        const blendedStatus = getBlendedStatus(summary, summaryKey, hourString);
+        const blendedStatus = getBlendedStatus(summary, summaryKey, hourString, getManualOverrides);
 
         // Wenn Status OK oder N/A, nichts zeichnen
         if (blendedStatus === 'ok' || blendedStatus === 'no-data') {
@@ -478,19 +479,6 @@ export const zoomToGeoJSON = (geojson) => {
         console.error("Fehler beim Zoomen auf GeoJSON:", e, geojson);
     }
 };
-
-/**
- * Hilfsfunktion zum Blenden des Status (Modell + Override)
- * (Unverändert, nutzt summaryKey)
- */
-function getBlendedStatus(summary, summaryKey, hour) {
-    const overrides = getManualOverrides();
-    const hourString = hour.toString();
-    const autoStatus = summary[summaryKey] ? summary[summaryKey].hourlyStatus[hourString] : 'no-data';
-    const manualStatus = overrides[summaryKey] ? overrides[summaryKey][hourString] : null;
-
-    return manualStatus || autoStatus || 'no-data';
-}
 
 setTimeout(() => {
     console.log("MGRS-Gitter Debug-Check:");

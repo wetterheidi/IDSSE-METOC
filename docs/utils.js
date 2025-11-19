@@ -1,4 +1,5 @@
 // Sammlung von meteorologischen und mathematischen Hilfsfunktionen
+import { METRICS_CONFIG } from './metricsConfig.js';
 
 /**
  * Standard-Druckstufen (zur Referenz, auch wenn nicht alle Modelle sie haben)
@@ -509,4 +510,105 @@ export function findCloudLayers(interpolatedData) {
         }
     }
     return reportedLayers;
+}
+
+// ... (bestehender Code in utils.js) ...
+
+/**
+ * Hilfsfunktion zum Finden des schlechtesten Status
+ * (Angepasst: 'ok' gewinnt über 'no-data')
+ */
+export function getWorseStatus(s1, s2) {
+    if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
+    if (s1 === 'warn' || s2 === 'warn') return 'warn';
+    if (s1 === 'ok' || s2 === 'ok') return 'ok';
+    return 'no-data';
+}
+
+/**
+ * Gibt den geblendeten Status für eine einzelne Regel und Stunde zurück.
+ * NEU: Erfordert die getManualOverrides-Funktion.
+ */
+export function getBlendedStatus(summary, summaryKey, hour, getManualOverrides) { 
+    const overrides = getManualOverrides();
+    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hour]) || 'no-data'; 
+    const manual = overrides[summaryKey] ? overrides[summaryKey][hour] : null;
+    return manual || autoStatus;
+}
+
+/**
+ * Berechnet den finalen, kombinierten Status (Auto + Overrides) für jede Stunde.
+ * NEU: Erfordert die getManualOverrides-Funktion.
+ */
+export function getBlendedCombinedStatus(profile, summary, getManualOverrides) {
+    const rules = profile.rules;
+    const combinedStatus = {};
+
+    const logicMode = rules.logicMode || 'OR';
+
+    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
+        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
+        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
+    );
+
+    if (activeMetrics.length === 0) {
+        return combinedStatus;
+    }
+    const firstMetricKey = activeMetrics[0].summaryKey;
+
+    const hours = (summary[firstMetricKey] && summary[firstMetricKey].hourlyStatus)
+        ? Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
+        : [];
+
+    hours.forEach(hour => {
+        let activeRuleStati = [];
+
+        for (const metric of Object.values(METRICS_CONFIG)) {
+            const ruleName = metric.ruleName;
+            const summaryKey = metric.summaryKey;
+
+            if (((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
+                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) && summary[summaryKey]) {
+                // HIER IST DIE WICHTIGE ÄNDERUNG: Übergabe der getManualOverrides-Funktion
+                const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour, getManualOverrides);
+                activeRuleStati.push(blendedRuleStatus);
+            }
+        }
+
+        // 1b. Prüfe die manuelle Zeile (customRow), falls aktiviert
+        if (rules.customRow && rules.customRow.enabled) {
+            const customRowKey = "customRow";
+            const overrides = getManualOverrides();
+
+            const manualStatus = (overrides[customRowKey] ? overrides[customRowKey][hour] : null);
+            const blendedCustomRowStatus = manualStatus || 'no-data';
+
+            activeRuleStati.push(blendedCustomRowStatus);
+        }
+
+        // 2. Wende die "UND" / "ODER" Logik an
+        let combinedStatusForHour = 'no-data';
+
+        if (activeRuleStati.length === 0) {
+            combinedStatusForHour = 'no-data';
+        } else if (logicMode === 'AND') {
+            if (activeRuleStati.some(s => s === 'ok')) {
+                combinedStatusForHour = 'ok';
+            } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
+                combinedStatusForHour = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
+            } else {
+                combinedStatusForHour = 'no-data';
+            }
+        } else { // OR
+            let orStatus = 'no-data';
+            activeRuleStati.forEach(status => {
+                orStatus = getWorseStatus(orStatus, status);
+            });
+            combinedStatusForHour = orStatus;
+        }
+
+        combinedStatus[hour] = combinedStatusForHour;
+    });
+
+    return combinedStatus;
 }

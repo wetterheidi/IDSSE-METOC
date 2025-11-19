@@ -1,10 +1,25 @@
 // charts.js (Version 2.0 - Config-Driven)
-import { getManualOverrides, handleChartVisibilityUpdate } from './main.js';
 import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 import * as formatter from './formatter.js';
-import { getBlendedCombinedStatus } from './ui.js';
+
+let legendClickCallback = () => { };
+let getManualOverridesFunc = () => ({});
 
 let weatherChart = null; // Globale Chart-Instanz
+
+/**
+ * NEU: Setter für die Funktion, die die manuellen Overrides liefert.
+ */
+export function setGetManualOverrides(func) {
+    getManualOverridesFunc = func;
+}
+
+/**
+ * NEU: Setter für den Callback, der bei Legendenklick ausgelöst wird.
+ */
+export function setLegendClickCallback(callback) {
+    legendClickCallback = callback;
+}
 
 /**
  * NEU: Wandelt Hex-Farbcode in RGBA um.
@@ -47,10 +62,11 @@ function getWorseStatus(s1, s2) {
 
 /**
  * Hilfsfunktion zum Blenden des Status (Modell + Override)
- * (Unverändert, nutzt summaryKey)
+ * NEU: Nutzt die injizierte Funktion `getManualOverridesFunc`.
  */
 function getBlendedStatus(summary, summaryKey, hour) {
-    const overrides = getManualOverrides();
+    // NUTZT: Die injizierte Funktion
+    const overrides = getManualOverridesFunc();
     const hourString = hour.toString();
     const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hourString]) || 'no-data';
     const manualStatus = overrides[summaryKey] ? overrides[summaryKey][hourString] : null;
@@ -62,7 +78,7 @@ function getBlendedStatus(summary, summaryKey, hour) {
  * Zeichnet oder aktualisiert den 24h-Wettergraphen mit ECHTEN Daten.
  * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
  */
-export function updateWeatherChart(profile, summary) {
+export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFunc) {
     clearChart(); // Alten Graphen löschen
 
     const ctx = document.getElementById('weatherChartCanvas').getContext('2d');
@@ -301,9 +317,9 @@ export function updateWeatherChart(profile, summary) {
     // Diese Logik spiegelt exakt getBlendedCombinedStatus() aus ui.js wider.
 
     const logicMode = rules.logicMode || 'OR';
-    const hourlyCombinedStatus = getBlendedCombinedStatus(profile, summary); 
+    const hourlyCombinedStatus = getBlendedCombinedStatusFunc(profile, summary);
     const combinedBlendedStatus = Object.values(hourlyCombinedStatus);
-    
+
     // --- ENDE KORREKTUR ---
 
     // Alarm-Bänder erstellen (unverändert in der Logik)
@@ -381,9 +397,9 @@ export function updateWeatherChart(profile, summary) {
                         // 1. Führe das Standard-Verhalten aus (blendet den Graphen aus)
                         Chart.defaults.plugins.legend.onClick(e, legendItem, legend);
 
-                        // 2. Rufe unseren Handler in main.js auf, um die Karte zu aktualisieren
-                        // (Muss NACH dem Standard-Handler, aber VOR unserem neuen Code laufen)
-                        handleChartVisibilityUpdate(legend.chart);
+                        // 2. Rufe unseren injizierten Handler in main.js auf, um die Karte zu aktualisieren
+                        // KORREKTUR: Ruft den injizierten Callback auf
+                        legendClickCallback(legend.chart); 
 
                         // --- 3. NEU: ANNOTATIONS-LINIEN SYNCHRONISIEREN ---
                         try {

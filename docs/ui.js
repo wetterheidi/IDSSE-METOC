@@ -4,19 +4,12 @@ import * as timeSlider from './timeSlider.js';
 import { updateManualOverride, getManualOverrides } from './main.js';
 import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js'; 
 import { UNITS, CONVERSIONS } from './config.js'; 
-import { toMetric, fromMetric } from './formatter.js'; 
-
-// --- DIESER BLOCK MUSS FÜR DIE UI-ANZEIGE WIEDER EINGEFÜGT WERDEN ---
-import * as formatter from './formatter.js'; // Behebt 'formatter is not defined'
+import * as formatter from './formatter.js';
 import { 
-    formatAltitude_FT, 
-    formatAltitude_M, 
-    formatSpeed, 
-    formatWaveHeight, 
-    formatOktas, 
-    formatSigWx 
-} from './formatter.js'; // Behebt 'formatAltitude_FT is not defined' und andere Vergleiche
-
+    getWorseStatus, // NEU: Importiert von utils.js
+    getBlendedStatus, // NEU: Importiert von utils.js
+    getBlendedCombinedStatus // NEU: Importiert von utils.js
+} from './utils.js'; 
 
 export const uiElements = {};
 
@@ -61,13 +54,13 @@ export function generateDynamicRuleInputs(isMaritime) {
                 initialUnit = unitConfig.speed;
             }
             // --- KORREKTUR: Vergleiche mit den direkten Importen ---
-            else if (metric.formatter === formatAltitude_FT) {
+            else if (metric.formatter === formatter.formatAltitude_FT) {
                 initialUnit = unitConfig.altitude; // m oder ft
             }
-            else if (metric.formatter === formatAltitude_M) {
+            else if (metric.formatter === formatter.formatAltitude_M) {
                 initialUnit = UNITS.metric.altitude; // Immer 'm'
             }
-            else if (metric.formatter === formatWaveHeight) {
+            else if (metric.formatter === formatter.formatWaveHeight) {
                 initialUnit = unitConfig.altitude; // m oder ft
             }
             // --- ENDE KORREKTUR ---
@@ -78,9 +71,9 @@ export function generateDynamicRuleInputs(isMaritime) {
             } else if (metric.formatter === formatter.formatPrecipMM) {
                 initialUnit = 'mm';
             }
-            else if (metric.formatter === formatOktas) {
+            else if (metric.formatter === formatter.formatOktas) {
                 initialUnit = 'Achtel';
-            } else if (metric.formatter === formatSigWx) {
+            } else if (metric.formatter === formatter.formatSigWx) {
                 initialUnit = '(WMO)';
             }
 
@@ -540,7 +533,7 @@ export const displayManualWarning = (profile, summary) => {
 
     // --- Ampel-Matrix ---
     let tableHtml = "";
-    const blendedCombinedStatus = getBlendedCombinedStatus(profile, summary);
+    const blendedCombinedStatus = getBlendedCombinedStatus(profile, summary, getManualOverrides);
 
     const activeMetrics = Object.values(METRICS_CONFIG).filter(m => isMetricActive(m, rules));
 
@@ -704,8 +697,8 @@ export const applyRulesToInputs = (rules, profileName) => {
 
             // 2. Konvertiere ihn zurück in den "Display"-Wert (z.B. 12 kt)
             // (Das 'rules'-Objekt enthält den 'unitMode')
-            const display_alarm = fromMetric(value_alarm, metric, rules.unitMode);
-            const display_warn = fromMetric(value_warn, metric, rules.unitMode);
+            const display_alarm = formatter.fromMetric(value_alarm, metric, rules.unitMode);
+            const display_warn = formatter.fromMetric(value_warn, metric, rules.unitMode);
 
             // 3. Zeige den "Display"-Wert an
             if (elem_alarm) {
@@ -864,8 +857,8 @@ export const getRulesFromInputs = () => {
             const parsed_warn = parseFloat(rawVal_warn);
 
             // Konvertiere beide Werte zuerst (WICHTIG für den Vergleich)
-            const metric_alarm = isNaN(parsed_alarm) ? null : toMetric(parsed_alarm, metric, unitMode);
-            const metric_warn = isNaN(parsed_warn) ? null : toMetric(parsed_warn, metric, unitMode);
+            const metric_alarm = isNaN(parsed_alarm) ? null : formatter.toMetric(parsed_alarm, metric, unitMode);
+            const metric_warn = isNaN(parsed_warn) ? null : formatter.toMetric(parsed_warn, metric, unitMode);
 
             rules[metric.ruleName + '_alarm'] = metric_alarm;
             rules[metric.ruleName + '_warn'] = metric_warn;
@@ -980,19 +973,19 @@ function updateRuleInputLabels() {
             unit = unitConfig.speed; // km/h oder kt
         }
         // --- KORREKTUR: Vergleiche mit den direkten Importen ---
-        else if (metric.formatter === formatAltitude_FT) {
+        else if (metric.formatter === formatter.formatAltitude_FT) {
             unit = unitConfig.altitude; // m oder ft (für CloudBase)
         }
-        else if (metric.formatter === formatAltitude_M) {
+        else if (metric.formatter === formatter.formatAltitude_M) {
             unit = UNITS.metric.altitude; // Bleibt immer 'm' (für Vis, Snow)
         }
-        else if (metric.formatter === formatWaveHeight) {
+        else if (metric.formatter === formatter.formatWaveHeight) {
             unit = unitConfig.altitude; // m oder ft (für Wellen)
         }
-        else if (metric.formatter === formatSigWx) {
+        else if (metric.formatter === formatter.formatSigWx) {
             unit = '(WMO)'; // Bleibt immer (WMO)
         }
-        else if (metric.formatter === formatOktas) {
+        else if (metric.formatter === formatter.formatOktas) {
             unit = 'Achtel';
         }
         // --- ENDE KORREKTUR ---
@@ -1122,7 +1115,7 @@ function handleManualOverrideClick(event) {
 /**
  * Erstellt den geblendeten hourlyStatus für die Zeitbereich-Funktion (displayAutoWarnings).
  */
-function createBlendedStatus(summary, summaryKey) { // <-- Nimmt jetzt summaryKey
+function createBlendedStatus(summary, summaryKey) { 
     const blended = {};
     const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus) || {};
     const overrides = getManualOverrides()[summaryKey] || {};
@@ -1133,123 +1126,6 @@ function createBlendedStatus(summary, summaryKey) { // <-- Nimmt jetzt summaryKe
         blended[hour] = manual || auto;
     });
     return blended;
-}
-
-/**
- * Hilfsfunktion zum Finden des schlechtesten Status
- */
-function getWorseStatus(s1, s2) { 
-    if (s1 === 'alarm' || s2 === 'alarm') return 'alarm';
-    if (s1 === 'warn' || s2 === 'warn') return 'warn';
-    if (s1 === 'ok' || s2 === 'ok') return 'ok';
-    return 'no-data';
-}
-
-/**
- * Gibt den geblendeten Status für eine einzelne Regel und Stunde zurück.
- */
-function getBlendedStatus(summary, summaryKey, hour) { 
-    const overrides = getManualOverrides();
-    const autoStatus = (summary[summaryKey] && summary[summaryKey].hourlyStatus[hour]) || 'no-data'; 
-    const manual = overrides[summaryKey] ? overrides[summaryKey][hour] : null;
-    return manual || autoStatus;
-}
-
-/**
- * Berechnet den finalen, kombinierten Status (Auto + Overrides) für jede Stunde.
- * NEU: Berücksichtigt den "AND" / "OR" Logik-Modus aus dem Profil.
- */
-export function getBlendedCombinedStatus(profile, summary) {
-    const rules = profile.rules;
-    const combinedStatus = {};
-
-    // NEU: Logik-Modus aus dem Profil holen, Standard ist 'OR'
-    const logicMode = rules.logicMode || 'OR';
-
-    // Finde einen Referenz-Stunden-Key
-    const activeMetrics = Object.values(METRICS_CONFIG).filter(m =>
-        (rules[m.ruleName + '_alarm'] !== null && rules[m.ruleName + '_alarm'] !== undefined) ||
-        (rules[m.ruleName + '_warn'] !== null && rules[m.ruleName + '_warn'] !== undefined)
-    );
-
-    if (activeMetrics.length === 0) {
-        return combinedStatus; // (bleibt leer, was korrekt ist)
-    }
-    const firstMetricKey = activeMetrics[0].summaryKey;
-
-    const hours = (summary[firstMetricKey] && summary[firstMetricKey].hourlyStatus)
-        ? Object.keys(summary[firstMetricKey].hourlyStatus).sort((a, b) => parseInt(a) - parseInt(b))
-        : [];
-
-    hours.forEach(hour => {
-        let combinedStatusForHour = 'no-data';
-        let activeRuleStati = []; // Speichert den geblendeten Status aller *aktiven* Regeln
-
-        // 1. Sammle den *geblendeten* Status aller Regeln, die für dieses Profil aktiv sind
-        for (const metric of Object.values(METRICS_CONFIG)) {
-            const ruleName = metric.ruleName;
-            const summaryKey = metric.summaryKey;
-
-            // Prüfen, ob die Regel im Profil aktiv ist (Limit nicht null/undefined)
-            if (((rules[ruleName + '_alarm'] !== null && rules[ruleName + '_alarm'] !== undefined) ||
-                (rules[ruleName + '_warn'] !== null && rules[ruleName + '_warn'] !== undefined)) && summary[summaryKey]) {
-                // HIER IST DER UNTERSCHIED: Wir holen den geblendeten Status
-                const blendedRuleStatus = getBlendedStatus(summary, summaryKey, hour);
-                activeRuleStati.push(blendedRuleStatus);
-            }
-        }
-
-        // --- NEUER BLOCK START ---
-        // 1b. Prüfe die manuelle Zeile (customRow), falls aktiviert
-        if (rules.customRow && rules.customRow.enabled) {
-            const customRowKey = "customRow";
-            const overrides = getManualOverrides();
-
-            // Hol den manuellen Status für diese Stunde.
-            // Der 'auto' Status ist 'no-data', 
-            // also ist der 'blended' Status einfach der manuelle Override.
-            const manualStatus = (overrides[customRowKey] ? overrides[customRowKey][hour] : null);
-
-            // Wenn der User 'null' (Reset) klickt, wird es zu 'no-data'.
-            const blendedCustomRowStatus = manualStatus || 'no-data';
-
-            // Füge den Status zur Liste hinzu, damit er in der Logik berücksichtigt wird
-            activeRuleStati.push(blendedCustomRowStatus);
-        }
-
-        // 2. Wende die "UND" / "ODER" Logik an
-        if (activeRuleStati.length === 0) {
-            // Keine Regeln aktiv
-            combinedStatusForHour = 'no-data';
-
-        } else if (logicMode === 'AND') {
-            // --- "UND"-Logik ---
-            // Alarm, wenn ALLE 'alarm' oder 'warn' sind
-            // OK, wenn auch nur EINE 'ok' ist
-
-            if (activeRuleStati.some(s => s === 'ok')) {
-                combinedStatusForHour = 'ok';
-            } else if (activeRuleStati.every(s => s === 'alarm' || s === 'warn')) {
-                // Alle sind ausgelöst
-                combinedStatusForHour = activeRuleStati.some(s => s === 'alarm') ? 'alarm' : 'warn';
-            } else {
-                // Mix aus 'no-data', 'warn', 'alarm', aber nicht alle sind ausgelöst
-                combinedStatusForHour = 'no-data';
-            }
-
-        } else {
-            // --- "ODER"-Logik (wie bisher) ---
-            let orStatus = 'no-data';
-            activeRuleStati.forEach(status => {
-                orStatus = getWorseStatus(orStatus, status);
-            });
-            combinedStatusForHour = orStatus;
-        }
-
-        combinedStatus[hour] = combinedStatusForHour;
-    });
-
-    return combinedStatus;
 }
 
 /**
