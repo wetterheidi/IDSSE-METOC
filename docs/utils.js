@@ -521,7 +521,8 @@ export function findCloudLayers(interpolatedData) {
 
             reportedLayers.push({
                 cover: currentCategory,
-                base: point.displayHeight // Höhe AGL in Metern
+                base: point.displayHeight, // Höhe AGL in Metern
+                isCeiling: (currentCategory === 'BKN' || currentCategory === 'OVC')
             });
             lastReportedCategory = currentCategory;
         }
@@ -628,6 +629,6 @@ export function getBlendedCombinedStatus(profile, summary, getManualOverrides) {
 
         combinedStatus[hour] = combinedStatusForHour;
     });
-    console.log('***************** Neue Version');
+
     return combinedStatus;
 }

@@ -18,7 +18,85 @@ import {
 
 
 // -----------------------------------------------------------
-// 2. INTERNE HELFER: DATENVERARBEITUNG
+// 2. GLOBALE REQUEST-QUEUE (Rate Limiter)
+// -----------------------------------------------------------
+
+/**
+ * Zentraler Rate-Limiter für ALLE Open-Meteo API-Calls.
+ * Stellt sicher, dass nie mehr als MAX_CONCURRENT Requests gleichzeitig
+ * laufen und zwischen jedem Request MIN_DELAY_MS gewartet wird.
+ * So werden 429-Fehler bei vielen Profilen zuverlässig verhindert.
+ */
+const RequestQueue = (() => {
+    const MAX_CONCURRENT = 2;   // Maximal 2 parallele Requests
+    const MIN_DELAY_MS   = 400; // Mindest-Pause zwischen Requests (= max ~2.5 req/s)
+
+    let active   = 0;
+    let lastSent = 0;
+    const queue  = [];
+
+    function tryNext() {
+        if (queue.length === 0 || active >= MAX_CONCURRENT) return;
+
+        const now         = Date.now();
+        const sinceLastMs = now - lastSent;
+        const waitMs      = Math.max(0, MIN_DELAY_MS - sinceLastMs);
+
+        setTimeout(() => {
+            if (active >= MAX_CONCURRENT) { tryNext(); return; }
+
+            const { url, resolve, reject, retries } = queue.shift();
+            active++;
+            lastSent = Date.now();
+
+            fetch(url)
+                .then(async res => {
+                    if (res.status === 429 && retries > 0) {
+                        const backoffMs = Math.pow(2, 3 - retries) * 1500; // 1.5s, 3s, 6s
+                        console.warn(`[Queue] 429 – Retry in ${backoffMs}ms (${retries} versuche übrig)`);
+                        await new Promise(r => setTimeout(r, backoffMs));
+                        queue.unshift({ url, resolve, reject, retries: retries - 1 });
+                        active--;
+                        tryNext();
+                        return;
+                    }
+                    active--;
+                    tryNext();
+                    resolve(res);
+                })
+                .catch(err => {
+                    active--;
+                    tryNext();
+                    reject(err);
+                });
+        }, waitMs);
+    }
+
+    return {
+        /**
+         * Führt einen fetch()-Aufruf über die Queue durch.
+         * Ersetze alle fetch()-Aufrufe in dieser Datei damit.
+         * @param {string} url
+         * @param {number} retries - Wiederholungsversuche bei 429
+         * @returns {Promise<Response>}
+         */
+        fetch(url, retries = 3) {
+            return new Promise((resolve, reject) => {
+                queue.push({ url, resolve, reject, retries });
+                tryNext();
+            });
+        },
+
+        /** Debugging: Aktueller Status der Queue */
+        status() {
+            return { queued: queue.length, active };
+        }
+    };
+})();
+
+
+// -----------------------------------------------------------
+// 3. INTERNE HELFER: DATENVERARBEITUNG
 // -----------------------------------------------------------
 
 /**
@@ -58,75 +136,70 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
                 const v_pow = Math.pow(wind_kmh, 0.16);
                 const chill = 13.12 + 0.6215 * temp - 11.37 * v_pow + 0.3965 * temp * v_pow;
                 return chill;
-            case 'cloudBase': { // (in einen Block geklammert)
+            case 'cloudBase':
+            case 'cloudCeiling': {
+                // Gemeinsame Interpolationslogik für cloudBase UND cloudCeiling.
+                // Der Unterschied liegt nur in der Layer-Filterung am Ende.
 
-                // 1. Analysiere die Schwellenwerte für diesen Punkt
+                // 1. Schwellenwerte analysieren
                 const cloudThresholds = analyzeCloudLayers(hourly);
                 if (!cloudThresholds || !cloudThresholds[h]) {
-                    console.warn(`[CloudBase] Analyse der Schwellenwerte für Stunde ${h} fehlgeschlagen.`);
+                    console.warn(`[${summaryKey}] Schwellenwert-Analyse für Stunde ${h} fehlgeschlagen.`);
                     return null;
                 }
                 const currentThresholds = cloudThresholds[h];
 
-                // 2. Hole Basis-Daten
-                const baseHeight_m = elevation;
-                if (baseHeight_m === null || baseHeight_m === undefined) {
-                    console.warn(`[CloudBase] 'elevation' fehlt. Nutze 0m als Fallback.`);
-                }
-
-                const heightUnit = 'm';
+                // 2. Basis-Daten
+                const baseHeight_m = elevation || 0;
                 const interpStep = 50;
 
-                // --- START DEBUG LOG (Stunde 0) ---
+                // DEBUG (nur Stunde 0)
                 if (h === 0) {
-                    console.groupCollapsed(`[CloudBase DEBUG] Stunde 0 (BaseHeight: ${baseHeight_m}m)`);
-                    console.log("1. Dynamische Schwellen (von analyzeCloudLayers):", currentThresholds);
+                    console.groupCollapsed(`[${summaryKey} DEBUG] Stunde 0 (BaseHeight: ${baseHeight_m}m)`);
+                    console.log("1. Schwellen:", currentThresholds);
                 }
-                // --- ENDE DEBUG LOG ---
 
                 // 3. Interpolieren
                 const interpolatedData = interpolateWeatherData(
-                    hourly,
-                    h,
-                    interpStep,
-                    baseHeight_m || 0, // (Nutze 0 als Fallback)
-                    heightUnit,
-                    currentThresholds
+                    hourly, h, interpStep, baseHeight_m, 'm', currentThresholds
                 );
 
-                // --- START DEBUG LOG (Stunde 0) ---
                 if (h === 0) {
-                    console.log("2. Interpolierte Daten (von interpolateWeatherData):", interpolatedData);
+                    console.log("2. Interpolierte Punkte:", interpolatedData.length);
                 }
-                // --- ENDE DEBUG LOG ---
 
-                // 4. Wolkenschichten finden
-                const layers = findCloudLayers(interpolatedData);
+                // 4. Alle Wolkenschichten finden (FEW, SCT, BKN, OVC)
+                const allLayers = findCloudLayers(interpolatedData);
 
-                // --- START DEBUG LOG (Stunde 0) ---
                 if (h === 0) {
-                    console.log("3. Gefundene Schichten (von findCloudLayers):", layers);
+                    console.log("3. Gefundene Schichten:", allLayers);
                 }
-                // --- ENDE DEBUG LOG ---
 
-                // 5. Niedrigste Basis zurückgeben
-                if (layers.length > 0) {
-                    const base_in_meters = layers[0].base;
-                    if (h === 0) {
-                        console.log(`4. Ergebnis: Niedrigste Basis = ${base_in_meters}m`);
-                        console.groupEnd(); // Schließt die Log-Gruppe
+                let result;
+
+                if (summaryKey === 'cloudBase') {
+                    // cloudBase: niedrigste Wolke ab FEW (alle Layer)
+                    if (allLayers.length > 0) {
+                        result = allLayers[0].base;
+                    } else {
+                        result = 99999; // SKC
                     }
-                    return base_in_meters;
+                } else {
+                    // cloudCeiling: niedrigste BKN oder OVC Schicht
+                    const ceilingLayers = allLayers.filter(l => l.isCeiling);
+                    if (ceilingLayers.length > 0) {
+                        result = ceilingLayers[0].base;
+                    } else {
+                        result = 99999; // Kein Ceiling (CAVOK / FEW / SCT)
+                    }
                 }
 
-                // --- START DEBUG LOG (Stunde 0) ---
                 if (h === 0) {
-                    console.log("4. Ergebnis: Keine Schichten gefunden (SKC).");
-                    console.groupEnd(); // Schließt die Log-Gruppe
+                    console.log(`4. Ergebnis (${summaryKey}): ${result}m`);
+                    console.groupEnd();
                 }
-                // --- ENDE DEBUG LOG ---
 
-                return 99999; // Keine Wolkenschicht gefunden (SKC)
+                return result;
             }
             default:
                 return null;
@@ -634,31 +707,9 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     console.log(`[weather.js] Angeforderte Prognosetage für ${modelApiName}: ${forecastDays}`);
 
     // 5. Sequenzielle Schleife (API-URL-Bau)
-    // Hilfsfunktion: fetch mit Exponential Backoff bei 429
-    const fetchWithRetry = async (url, retries = 3) => {
-        for (let attempt = 0; attempt < retries; attempt++) {
-            const res = await fetch(url);
-            if (res.status === 429) {
-                const waitMs = Math.pow(2, attempt) * 1500; // 1.5s, 3s, 6s
-                console.warn(`[weather.js] 429 Too Many Requests – warte ${waitMs}ms (Versuch ${attempt + 1}/${retries})...`);
-                await new Promise(r => setTimeout(r, waitMs));
-                continue;
-            }
-            return res;
-        }
-        throw new Error('API-Limit dauerhaft überschritten (429). Bitte später erneut versuchen.');
-    };
-
-    // Hilfsfunktion: Pause zwischen Chunks
-    const CHUNK_DELAY_MS = 500; // 500ms Pause = max 2 Chunk-Paare/s, weit unter jedem API-Limit
-    let isFirstChunk = true;
-
+    // Alle fetch()-Aufrufe laufen durch die globale RequestQueue (Rate-Limiter oben).
+    // Kein manuelles Delay oder fetchWithRetry nötig – die Queue regelt alles.
     for (const chunk of pointChunks) {
-        // Warte zwischen Chunks (nicht vor dem ersten)
-        if (!isFirstChunk) {
-            await new Promise(r => setTimeout(r, CHUNK_DELAY_MS));
-        }
-        isFirstChunk = false;
 
         const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
         const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
@@ -680,7 +731,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
                 // Dies ist Zeile 283 (Die Fehlerzeile)
                 forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-            fetchPromises.push(fetchWithRetry(forecastUrl));
+            fetchPromises.push(RequestQueue.fetch(forecastUrl));
         }
 
         // --- URL 2: MARINE (Wellen, etc.) ---
@@ -689,7 +740,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
             marineUrl += `&hourly=${apiParams.marine.hourly}`;
             marineUrl += `&models=${apiParams.marine.models}`;
-            fetchPromises.push(fetchWithRetry(marineUrl));
+            fetchPromises.push(RequestQueue.fetch(marineUrl));
         }
 
         try {
@@ -806,22 +857,8 @@ export async function performLandSeaCheck(geojson) {
 
     // 4. API abfragen
     try {
-        // Retry-Logik auch hier (eigene lokale Hilfsfunktion)
-        const fetchWithRetry = async (url, retries = 3) => {
-            for (let attempt = 0; attempt < retries; attempt++) {
-                const res = await fetch(url);
-                if (res.status === 429) {
-                    const waitMs = Math.pow(2, attempt) * 1500;
-                    console.warn(`[LandSeaCheck] 429 – warte ${waitMs}ms...`);
-                    await new Promise(r => setTimeout(r, waitMs));
-                    continue;
-                }
-                return res;
-            }
-            throw new Error('429 – API-Limit beim Land/See-Check dauerhaft überschritten.');
-        };
-
-        const response = await fetchWithRetry(url);
+        // Läuft ebenfalls durch die globale RequestQueue
+        const response = await RequestQueue.fetch(url);
 
         if (!response.ok) {
             throw new Error(`API-Antwort war nicht OK: ${response.status}`);

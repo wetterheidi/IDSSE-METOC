@@ -258,6 +258,49 @@ export const METRICS_CONFIG = {
         }
     },
 
+    'cloudCeiling': {
+        // Ceiling: niedrigste BKN (5-7 Achtel) oder OVC (8 Achtel) Schicht.
+        // Relevant für IFR-Beurteilung. Unabhängige Grenzwerte von cloudBase.
+        apiName: [
+            // Druckstufen-Parameter (identisch zu cloudBase – werden ohnehin gemeinsam abgefragt)
+            'relative_humidity',
+            'geopotential_height',
+            'temperature',
+            'cloud_cover',
+            'wind_speed',
+            'wind_direction',
+            // Oberflächen-Parameter
+            'surface_pressure',
+            'wind_speed_10m',
+            'wind_direction_10m',
+            'temperature_2m',
+            'relative_humidity_2m'
+        ],
+
+        pressureLevels: [
+            1000, 975, 950, 925, 900, 875, 850, 825, 800,
+            775, 750, 725, 700, 650, 600, 550, 500, 475, 450,
+            425, 400, 375, 350, 325, 300, 275, 250, 200
+        ],
+
+        paramType: 'derived_pressure',
+        ruleName: 'minCloudCeiling',
+        summaryKey: 'cloudCeiling',
+        checkType: 'min',
+
+        // --- UI & Anzeige ---
+        uiUnitId: 'unit-minCloudCeiling',
+        displayName: 'Ceiling (BKN/OVC)',
+        formatter: formatAltitude_FT,  // Gleicher Formatter wie cloudBase (m oder ft)
+        chartColor: '#e67e22',         // Orange – unterscheidbar von cloudBase (Türkis)
+        chartOptions: {
+            axisId: 'yCloudBase',      // Gleiche Y-Achse wie cloudBase (beide in Höhe)
+            axisPosition: 'right',
+            axisLabel: 'Wolkenbasis',
+            type: 'line'
+        }
+    },
+
     'sigWx': {
         // --- API & Daten ---
         apiName: 'weather_code',
