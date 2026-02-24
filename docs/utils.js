@@ -443,11 +443,10 @@ export function interpolateWeatherData(weatherData, sliderIndex, interpStep, bas
         if (Number.isFinite(dataPoint.temp) && Number.isFinite(dataPoint.rh)) {
             const temp = dataPoint.temp;
             const rh = dataPoint.rh;
-            let rhThreshold;
-
             const groundTemp = weatherData.temperature_2m[sliderIndex];
 
-            // Bestimme das Stockwerk und den passenden Schwellenwert
+            // 1. Stockwerk-abhängigen RH-Schwellenwert bestimmen
+            let rhThreshold;
             if (groundTemp <= 0) { // Sonderfall Kaltluft
                 if (heightAGLInMeters <= 2000) {
                     rhThreshold = currentThresholds.low;
@@ -465,6 +464,34 @@ export function interpolateWeatherData(weatherData, sliderIndex, interpStep, bas
                     rhThreshold = currentThresholds.high;
                 }
             }
+
+            // 2. RH-basierten CC-Schätzwert berechnen (stetige lineare Skalierung).
+            //
+            // Physikalische Grundlage: Unterhalb der Schwelle ist die Luft zu trocken
+            // für stabile Kondensation. An der Schwelle beginnt Wolkenbildung möglich
+            // zu werden, bei 100% rh ist vollständige Bedeckung physikalisch zwingend.
+            //
+            // Die Formel: cc_rh = (rh - threshold) / (100 - threshold) * 100
+            // ergibt eine stetige Funktion von 0% (an der Schwelle) bis 100% (bei rh=100%).
+            //
+            // Die stockwerkabhängige Schwelle berücksichtigt implizit die Eissättigung:
+            //   - Unteres Stockwerk (Wasser): threshold 75–90% (strenger)
+            //   - Mittleres Stockwerk (Mischphase): threshold 70–85%
+            //   - Hohes Stockwerk (Eis): threshold 65% (Eis kondensiert früher)
+            const cc_rh = rh < rhThreshold
+                ? 0
+                : Math.max(0, (rh - rhThreshold) / (100 - rhThreshold) * 100);
+
+            // 3. Finales CC: Maximum aus API-Wert und RH-Schätzwert.
+            //
+            // Wo die API gute Daten hat, dominiert sie unverändert.
+            // Wo die API schweigt (cc=0) oder systematisch unterschätzt
+            // (bekanntes Problem bei ICON für tiefe Stratus), springt
+            // der RH-Schätzwert ein. Kein harter Sprung, keine Überschreibung.
+            const cc_api = Number.isFinite(dataPoint.cc) ? dataPoint.cc : 0;
+            dataPoint.cc     = Math.min(100, Math.max(cc_api, cc_rh));
+            dataPoint.cc_api = cc_api;   // Original-API-Wert (für Debugging)
+            dataPoint.cc_rh  = Number(cc_rh.toFixed(1)); // RH-Schätzwert (für Debugging)
         }
 
         dataPoint.displayHeight = height;
