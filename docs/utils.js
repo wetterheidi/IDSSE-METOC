@@ -208,21 +208,28 @@ export function analyzeCloudLayers(weatherData) {
         return [];
     }
 
+    // Ermittle die tatsächlich vorhandenen Druckstufen aus den API-Daten.
+    // Das macht die Funktion robust gegenüber Modellen mit unterschiedlichen Levels
+    // (z.B. ECMWF hat keine 950/925/900 hPa, ICON-D2 hat sie alle).
+    const availablePressureLevels = Object.keys(weatherData)
+        .map(key => { const m = key.match(/^geopotential_height_(\d+)hPa$/); return m ? parseInt(m[1]) : null; })
+        .filter(Boolean)
+        .sort((a, b) => b - a); // Absteigend sortieren (1000 -> 200)
+
     const thresholds = [];
-    const pressureLevels = [1000, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200];
 
     for (let i = 0; i < weatherData.time.length; i++) {
-        const groundTemp = weatherData.temperature_2m[i];
+        const groundTemp = weatherData.temperature_2m?.[i];
         let stockwerke = { low: [], mid: [], high: [] };
 
-        // 1. Druckstufen den Stockwerken zuordnen
-        for (const p of pressureLevels) {
+        // 1. Druckstufen den Stockwerken zuordnen – nur mit tatsächlich vorhandenen Levels
+        for (const p of availablePressureLevels) {
             const temp = weatherData[`temperature_${p}hPa`]?.[i];
             const height = weatherData[`geopotential_height_${p}hPa`]?.[i];
 
-            if (temp === null || height === null || temp === undefined || height === undefined) continue;
+            if (temp == null || height == null) continue;
 
-            if (groundTemp <= 0) { // Sonderfall Kaltluft
+            if (groundTemp != null && groundTemp <= 0) { // Sonderfall Kaltluft
                 if (height <= 2000) stockwerke.low.push(p);
                 else if (temp > -30) stockwerke.mid.push(p);
                 else stockwerke.high.push(p);
@@ -233,21 +240,24 @@ export function analyzeCloudLayers(weatherData) {
             }
         }
 
-        // 2. maxCC und RH-Schwelle pro Stockwerk berechnen
+        // 2. maxCC und RH-Schwelle pro Stockwerk berechnen.
+        // Fallback: Wenn für ein Stockwerk keine Levels vorhanden sind (z.B. Modell
+        // ohne hohe Druckstufen), nutzen wir einen moderaten Wert statt 95%,
+        // damit die Wolkenerkennung nicht komplett ausfällt.
         const getThreshold = (pLevels, defaultHigh, defaultLow) => {
-            if (pLevels.length === 0) return 95; // Konservativer Fallback
-            const maxCC = Math.max(...pLevels.map(p => weatherData[`cloud_cover_${p}hPa`]?.[i] || 0));
+            if (pLevels.length === 0) return 80; // Moderater Fallback (vorher: 95 = zu konservativ)
+            const maxCC = Math.max(...pLevels.map(p => weatherData[`cloud_cover_${p}hPa`]?.[i] ?? 0));
             return maxCC > 50 ? defaultHigh : defaultLow;
         };
 
         thresholds.push({
             low: getThreshold(stockwerke.low, 90, 75),
             mid: getThreshold(stockwerke.mid, 85, 70),
-            high: 65 // Fester Wert für hohe Wolken
+            high: 65 // Fester Wert für hohe Wolken (Cirrus etc.)
         });
     }
 
-    console.log('[WeatherManager] Cloud layer thresholds analyzed for all timesteps.');
+    console.log(`[analyzeCloudLayers] Schwellenwerte berechnet. Gefundene Druckstufen: ${availablePressureLevels.join(', ')}`);
     return thresholds;
 }
 
@@ -380,20 +390,20 @@ export function interpolateWeatherData(weatherData, sliderIndex, interpStep, bas
 
         let dataPoint;
 
-        let cc = 0; // Standardwert ist 0
+        // Wolkenbedeckung: lineare Interpolation zwischen den realen Druckniveaus.
+        // Außerhalb der Druckniveaus (d.h. unterhalb des niedrigsten oder oberhalb des
+        // höchsten) wird der Randwert gehalten (Clamp), damit kein Datenverlust entsteht.
+        let cc = 0;
         if (ccHeightData.length > 0) {
-            // Finde den Index des nächstgelegenen realen Datenpunktes
-            let closestPressureLevelIndex = 0;
-            let minDistance = Infinity;
-
-            ccHeightData.forEach((h, index) => {
-                const distance = Math.abs(heightASLInMeters - h);
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closestPressureLevelIndex = index;
-                }
-            });
-            cc = ccValueData[closestPressureLevelIndex]; // Weise den Wert zu
+            const interpolatedCc = linearInterpolate(ccHeightData, ccValueData, heightASLInMeters);
+            if (interpolatedCc !== null) {
+                cc = interpolatedCc;
+            } else if (heightASLInMeters < ccHeightData[0]) {
+                cc = ccValueData[0]; // Unterhalb: Bodenwert halten
+            } else {
+                cc = ccValueData[ccHeightData.length - 1]; // Oberhalb: Obergrenzwert halten
+            }
+            cc = Math.max(0, Math.min(100, cc)); // Auf 0-100% klemmen
         }
 
         if (heightAGLInMeters === 0) {
@@ -481,17 +491,14 @@ export function findCloudLayers(interpolatedData) {
     const categoryOrder = { 'FEW': 1, 'SCT': 2, 'BKN': 3, 'OVC': 4 };
 
     const getMetarCategory = (cc) => {
-        /* Alle Bedeckungsgrade
-        if (cc <= 5) return null;
-        if (cc <= 25) return 'FEW';
-        if (cc <= 50) return 'SCT';
-        if (cc <= 87) return 'BKN';
-        return 'OVC';*/
-
-        // Nur Ceiling: 
-        if (cc <= 50) return null; // Ignoriert SKC, FEW und SCT
-        if (cc <= 87) return 'BKN';
-        return 'OVC';
+        // Für die Wolkenuntergrenze (cloudBase) berichten wir ab FEW (>5%),
+        // damit auch Modelle mit niedrigerer Bedeckungsauflösung erfasst werden.
+        // SKC (<=5%) wird weiterhin ignoriert (irrelevant für Flugbetrieb).
+        if (cc <= 5)  return null;  // SKC – keine Wolke
+        if (cc <= 25) return 'FEW'; // FEW: 1-2 Achtel
+        if (cc <= 50) return 'SCT'; // SCT: 3-4 Achtel
+        if (cc <= 87) return 'BKN'; // BKN: 5-7 Achtel (Ceiling)
+        return 'OVC';               // OVC: 8 Achtel (Ceiling)
     };
 
     // NEU: Überspringe den ersten Punkt (Index 0 = Bodenniveau)
@@ -499,11 +506,7 @@ export function findCloudLayers(interpolatedData) {
 
         const currentCategory = getMetarCategory(point.cc);
 
-        // --- NEUES DEBUG-LOG ---
-        if (point.cc > 5 && point.cc <= 50) { // Wir loggen Wolken, die wir jetzt ignorieren (FEW/SCT)
-            //console.log(`[findCloudLayers] IGNORIERT: Höhe ${point.displayHeight}m, Bedeckung: ${point.cc}% (FEW/SCT)`);
-        }
-        // --- ENDE DEBUG-LOG ---
+
 
         if (!currentCategory || reportedLayers.length >= 3) {
             continue;
@@ -625,6 +628,6 @@ export function getBlendedCombinedStatus(profile, summary, getManualOverrides) {
 
         combinedStatus[hour] = combinedStatusForHour;
     });
-
+    console.log('***************** Neue Version');
     return combinedStatus;
 }

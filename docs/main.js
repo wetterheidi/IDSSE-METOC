@@ -35,6 +35,10 @@ let currentForecastDay = 0;      // Aktuell gewählter Prognosetag (0=Heute, 1=M
 export let manualOverrides = {};
 export let visibleChartMetrics = new Set(Object.values(METRICS_CONFIG).map(m => m.summaryKey));
 
+// Guard: verhindert, dass runAndUpdateDashboard() parallel mehrfach läuft.
+// (Passiert z.B. wenn updateManualOverride() es aufruft während es noch läuft)
+let dashboardRunning = false;
+
 // Getter-Funktionen
 export const getVisibleChartMetrics = () => visibleChartMetrics;
 export const getManualOverrides = () => manualOverrides;
@@ -329,7 +333,8 @@ export async function updateManualOverride(ruleKey, hour, newStatus) {
         );
 
         map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
-        runAndUpdateDashboard();
+        // Kein runAndUpdateDashboard() hier: manuelle Overrides beeinflussen nur die Anzeige,
+        // nicht die rohen Wetterdaten. Das Dashboard wird beim nächsten Auto-Check aktualisiert.
     }
 }
 
@@ -362,6 +367,11 @@ function handleLegendClick(chart) {
  * (Version 3.2: Vollständig korrigiert)
  */
 async function runAndUpdateDashboard() {
+    if (dashboardRunning) {
+        console.warn('[Dashboard] Läuft bereits – überspringe doppelten Aufruf.');
+        return;
+    }
+    dashboardRunning = true;
     ui.setDashboardMessage(`<p>Prüfe ${await db.getProfileCount()} Profile...</p>`);
 
     // --- LÖSUNG: Feste Modell-Konfiguration für das Dashboard ---
@@ -420,8 +430,13 @@ async function runAndUpdateDashboard() {
         results.push({ profile: profileData, summary: summary });
     }
 
-    const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
-    ui.displayAutoWarnings(activeAlarms, getManualOverrides);
+    try {
+        const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
+        ui.displayAutoWarnings(activeAlarms, getManualOverrides);
+    } finally {
+        // Immer zurücksetzen, auch wenn ein Fehler auftritt
+        dashboardRunning = false;
+    }
 }
 
 /**

@@ -567,12 +567,15 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
 // 5. INTERNE KERNLOGIK: SCHWELLENWERTPRÜFUNG
 // -----------------------------------------------------------
 
-export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activeMetrics, forecastDay) {    // 1. Cache-Schlüssel (Unverändert)
+export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activeMetrics, forecastDay) {
+    // 1. Cache-Schlüssel
+    // WICHTIG: runTimeISO wird NICHT in den Key aufgenommen, da sie sich alle 6h ändert
+    // und den Cache damit nutzlos machen würde. Der Timestamp im Cache-Eintrag
+    // reicht aus, um veraltete Daten zu erkennen.
     const modelApiName = modelInfo ? modelInfo.apiName : 'auto';
-    const modelRunISO = modelInfo ? modelInfo.runTimeISO : 'latest';
-    const cacheKey = `${profile.id}_${modelApiName}_${modelRunISO}_day${forecastDay || 0}`;
+    const cacheKey = `${profile.id}_${modelApiName}_day${forecastDay || 0}`;
 
-    // 2. Cache-Prüfung (Unverändert)
+    // 2. Cache-Prüfung
     try {
         const cachedData = await getCache(cacheKey);
         const THIRTY_MINUTES = 30 * 60 * 1000;
@@ -631,7 +634,32 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     console.log(`[weather.js] Angeforderte Prognosetage für ${modelApiName}: ${forecastDays}`);
 
     // 5. Sequenzielle Schleife (API-URL-Bau)
+    // Hilfsfunktion: fetch mit Exponential Backoff bei 429
+    const fetchWithRetry = async (url, retries = 3) => {
+        for (let attempt = 0; attempt < retries; attempt++) {
+            const res = await fetch(url);
+            if (res.status === 429) {
+                const waitMs = Math.pow(2, attempt) * 1500; // 1.5s, 3s, 6s
+                console.warn(`[weather.js] 429 Too Many Requests – warte ${waitMs}ms (Versuch ${attempt + 1}/${retries})...`);
+                await new Promise(r => setTimeout(r, waitMs));
+                continue;
+            }
+            return res;
+        }
+        throw new Error('API-Limit dauerhaft überschritten (429). Bitte später erneut versuchen.');
+    };
+
+    // Hilfsfunktion: Pause zwischen Chunks
+    const CHUNK_DELAY_MS = 500; // 500ms Pause = max 2 Chunk-Paare/s, weit unter jedem API-Limit
+    let isFirstChunk = true;
+
     for (const chunk of pointChunks) {
+        // Warte zwischen Chunks (nicht vor dem ersten)
+        if (!isFirstChunk) {
+            await new Promise(r => setTimeout(r, CHUNK_DELAY_MS));
+        }
+        isFirstChunk = false;
+
         const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
         const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
@@ -652,7 +680,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
                 // Dies ist Zeile 283 (Die Fehlerzeile)
                 forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-            fetchPromises.push(fetch(forecastUrl));
+            fetchPromises.push(fetchWithRetry(forecastUrl));
         }
 
         // --- URL 2: MARINE (Wellen, etc.) ---
@@ -661,7 +689,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
             marineUrl += `&hourly=${apiParams.marine.hourly}`;
             marineUrl += `&models=${apiParams.marine.models}`;
-            fetchPromises.push(fetch(marineUrl));
+            fetchPromises.push(fetchWithRetry(marineUrl));
         }
 
         try {
@@ -778,7 +806,22 @@ export async function performLandSeaCheck(geojson) {
 
     // 4. API abfragen
     try {
-        const response = await fetch(url);
+        // Retry-Logik auch hier (eigene lokale Hilfsfunktion)
+        const fetchWithRetry = async (url, retries = 3) => {
+            for (let attempt = 0; attempt < retries; attempt++) {
+                const res = await fetch(url);
+                if (res.status === 429) {
+                    const waitMs = Math.pow(2, attempt) * 1500;
+                    console.warn(`[LandSeaCheck] 429 – warte ${waitMs}ms...`);
+                    await new Promise(r => setTimeout(r, waitMs));
+                    continue;
+                }
+                return res;
+            }
+            throw new Error('429 – API-Limit beim Land/See-Check dauerhaft überschritten.');
+        };
+
+        const response = await fetchWithRetry(url);
 
         if (!response.ok) {
             throw new Error(`API-Antwort war nicht OK: ${response.status}`);
