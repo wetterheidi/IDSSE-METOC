@@ -390,18 +390,39 @@ export function interpolateWeatherData(weatherData, sliderIndex, interpStep, bas
 
         let dataPoint;
 
-        // Wolkenbedeckung: lineare Interpolation zwischen den realen Druckniveaus.
-        // Außerhalb der Druckniveaus (d.h. unterhalb des niedrigsten oder oberhalb des
-        // höchsten) wird der Randwert gehalten (Clamp), damit kein Datenverlust entsteht.
+        // Wolkenbedeckung: Stufen-Interpolation (kein linearer Uebergang).
+        //
+        // Physikalische Begruendung: Eine Wolkenuntergrenze ist scharf, kein Gradient.
+        // Lineare Interpolation zwischen einem wolkenfreien und einem bewoelkten Niveau
+        // wuerde eine kuenstliche Untergrenze erzeugen die tiefer als die echte liegt.
+        //
+        // Stattdessen: Fuer jeden Hoehenpunkt gilt der Wert des naechsttieferen
+        // Druckniveaus (= "was war die Bedeckung unmittelbar darunter?").
+        // Erst ab dem Niveau selbst gilt dessen Wert.
+        //
+        // Beispiel: ccHeightData = [111m, 800m, 1500m], ccValueData = [0%, 0%, 100%]
+        //   Hoehe  900m -> naechsttieferes Niveau: 800m (0%)  -> cc = 0%
+        //   Hoehe 1500m -> genau auf dem Niveau:  1500m (100%) -> cc = 100%
+        //   Hoehe 1600m -> naechsttieferes Niveau: 1500m (100%) -> cc = 100%
         let cc = 0;
         if (ccHeightData.length > 0) {
-            const interpolatedCc = linearInterpolate(ccHeightData, ccValueData, heightASLInMeters);
-            if (interpolatedCc !== null) {
-                cc = interpolatedCc;
-            } else if (heightASLInMeters < ccHeightData[0]) {
-                cc = ccValueData[0]; // Unterhalb: Bodenwert halten
+            if (heightASLInMeters < ccHeightData[0]) {
+                // Unterhalb des tiefsten CC-Niveaus: 0% (kein Messwert vorhanden).
+                // Wir interpolieren NICHT nach unten, da wir nicht wissen ob es
+                // unterhalb des tiefsten Niveaus Bewoelkung gibt.
+                // Ausnahme: Der Bodenpunkt (AGL=0) wird separat mit cloud_cover befuellt.
+                cc = 0;
+            } else if (heightASLInMeters >= ccHeightData[ccHeightData.length - 1]) {
+                // Oberhalb des hoechsten CC-Niveaus: Wert des hoechsten Niveaus
+                cc = ccValueData[ccHeightData.length - 1];
             } else {
-                cc = ccValueData[ccHeightData.length - 1]; // Oberhalb: Obergrenzwert halten
+                // Dazwischen: Wert des naechsttieferen Niveaus (Stufe von unten)
+                for (let ci = ccHeightData.length - 2; ci >= 0; ci--) {
+                    if (heightASLInMeters >= ccHeightData[ci]) {
+                        cc = ccValueData[ci];
+                        break;
+                    }
+                }
             }
             cc = Math.max(0, Math.min(100, cc)); // Auf 0-100% klemmen
         }
@@ -498,62 +519,144 @@ export function interpolateWeatherData(weatherData, sliderIndex, interpStep, bas
         interpolatedData.push(dataPoint);
     });
 
-    console.log(`[DEBUG] interpolateWeatherData finished. baseHeight: ${baseHeight}, Returning ${interpolatedData.length} data points. First point:`, interpolatedData[0]);
+    // ── ccLevels fuer findCloudLayers ──────────────────────────────────────────
+    // Baue das Niveau-Array das findCloudLayers direkt benoetigt.
+    // Fuer jedes CC-Druckniveau: AGL-Hoehe, cc_api, rh (interpoliert am Niveau),
+    // und den stockwerkabhaengigen RH-Schwellenwert.
+    //
+    // RH wird hier linear interpoliert (das ist korrekt – RH ist ein stetiger
+    // Feldwert). Nur CC wird nicht interpoliert (Stufenlogik in findCloudLayers).
+    const ccLevels = ccPressureLevels.map((hPa, i) => {
+        const height_asl = ccHeightData[i];
+        const height_agl = height_asl - baseHeight;
+        const cc_api     = ccValueData[i];
+
+        // RH am Druckniveau (direkt aus API, kein Umweg ueber 50m-Raster)
+        const rh_at_level = weatherData[`relative_humidity_${hPa}hPa`]?.[sliderIndex] ?? null;
+        const temp_at_level = weatherData[`temperature_${hPa}hPa`]?.[sliderIndex] ?? null;
+        const groundTemp = weatherData.temperature_2m[sliderIndex];
+
+        // Stockwerk-abhaengigen RH-Schwellenwert bestimmen (identische Logik wie bisher)
+        let rhThreshold = currentThresholds.low; // Fallback
+        if (groundTemp != null && groundTemp <= 0) {
+            if (height_agl <= 2000)          rhThreshold = currentThresholds.low;
+            else if (temp_at_level > -30)    rhThreshold = currentThresholds.mid;
+            else                             rhThreshold = currentThresholds.high;
+        } else {
+            if (temp_at_level > 0)           rhThreshold = currentThresholds.low;
+            else if (temp_at_level > -30)    rhThreshold = currentThresholds.mid;
+            else                             rhThreshold = currentThresholds.high;
+        }
+
+        return {
+            hPa,
+            height_agl_m: height_agl,
+            height_asl_m: height_asl,
+            cc_api,
+            rh:           rh_at_level,
+            rhThreshold
+        };
+    });
+
+    // ccLevels als Property am Array mitgeben (fuer calculateDerivedValue)
+    interpolatedData.ccLevels = ccLevels;
+
+    console.log(`[DEBUG] interpolateWeatherData finished. baseHeight: ${baseHeight}, Returning ${interpolatedData.length} data points. ccLevels:`, ccLevels);
     return interpolatedData;
 }
 
 /**
-     * NEUE FUNKTION: Findet signifikante Wolkenschichten und gibt sie als strukturiertes Array zurück.
-     * @param {object[]} interpolatedData - Die interpolierten Wetterdaten.
-     * @returns {Array<{cover: string, base: number}>} Ein Array von Wolkenschicht-Objekten.
-     * @private
-     */
-export function findCloudLayers(interpolatedData) {
-    if (!interpolatedData || interpolatedData.length === 0) {
-        return [];
-    }
-
-    const reportedLayers = [];
-    let lastReportedCategory = null;
-    const categoryOrder = { 'FEW': 1, 'SCT': 2, 'BKN': 3, 'OVC': 4 };
+ * Findet signifikante Wolkenschichten aus den Druckniveau-Daten.
+ *
+ * Methode: "Stufe von oben" auf Niveau-Ebene
+ * ─────────────────────────────────────────
+ * Jedes Druckniveau repraesentiert eine Atmosphaerenschicht, keine Punktmessung.
+ * Der CC-Wert bei 850hPa gilt fuer die Schicht zwischen ~925hPa und ~700hPa.
+ * Die Untergrenze dieser Schicht liegt am unteren Rand, d.h. bei der Hoehe
+ * des naechsttieferen Niveaus.
+ *
+ * Beispiel: ccLevels = [{h:111,cc:0}, {h:800,cc:0}, {h:1500,cc:100}, {h:3000,cc:100}]
+ *   Schicht 111–800m:  cc=0%   -> SKC
+ *   Schicht 800–1500m: cc=100% -> OVC, Untergrenze: 800m AGL
+ *   Schicht >1500m:    cc=100% -> OVC (bereits gemeldet)
+ *
+ * RH-Korrektur ebenfalls auf Niveau-Ebene:
+ *   cc_final = max(cc_api, cc_rh) fuer jedes Niveau separat,
+ *   bevor die Schicht-Logik angewendet wird.
+ *
+ * @param {object[]} ccLevels - Array von Niveau-Objekten (aufsteigend nach Hoehe):
+ *   { height_agl_m, cc_api, rh, rhThreshold }
+ * @param {number} baseHeight_m - Gelaendehoehe MSL (fuer AGL-Berechnung)
+ * @returns {Array<{cover, base, isCeiling}>}
+ */
+export function findCloudLayers(ccLevels, baseHeight_m = 0) {
+    if (!ccLevels || ccLevels.length === 0) return [];
 
     const getMetarCategory = (cc) => {
-        // Für die Wolkenuntergrenze (cloudBase) berichten wir ab FEW (>5%),
-        // damit auch Modelle mit niedrigerer Bedeckungsauflösung erfasst werden.
-        // SKC (<=5%) wird weiterhin ignoriert (irrelevant für Flugbetrieb).
-        if (cc <= 5)  return null;  // SKC – keine Wolke
-        if (cc <= 25) return 'FEW'; // FEW: 1-2 Achtel
-        if (cc <= 50) return 'SCT'; // SCT: 3-4 Achtel
-        if (cc <= 87) return 'BKN'; // BKN: 5-7 Achtel (Ceiling)
-        return 'OVC';               // OVC: 8 Achtel (Ceiling)
+        if (cc <= 5)  return null;   // SKC
+        if (cc <= 25) return 'FEW';  // 1-2 Achtel
+        if (cc <= 50) return 'SCT';  // 3-4 Achtel
+        if (cc <= 87) return 'BKN';  // 5-7 Achtel (Ceiling)
+        return 'OVC';                // 8 Achtel (Ceiling)
     };
 
-    // NEU: Überspringe den ersten Punkt (Index 0 = Bodenniveau)
-    for (const point of interpolatedData.slice(1)) {
+    // RH-Korrektur auf Niveau-Ebene anwenden
+    const levels = ccLevels.map(lvl => {
+        const cc_rh = (Number.isFinite(lvl.rh) && Number.isFinite(lvl.rhThreshold) && lvl.rh >= lvl.rhThreshold)
+            ? Math.max(0, (lvl.rh - lvl.rhThreshold) / (100 - lvl.rhThreshold) * 100)
+            : 0;
+        const cc_api = Number.isFinite(lvl.cc_api) ? lvl.cc_api : 0;
+        const cc_final = Math.min(100, Math.max(cc_api, cc_rh));
+        return { ...lvl, cc_final, cc_rh };
+    });
 
-        const currentCategory = getMetarCategory(point.cc);
+    // Schicht-Logik: "Stufe von oben"
+    // Fuer jedes Niveau i gilt: Der CC-Wert von Niveau i bestimmt die Schicht
+    // zwischen Niveau i-1 (unterer Rand) und Niveau i (oberer Rand).
+    // Die gemeldete Untergrenze ist die Hoehe des unteren Randes (Niveau i-1),
+    // bzw. 0m AGL fuer das tiefste Niveau (keine Information darunter).
+    const reportedLayers = [];
+    const categoryOrder = { 'FEW': 1, 'SCT': 2, 'BKN': 3, 'OVC': 4 };
+    let lastCategory = null;
 
+    for (let i = 0; i < levels.length; i++) {
+        const lvl = levels[i];
+        const cat = getMetarCategory(lvl.cc_final);
 
-
-        if (!currentCategory || reportedLayers.length >= 3) {
+        if (!cat) {
+            // Wolkenfreies Niveau – naechste Schicht kann wieder von vorne beginnen
+            lastCategory = null;
             continue;
         }
 
-        const isNewLayer = !lastReportedCategory || categoryOrder[currentCategory] > categoryOrder[lastReportedCategory];
-        if (isNewLayer) {
+        if (reportedLayers.length >= 3) break;
 
-            // --- NEUES DEBUG-LOG ---
-            console.log(`%c[findCloudLayers] GEFUNDEN: Höhe ${point.displayHeight}m, Bedeckung: ${point.cc}% (${currentCategory})`, "color: green; font-weight: bold;");
-            // --- ENDE DEBUG-LOG ---
+        // Nur melden wenn Kategorie hoeher als zuletzt gemeldete
+        const isNew = !lastCategory || categoryOrder[cat] > categoryOrder[lastCategory];
+        if (!isNew) continue;
 
-            reportedLayers.push({
-                cover: currentCategory,
-                base: point.displayHeight, // Höhe AGL in Metern
-                isCeiling: (currentCategory === 'BKN' || currentCategory === 'OVC')
-            });
-            lastReportedCategory = currentCategory;
-        }
+        // Untergrenze = Hoehe des naechsttieferen Niveaus (unterer Rand der Schicht).
+        // Sonderfall: kein tieferes Niveau vorhanden (z.B. ECMWF ohne 1000/925hPa).
+        // Dann gilt die Hoehe des Niveaus selbst als Untergrenze – wir wissen nicht
+        // wie tief die Wolke reicht, melden aber den sichersten bekannten Wert.
+        // 0m AGL waere hier irreführend (suggeriert Bodennebel).
+        const lowerHeight_agl = i > 0 ? levels[i - 1].height_agl_m : levels[i].height_agl_m;
+
+        console.log(
+            `%c[findCloudLayers] Schicht: ${cat} | Untergrenze: ${lowerHeight_agl}m AGL` +
+            ` | Niveau-Hoehe: ${lvl.height_agl_m}m AGL` +
+            ` | cc_api=${lvl.cc_api}% cc_rh=${lvl.cc_rh ? lvl.cc_rh.toFixed(1) : 0}% cc_final=${lvl.cc_final.toFixed(0)}%`,
+            'color: #1abc9c; font-weight: bold;'
+        );
+
+        reportedLayers.push({
+            cover:     cat,
+            base:      lowerHeight_agl,
+            isCeiling: (cat === 'BKN' || cat === 'OVC')
+        });
+        lastCategory = cat;
     }
+
     return reportedLayers;
 }
 

@@ -122,7 +122,118 @@ function chunkArray(array, size) {
  * @param {int} h - Der Index der Stunde (0-23)
  * @returns {number | null} - Der berechnete Wert oder null
  */
-function calculateDerivedValue(metric, hourly, h, elevation) {
+/**
+ * Gibt ein vollständiges, formatiertes Vertikalprofil für einen Sampling-Punkt
+ * und eine Stunde in der Browser-Konsole aus.
+ *
+ * Zweck: Verifizierung der Wolkenuntergrenze gegen METAR-Beobachtungen
+ * und andere NWP-Tools. Alle Höhen in Fuß AGL (METAR-Standard).
+ *
+ * Aufruf: Wird von calculateDerivedValue() für cloudBase/cloudCeiling ausgelöst.
+ *
+ * @param {object} locationInfo  - { lat, lon, elevation_m }
+ * @param {string} timeISO       - ISO-Zeitstempel des Vorhersagestundepunkts
+ * @param {object[]} profile     - Interpolierte Datenpunkte (50-m-Raster)
+ * @param {object[]} layers      - Gefundene Wolkenschichten
+ * @param {object} thresholds    - Aktive RH-Schwellen { low, mid, high }
+ */
+function logCloudProfile(locationInfo, timeISO, profile, layers, thresholds) {
+    const FT = 3.28084;
+
+    // --- Kopfzeile ---
+    const lat  = locationInfo.lat  != null ? locationInfo.lat.toFixed(4)  : '?';
+    const lon  = locationInfo.lon  != null ? locationInfo.lon.toFixed(4)  : '?';
+    const elev = locationInfo.elevation_m != null
+        ? `${locationInfo.elevation_m}m / ${Math.round(locationInfo.elevation_m * FT)}ft`
+        : '?';
+    const model = locationInfo.modelName || 'unbekannt';
+    const label = `☁ Wolkenprofil | ${model} | ${timeISO} UTC | ${lat}°N ${lon}°E | Gelände: ${elev}`;
+
+    console.groupCollapsed(`%c${label}`, 'color: #1abc9c; font-weight: bold;');
+
+    // --- RH-Schwellen ---
+    console.log(
+        `%cRH-Schwellen (aktuell): Tief=${thresholds.low}%  Mittel=${thresholds.mid}%  Hoch=65%`,
+        'color: #888; font-style: italic;'
+    );
+
+    // --- Vollständiges Profil als Tabelle ---
+    // Nur Punkte mit cc > 0 oder rh >= 60% sind typischerweise relevant,
+    // aber wir zeigen ALLE Punkte für lückenlose Verifikation.
+    const tableData = profile
+        .filter(p => p.displayHeight !== undefined)
+        .map(p => {
+            const heightFt = Math.round(p.displayHeight * FT / 100) * 100; // gerundet auf 100ft
+            const cc     = Number.isFinite(p.cc)     ? Math.round(p.cc)     : null;
+            const ccApi  = Number.isFinite(p.cc_api) ? Math.round(p.cc_api) : null;
+            const ccRh   = Number.isFinite(p.cc_rh)  ? Number(p.cc_rh.toFixed(1)) : null;
+            const rh     = Number.isFinite(p.rh)     ? Math.round(p.rh)     : null;
+            const temp   = Number.isFinite(p.temp)   ? Number(p.temp.toFixed(1)) : null;
+            const dew    = Number.isFinite(p.dew)    ? Number(p.dew.toFixed(1))  : null;
+            const spread = (temp != null && dew != null) ? Number((temp - dew).toFixed(1)) : null;
+            const pres   = Number.isFinite(p.pressure) ? Math.round(p.pressure) : null;
+
+            // METAR-Kategorie aus finalem CC bestimmen
+            let metar = 'SKC';
+            if (cc > 87) metar = 'OVC';
+            else if (cc > 50) metar = 'BKN ⚠';
+            else if (cc > 25) metar = 'SCT';
+            else if (cc > 5)  metar = 'FEW';
+
+            return {
+                'Höhe (ft AGL)': heightFt,
+                'Druck (hPa)':   pres,
+                'Temp (°C)':     temp,
+                'Td (°C)':       dew,
+                'T-Td (K)':      spread,
+                'rh (%)':        rh,
+                'CC final (%)':  cc,
+                'CC API (%)':    ccApi,
+                'CC RH (%)':     ccRh,
+                'METAR':         metar
+            };
+        });
+
+    console.table(tableData);
+
+    // --- Erkannte Schichten (Zusammenfassung) ---
+    if (layers.length === 0) {
+        console.log('%c-> Ergebnis: SKC (keine Wolken erkannt)', 'color: green; font-weight: bold;');
+    } else {
+        const layerStr = layers.map(l => {
+            const baseFt = Math.round(l.base * FT / 100) * 100;
+            const ceiling = l.isCeiling ? ' <- CEILING' : '';
+            return `${l.cover} ${String(baseFt).padStart(6)}ft AGL${ceiling}`;
+        }).join('\n  ');
+        console.log(
+            `%c-> Erkannte Schichten:\n  ${layerStr}`,
+            'color: #e67e22; font-weight: bold;'
+        );
+
+        // Explizite Ceiling-Zusammenfassung für schnellen METAR-Vergleich
+        const ceilingLayer = layers.find(l => l.isCeiling);
+        if (ceilingLayer) {
+            const ceilFt = Math.round(ceilingLayer.base * FT / 100) * 100;
+            // METAR-Format: BKN025 = BKN 2500ft -> dreistellig in Hundert Fuß
+            const metarCode = `${ceilingLayer.cover}${String(Math.round(ceilFt / 100)).padStart(3, '0')}`;
+            console.log(
+                `%c-> Ceiling (METAR-Format): ${metarCode}  (${ceilFt} ft AGL)`,
+                'color: #e74c3c; font-weight: bold; font-size: 1.1em;'
+            );
+        } else {
+            const baseFt = Math.round(layers[0].base * FT / 100) * 100;
+            console.log(
+                `%c-> Kein Ceiling. Tiefste Wolke: ${layers[0].cover} ${baseFt}ft AGL`,
+                'color: #27ae60; font-weight: bold;'
+            );
+        }
+    }
+
+    console.groupEnd();
+}
+
+
+function calculateDerivedValue(metric, hourly, h, elevation, locationInfo) {
     const summaryKey = metric.summaryKey; // Holen wir uns aus dem Objekt
     try {
         switch (summaryKey) {
@@ -140,6 +251,8 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
             case 'cloudCeiling': {
                 // Gemeinsame Interpolationslogik für cloudBase UND cloudCeiling.
                 // Der Unterschied liegt nur in der Layer-Filterung am Ende.
+                // cloudBase  → niedrigste Wolke ab FEW  (alle Layer)
+                // cloudCeiling → niedrigste BKN/OVC     (nur Ceiling-Layer)
 
                 // 1. Schwellenwerte analysieren
                 const cloudThresholds = analyzeCloudLayers(hourly);
@@ -153,50 +266,37 @@ function calculateDerivedValue(metric, hourly, h, elevation) {
                 const baseHeight_m = elevation || 0;
                 const interpStep = 50;
 
-                // DEBUG (nur Stunde 0)
-                if (h === 0) {
-                    console.groupCollapsed(`[${summaryKey} DEBUG] Stunde 0 (BaseHeight: ${baseHeight_m}m)`);
-                    console.log("1. Schwellen:", currentThresholds);
-                }
-
-                // 3. Interpolieren
+                // 3. Interpolieren (50-m-Raster, mit RH-Korrektur)
                 const interpolatedData = interpolateWeatherData(
                     hourly, h, interpStep, baseHeight_m, 'm', currentThresholds
                 );
 
-                if (h === 0) {
-                    console.log("2. Interpolierte Punkte:", interpolatedData.length);
-                }
-
                 // 4. Alle Wolkenschichten finden (FEW, SCT, BKN, OVC)
-                const allLayers = findCloudLayers(interpolatedData);
+                // findCloudLayers arbeitet jetzt direkt auf den Druckniveaus (ccLevels),
+                // nicht auf dem interpolierten 50m-Raster. Das verhindert Artefakte
+                // durch Interpolation zwischen wolkenfreien und bewoelkten Niveaus.
+                const allLayers = findCloudLayers(interpolatedData.ccLevels, baseHeight_m);
 
-                if (h === 0) {
-                    console.log("3. Gefundene Schichten:", allLayers);
-                }
-
+                // 5. Ergebnis je nach Metrik
                 let result;
-
                 if (summaryKey === 'cloudBase') {
-                    // cloudBase: niedrigste Wolke ab FEW (alle Layer)
-                    if (allLayers.length > 0) {
-                        result = allLayers[0].base;
-                    } else {
-                        result = 99999; // SKC
-                    }
+                    result = allLayers.length > 0 ? allLayers[0].base : 99999;
                 } else {
-                    // cloudCeiling: niedrigste BKN oder OVC Schicht
                     const ceilingLayers = allLayers.filter(l => l.isCeiling);
-                    if (ceilingLayers.length > 0) {
-                        result = ceilingLayers[0].base;
-                    } else {
-                        result = 99999; // Kein Ceiling (CAVOK / FEW / SCT)
-                    }
+                    result = ceilingLayers.length > 0 ? ceilingLayers[0].base : 99999;
                 }
 
-                if (h === 0) {
-                    console.log(`4. Ergebnis (${summaryKey}): ${result}m`);
-                    console.groupEnd();
+                // 6. Profil-Log: wird von cloudBase ausgeloest.
+                //    Falls cloudBase nicht aktiv ist (kein Grenzwert gesetzt),
+                //    uebernimmt cloudCeiling den Log - so gibt es immer genau einen
+                //    Log pro Punkt/Stunde, unabhaengig davon welche Metrik aktiv ist.
+                const logByBase    = (summaryKey === 'cloudBase');
+                const logByCeiling = (summaryKey === 'cloudCeiling') &&
+                                     !(locationInfo && locationInfo.cloudBaseActive);
+                if (logByBase || logByCeiling) {
+                    const timeISO = hourly.time?.[h] ?? `Index ${h}`;
+                    const loc = locationInfo || {};
+                    logCloudProfile(loc, timeISO, interpolatedData, allLayers, currentThresholds);
                 }
 
                 return result;
@@ -350,7 +450,7 @@ export function getGridPoints(geojson, resolutionKm) {
  * Prüft die "flache" Array-Antwort des Sampling-Ansatzes.
  * NEU: Komplett dynamisch basierend auf METRICS_CONFIG.
  */
-function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecastDay) {
+function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecastDay, modelInfo) {
     const rules = profile.rules;
     const summary = getEmptySummary();
     const hourOffset = (forecastDay || 0) * 24;
@@ -438,9 +538,21 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                     value = dailyValueCache[summaryKey];
 
                 } else if (metric.paramType === 'derived') {
-                    value = calculateDerivedValue(metric, hourly, dataIndex, null); // <-- Index geändert
+                    value = calculateDerivedValue(metric, hourly, dataIndex, null, null);
                 } else if (metric.paramType === 'derived_pressure') {
-                    value = calculateDerivedValue(metric, hourly, dataIndex, elevation); // <-- Index geändert
+                    const locInfo = {
+                        lat: locationData.latitude,
+                        lon: locationData.longitude,
+                        elevation_m: elevation,
+                        // Log wird von cloudBase ausgeloest - falls cloudBase nicht aktiv ist,
+                        // uebernimmt cloudCeiling den Log (verhindert Doppelausgabe).
+                        cloudBaseActive: metrics.some(m => m.summaryKey === 'cloudBase'),
+                        // Modellname fuer den Profil-Log
+                        modelName: modelInfo
+                            ? (WEATHER_MODELS.DISPLAY_MAP[modelInfo.apiName] || modelInfo.apiName)
+                            : 'unbekannt'
+                    };
+                    value = calculateDerivedValue(metric, hourly, dataIndex, elevation, locInfo);
                 }
 
                 // Prüft, ob diese Metrik 'maritimeOnly' ist UND ob der aktuelle Punkt 'land' ist.
@@ -821,7 +933,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     // 6. Daten zusammennähen (Unverändert)
     console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
     console.log("%cRAW API DATA (Aggregated from Tiling):", "color: blue; font-weight: bold;", allApiResponses);
-    const finalSummary = checkThresholds_Sampling(profile, allApiResponses, activeMetrics, forecastDay);
+    const finalSummary = checkThresholds_Sampling(profile, allApiResponses, activeMetrics, forecastDay, modelInfo);
     // 7. Cache speichern (Unverändert)
     try {
         await setCache(cacheKey, finalSummary);
