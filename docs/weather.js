@@ -6,15 +6,16 @@
 import { getCache, setCache } from './db.js';
 import { METRICS_CONFIG, getApiParams, getMetricRules } from './metricsConfig.js';
 import { WEATHER_MODELS, API_URLS, getModelMaxDays } from './config.js';
-import { 
-    analyzeCloudLayers, 
+import {
+    analyzeCloudLayers,
     calculateDewpoint,
-    findCloudLayers, 
-    interpolateWeatherData, 
+    findCloudLayers,
+    interpolateWeatherData,
     interpolateWindAtAltitude,
     windDirection,
     windSpeed,
 } from './utils.js';
+import { showToast } from './ui.js';
 
 
 // -----------------------------------------------------------
@@ -862,6 +863,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             for (const response of responses) {
                 if (!response.ok) {
                     console.error("API-Fehler bei Chunk:", response.statusText, response.url);
+                    showToast(`Wetterdaten-Abruf fehlgeschlagen: ${response.statusText}`, 'error');
                     throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
                 }
             }
@@ -919,13 +921,15 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             // Fehlerprüfung (wie bisher, aber am gemergten Objekt)
             if (mergedLocationsData[0] && mergedLocationsData[0].error) {
                 console.error("Open-Meteo API-Fehler:", mergedLocationsData[0].reason);
-                throw new Error(`Open-MMeteo API-Fehler: ${mergedLocationsData[0].reason}`);
+                showToast(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`, 'error');
+                throw new Error(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
             }
 
             allApiResponses.push(...mergedLocationsData);
 
         } catch (err) {
             console.error("Fehler beim Abrufen eines Tiling-Stapels:", err);
+            showToast('Wetterdaten konnten nicht geladen werden.', 'error');
             return Object.assign(getEmptySummary(), { error: err.message });
         }
     }
@@ -992,6 +996,7 @@ export async function performLandSeaCheck(geojson) {
 
     } catch (err) {
         console.error("Fehler bei performLandSeaCheck Fetch:", err);
+        showToast('Land/See-Pruefung fehlgeschlagen.', 'warning');
         return { error: err.message };
     }
 }

@@ -372,7 +372,8 @@ async function runAndUpdateDashboard() {
         return;
     }
     dashboardRunning = true;
-    ui.setDashboardMessage(`<p>Prüfe ${await db.getProfileCount()} Profile...</p>`);
+    const profileCount = await db.getProfileCount();
+    ui.setDashboardMessage(`<p>Prüfe ${profileCount} Profile... <span id="dashboardProgress"></span></p>`);
 
     // --- LÖSUNG: Feste Modell-Konfiguration für das Dashboard ---
     // (Stellt sicher, dass der Auto-Monitor immer 'icon_seamless' verwendet)
@@ -391,9 +392,11 @@ async function runAndUpdateDashboard() {
         ? weather_MOCK.getGridPoints
         : weather_LIVE.getGridPoints;
 
-    for (const profile of profiles) {
+    for (let pi = 0; pi < profiles.length; pi++) {
+        const profile = profiles[pi];
+        const progressEl = document.getElementById('dashboardProgress');
+        if (progressEl) progressEl.textContent = `(${pi + 1}/${profiles.length})`;
 
-        // --- DAS IST DER BLOCK, DEN ICH VERGESSEN HATTE ---
         const profileData = {
             id: profile.id,
             name: profile.name,
@@ -502,7 +505,7 @@ async function handleManualCheck(profileData) {
 
     ui.activateManualMonitorTab();
 
-    ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Daten...</p>`);
+    ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Wetterdaten vom Server...</p>`);
     map.clearMapLayers();
 
     map.drawProfileBoundary(profileData.geojson);

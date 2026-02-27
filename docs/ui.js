@@ -1223,3 +1223,45 @@ function handleManualOverrideClick(event) {
     const nextStatus = STATUS_CYCLE[nextIndex];
     updateManualOverride(ruleKey, hour, nextStatus);
 }
+
+
+// -----------------------------------------------------------
+// TOAST-NOTIFICATION SYSTEM
+// -----------------------------------------------------------
+
+/**
+ * Zeigt eine Toast-Benachrichtigung an.
+ * @param {string} message - Die Nachricht
+ * @param {'info'|'warning'|'error'} level - Schweregrad
+ * @param {number} durationMs - Anzeigedauer in ms (0 = manuell schliessen)
+ */
+export function showToast(message, level = 'info', durationMs = 5000) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${level}`;
+    toast.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.textContent = '\u00D7';
+    closeBtn.addEventListener('click', () => toast.remove());
+    toast.appendChild(closeBtn);
+
+    container.appendChild(toast);
+
+    // Animation: einblenden
+    requestAnimationFrame(() => toast.classList.add('toast-visible'));
+
+    if (durationMs > 0) {
+        setTimeout(() => {
+            toast.classList.remove('toast-visible');
+            toast.addEventListener('transitionend', () => toast.remove());
+        }, durationMs);
+    }
+}

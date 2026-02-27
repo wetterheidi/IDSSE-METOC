@@ -146,16 +146,20 @@ export function interpolatePressure(height, pressureLevels, heights) {
         return null;
     }
 
-    // Assume pressures and heights are already paired correctly (heights ascending, pressures ascending)
+    // Assume pressures and heights are already paired correctly (heights ascending, pressures descending)
     if (height < heights[0] || height > heights[heights.length - 1]) {
         return null; // No extrapolation
     }
 
+    // Logarithmische Interpolation: Druck nimmt exponentiell mit der Hoehe ab.
+    // p(z) = exp( log(p0) + (log(p1) - log(p0)) * (z - z0) / (z1 - z0) )
     for (let i = 0; i < heights.length - 1; i++) {
         if (height >= heights[i] && height <= heights[i + 1]) {
             const h0 = heights[i], h1 = heights[i + 1];
             const p0 = pressureLevels[i], p1 = pressureLevels[i + 1];
-            return p0 + (p1 - p0) * (height - h0) / (h1 - h0);
+            if (p0 <= 0 || p1 <= 0) return null; // Sicherheitscheck fuer log()
+            const fraction = (height - h0) / (h1 - h0);
+            return Math.exp(Math.log(p0) + (Math.log(p1) - Math.log(p0)) * fraction);
         }
     }
     return null;

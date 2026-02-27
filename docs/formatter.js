@@ -182,11 +182,11 @@ export function formatOktas(value_perc, profile) {
 
 // WMO Code-Definitionen für TAF/METAR-Ausgabe
 export const WMO_TAF_MAP = {
-    0: 'NSW', 
-    1: 'NSW', 
-    2: 'NSW', 
-    3: 'NSW', 
-    45: 'FG',  
+    0: 'NSW',
+    1: 'NSW',
+    2: 'NSW',
+    3: 'NSW',
+    45: 'FG',
     48: 'FZFG',
     51: '-DZ', 
     53: 'DZ',  
