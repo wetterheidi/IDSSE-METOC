@@ -18,6 +18,41 @@ import {
 export const uiElements = {};
 const STATUS_CYCLE = ['ok', 'warn', 'alarm', null];
 
+// Validierungskonstanten
+const MAX_NAME_LENGTH = 50;
+const NAME_PATTERN = /^[a-zA-Z0-9äöüÄÖÜß\s\-_.()]+$/;
+
+
+// -----------------------------------------------------------
+// 1b. VALIDIERUNGS-HELFER
+// -----------------------------------------------------------
+
+/**
+ * Escaped HTML-Sonderzeichen, um XSS bei innerHTML zu verhindern.
+ */
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+/**
+ * Validiert einen Profil- oder Vorlagen-Namen.
+ * Gibt null zurück wenn gültig, sonst einen Fehler-String.
+ */
+function validateName(name, label = 'Name') {
+    if (!name || name.trim() === '') {
+        return `Bitte einen ${label} eingeben.`;
+    }
+    const trimmed = name.trim();
+    if (trimmed.length > MAX_NAME_LENGTH) {
+        return `${label} darf maximal ${MAX_NAME_LENGTH} Zeichen lang sein (aktuell: ${trimmed.length}).`;
+    }
+    if (!NAME_PATTERN.test(trimmed)) {
+        return `${label} enthält ungültige Zeichen. Erlaubt: Buchstaben, Zahlen, Leerzeichen, - _ . ( )`;
+    }
+    return null;
+}
 
 // -----------------------------------------------------------
 // 2. EXPORTIERTE FUNKTIONEN: INITIALISIERUNG & DYNAMISCHE GENERIERUNG
@@ -88,8 +123,8 @@ export function generateDynamicRuleInputs(isMaritime) {
             <div class="rule-input-group">
                 <label>${metric.displayName}:</label>
                 <div class="rule-input-fields">
-                    <input type="number" id="${metric.ruleName}_alarm" placeholder="Alarmschwelle" style="padding: 5px; border: 2px solid var(--color-danger);">
-                    <input type="number" id="${metric.ruleName}_warn" placeholder="Warnschwelle" style="padding: 5px; border: 2px solid var(--color-warning);">
+                    <input type="number" id="${metric.ruleName}_alarm" placeholder="Alarmschwelle">
+                    <input type="number" id="${metric.ruleName}_warn" placeholder="Warnschwelle">
                     <span id="${metric.uiUnitId}">${initialUnit}</span>
                 </div>
             </div>
@@ -113,17 +148,17 @@ export function generateDynamicRuleInputs(isMaritime) {
                 <div class="rule-input-group">
                     <label>${metric.displayName}:</label>
                     <div class="rule-input-fields">
-                        <select multiple id="${metric.ruleName}_alarm" size="6" style="padding: 5px; border: 2px solid var(--color-danger);">
+                        <select multiple id="${metric.ruleName}_alarm" size="6">
                             <option value="">-- ALARM --</option>
                             ${optionsHtml}
                         </select>
-                        <select multiple id="${metric.ruleName}_warn" size="6" style="padding: 5px; border: 2px solid var(--color-warning);">
+                        <select multiple id="${metric.ruleName}_warn" size="6">
                             <option value="">-- WARNUNG --</option>
                             ${optionsHtml}
                         </select>
                         <span id="${metric.uiUnitId}">(WMO)</span>
                     </div>
-                    <small style="font-size: 0.8em; color: #6c757d;">(Mehrfachauswahl mit Strg/Cmd + Klick)</small>
+                    <small class="rule-hint">(Mehrfachauswahl mit Strg/Cmd + Klick)</small>
                 </div>
             `;
         }
@@ -203,10 +238,10 @@ export const initUI = (handlers) => {
         uiElements.customRowEnabled.addEventListener('change', (e) => {
             if (e.target.checked) {
                 // Zeige das Namensfeld an, wenn die Box gecheckt ist
-                uiElements.customRowNameContainer.style.display = 'block';
+                uiElements.customRowNameContainer.classList.remove('hidden');
             } else {
                 // Verstecke es, wenn nicht
-                uiElements.customRowNameContainer.style.display = 'none';
+                uiElements.customRowNameContainer.classList.add('hidden');
             }
         });
     }
@@ -244,21 +279,21 @@ export const initUI = (handlers) => {
     if (uiElements.saveButton) {
         uiElements.saveButton.addEventListener('click', () => {
 
-            // 1. Regeln zuerst auslesen
-            const rules = getRulesFromInputs();
-
-            // --- ENDE VALIDIERUNG ---
-
-            // 3. Erst jetzt das Profil-Objekt bauen
-            const profileData = {
-                name: uiElements.profileNameInput.value,
-                rules: rules // Die bereits validierten Regeln
-            };
-
-            if (!profileData.name) {
-                alert("Bitte einen Profil-Namen eingeben.");
+            // 1. Profilnamen validieren
+            const nameError = validateName(uiElements.profileNameInput.value, 'Profilname');
+            if (nameError) {
+                alert(nameError);
                 return;
             }
+
+            // 2. Regeln auslesen
+            const rules = getRulesFromInputs();
+
+            // 3. Profil-Objekt bauen
+            const profileData = {
+                name: uiElements.profileNameInput.value.trim(),
+                rules: rules
+            };
 
             // 4. Handler aufrufen
             handlers.onSaveProfile(profileData);
@@ -269,15 +304,19 @@ export const initUI = (handlers) => {
     if (uiElements.saveTemplateButton) {
         uiElements.saveTemplateButton.addEventListener('click', () => {
             const name = uiElements.templateNameInput.value;
-            const rules = getRulesFromInputs(); // 1. Regeln lesen
 
-            // --- ENDE VALIDIERUNG ---
-
-            if (!name) {
-                alert("Bitte einen Namen für die Vorlage eingeben.");
+            // 1. Name validieren
+            const nameError = validateName(name, 'Vorlagenname');
+            if (nameError) {
+                alert(nameError);
                 return;
             }
-            handlers.onSaveTemplate(name, rules); // 3. Erst jetzt speichern
+
+            // 2. Regeln lesen
+            const rules = getRulesFromInputs();
+
+            // 3. Speichern
+            handlers.onSaveTemplate(name.trim(), rules);
         });
     }
 
@@ -393,18 +432,18 @@ export const displayAutoWarnings = (alarmResults) => {
     monitor.innerHTML = '';
 
     if (alarmResults.length === 0) {
-        monitor.innerHTML = `<p style="color: green; padding: 10px;">${new Date().toLocaleTimeString('de-DE')}: Alle Profile OK.</p>`;
+        monitor.innerHTML = `<p class="dashboard-ok">${new Date().toLocaleTimeString('de-DE')}: Alle Profile OK.</p>`;
         return;
     }
 
-    let html = `<h4><span style="color: red;">${alarmResults.length} ALARM(E)</span> - Stand: ${new Date().toLocaleTimeString('de-DE')}</h4>`;
+    let html = `<h4><span class="dashboard-alarm-header">${alarmResults.length} ALARM(E)</span> - Stand: ${new Date().toLocaleTimeString('de-DE')}</h4>`;
     alarmResults.forEach(result => {
         const p = result.profile;
         const s = result.summary;
         const r = p.rules;
 
-        html += `<div class="alarm-item" data-profile-id="${p.id}" style="border-bottom: 1px solid #ccc; padding: 5px; margin-bottom: 5px; cursor: pointer;">
-                    <strong>Profil: ${p.name}</strong><br>`;
+        html += `<div class="alarm-item" data-profile-id="${p.id}">
+                    <strong>Profil: ${escapeHtml(p.name)}</strong><br>`;
 
         // --- NEUE DYNAMISCHE SCHLEIFE ---
         for (const metric of Object.values(METRICS_CONFIG)) {
@@ -455,7 +494,7 @@ export const displayAutoWarnings = (alarmResults) => {
                     const range = getAlarmTimeRange(blendedStatus, 'alarm'); // <-- Neuer Aufruf
 
                     // Nutze die harte Alarmfarbe (rot)
-                    html += `<span style="color: #dc3545;">&#9658; ${metric.displayName} (ALARM: ${value}${unit}): ${range}</span><br>`;
+                    html += `<span class="dashboard-alarm-detail">&#9658; ${metric.displayName} (ALARM: ${value}${unit}): ${range}</span><br>`;
                 }
 
                 // --- 2. BLOCK: WARNUNGEN (gelb) ---
@@ -482,13 +521,13 @@ export const displayAutoWarnings = (alarmResults) => {
                     const { value, unit } = metric.formatter(worstValue, p);
                     const range = getAlarmTimeRange(blendedStatus, 'warn');
 
-                    html += `<span style="color: #ffc107;">&#9658; ${metric.displayName} (Warnung: ${value}${unit}): ${range}</span><br>`;
+                    html += `<span class="dashboard-warn-detail">&#9658; ${metric.displayName} (Warnung: ${value}${unit}): ${range}</span><br>`;
                 }
             }
         }
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
-        if (s.error) html += `<span style="color: magenta;">&#9658; FEHLER: ${s.error}</span><br>`;
+        if (s.error) html += `<span class="dashboard-error">&#9658; FEHLER: ${s.error}</span><br>`;
         html += `</div>`;
     });
     monitor.innerHTML = html;
@@ -509,11 +548,11 @@ export const displayManualWarning = (profile, summary) => {
         return;
     }
 
-    let html = `<strong>Prüfbericht für: ${profile.name}</strong>`;
+    let html = `<strong>Prüfbericht für: ${escapeHtml(profile.name)}</strong>`;
     const rules = profile.rules;
 
     if (summary.error) {
-        html += `<div style="color: magenta; border: 1px solid magenta; padding: 5px; margin-bottom: 5px;"><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
+        html += `<div class="dashboard-error-box"><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
     }
 
     // --- Ampel-Matrix ---
@@ -745,12 +784,12 @@ export const applyRulesToInputs = (rules, profileName) => {
     if (rules.customRow && rules.customRow.enabled) {
         if (customRowCheckbox) customRowCheckbox.checked = true;
         if (customRowNameInput) customRowNameInput.value = rules.customRow.name || "Manuelle Zeile";
-        if (customRowNameContainer) customRowNameContainer.style.display = 'block';
+        if (customRowNameContainer) customRowNameContainer.classList.remove('hidden');
     } else {
         // Stelle sicher, dass es beim Laden eines Profils *ohne* die Option zurückgesetzt wird
         if (customRowCheckbox) customRowCheckbox.checked = false;
         if (customRowNameInput) customRowNameInput.value = '';
-        if (customRowNameContainer) customRowNameContainer.style.display = 'none';
+        if (customRowNameContainer) customRowNameContainer.classList.add('hidden');
     }
 };
 
@@ -782,7 +821,7 @@ export const initMapStatusPlaceholder = () => {
     // --- NEU: Verstecke den Regel-Container ---
     const rulesContainer = document.getElementById('rules-workflow-container');
     if (rulesContainer) {
-        rulesContainer.style.display = 'none';
+        rulesContainer.classList.add('hidden');
     }
 };
 
@@ -990,7 +1029,7 @@ export const triggerExportDownload = (dataToExport, suggestedFileName) => {
  */
 export const enableSaveButton = () => {
     uiElements.mapStatusContainer.style.borderColor = 'var(--color-success)';
-    uiElements.mapStatusContainer.style.backgroundColor = '#d4edda';
+    uiElements.mapStatusContainer.style.backgroundColor = 'var(--color-success-light)';
     // Passe den Text an die neue Schritt-Zählung an
     uiElements.mapStatusText.innerHTML = '✅ **Schritt 1 abgeschlossen:** Area ist bereit.';
     uiElements.saveButton.disabled = false;
@@ -1035,14 +1074,44 @@ function createBlendedStatus(summary, summaryKey) {
 const handleFileImport = (event, onImportCallback) => {
     const file = event.target.files[0];
     if (!file) return;
+
+    // Dateigröße prüfen (max 5 MB)
+    if (file.size > 5 * 1024 * 1024) {
+        alert("Import fehlgeschlagen: Datei ist zu groß (max. 5 MB).");
+        event.target.value = null;
+        return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
             const importedProfiles = JSON.parse(e.target.result);
             if (!Array.isArray(importedProfiles)) throw new Error("Datei ist kein Array.");
-            const validProfiles = importedProfiles.filter(p => p.name && p.geojsonString && p.rules);
+
+            // Schema-Validierung für jedes Profil
+            const validProfiles = importedProfiles.filter(p => {
+                if (!p.name || typeof p.name !== 'string') return false;
+                if (!p.geojsonString || typeof p.geojsonString !== 'string') return false;
+                if (!p.rules || typeof p.rules !== 'object') return false;
+                // GeoJSON muss parsbar sein
+                try { JSON.parse(p.geojsonString); } catch { return false; }
+                // Profilname darf nicht zu lang sein
+                if (p.name.length > MAX_NAME_LENGTH) return false;
+                return true;
+            });
+
             const invalidCount = importedProfiles.length - validProfiles.length;
             if (validProfiles.length === 0) throw new Error("Keine gültigen Profile gefunden.");
+
+            // Bestätigungsdialog vor dem Import
+            const confirmed = confirm(
+                `Import-Zusammenfassung:\n` +
+                `- ${validProfiles.length} gültige Profile gefunden\n` +
+                `- ${invalidCount} ungültige Einträge werden übersprungen\n\n` +
+                `Fortfahren?`
+            );
+            if (!confirmed) return;
+
             const result = await onImportCallback(validProfiles);
             if (result.success) {
                 alert(`Import erfolgreich!\n- ${result.count} Profile importiert.\n- ${invalidCount} ungültige Einträge übersprungen.`);

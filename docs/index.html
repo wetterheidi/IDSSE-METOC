@@ -20,8 +20,8 @@
 
         <header class="page-header">
             <div class="header-left-compact"> IDSSE-M Cockpit
-                <div id="demoModeCompact"> <label for="demoModeCheckbox" style="cursor: pointer;">
-                        <input type="checkbox" id="demoModeCheckbox" style="cursor: pointer;">
+                <div id="demoModeCompact"> <label for="demoModeCheckbox" class="clickable">
+                        <input type="checkbox" id="demoModeCheckbox" class="clickable">
                         Demo-Modus
                     </label>
                 </div>
@@ -41,7 +41,7 @@
                         </select>
                         <button id="modelInfoButton" class="info-button-shared">i</button>
                         <div id="modelInfoPopup" class="info-popup"></div>
-                        <select id="daySelect" style="width: 130px; margin-left: 10px;">
+                        <select id="daySelect">
                             <option value="0">Lade Tage...</option>
                         </select>
                     </div>
@@ -62,60 +62,58 @@
             <div class="accordion-panel">
 
                 <h4>Schritt 1: Gebiet auf Karte zeichnen</h4>
-                <div id="mapStatusContainer"
-                    style="margin-top: 10px; padding: 10px; border: 1px dashed var(--border-color-strong); border-radius: var(--border-radius);">
+                <div id="mapStatusContainer">
                     <div id="mapStatusText">
                         ⚠️ **Warte auf Zeichnung...**
                     </div>
                 </div>
 
                 <h4>Schritt 2: Profil benennen</h4>
-                <input type="text" id="profileName" placeholder="z.B. Heli A">
+                <input type="text" id="profileName" placeholder="z.B. Heli A" maxlength="50">
 
-                <div id="rules-workflow-container" style="display: none;">
+                <div id="rules-workflow-container" class="hidden">
                     <h4>Schritt 3: Regeln definieren</h4>
 
-                    <div class="setting-group" style="padding-bottom: 10px;">
-                        <hr style="margin: 5px 0;">
+                    <div class="setting-group">
+                        <hr>
                         <strong>Einheiten-Modus:</strong>
                         <br>
-                        <label style="display: inline; margin-left: 10px;">
+                        <label class="radio-label">
                             <input type="radio" name="unitMode" value="metric" checked> Metrisch (m, km/h, °C)
                         </label>
                         <br>
-                        <label style="display: inline; margin-left: 10px;">
+                        <label class="radio-label">
                             <input type="radio" name="unitMode" value="aviation"> Aviation (ft, kt, °C)
                         </label>
                     </div>
-                    <div class="setting-group" style="padding-bottom: 10px; margin-top: 10px;">
+                    <div class="setting-group setting-group-spaced">
                         <strong>Logik-Modus (Gesamt-Status):</strong>
                         <br>
-                        <label style="display: inline; margin-left: 10px;">
+                        <label class="radio-label">
                             <input type="radio" name="logicMode" value="OR" checked> ODER (Wenn EINE Regel auslöst)
                         </label>
                         <br>
-                        <label style="display: inline; margin-left: 10px;">
+                        <label class="radio-label">
                             <input type="radio" name="logicMode" value="AND"> UND (Wenn ALLE Regeln auslösen)
                         </label>
                     </div>
 
-                    <div class="rule-input-container" id="dynamic-rules-container" style="margin-top: 10px;">
+                    <div class="rule-input-container" id="dynamic-rules-container">
                     </div>
                 </div>
-                <hr style="margin: 15px 0;">
+                <hr class="sidebar-separator">
                 <h4>Zusatz-Optionen</h4>
-                <div class="setting-group" id="custom-row-settings"
-                    style="padding-bottom: 10px; border: 1px solid var(--border-color); border-radius: var(--border-radius); padding: 10px;">
+                <div class="setting-group" id="custom-row-settings">
 
-                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                        <input type="checkbox" id="customRowEnabled" style="width: auto; margin: 0; cursor: pointer;">
+                    <label class="flex-label">
+                        <input type="checkbox" id="customRowEnabled" class="checkbox-inline">
                         Manuelle Ampelzeile einfügen
                     </label>
 
-                    <div id="custom-row-name-container" style="display: none; margin-top: 10px; padding-left: 10px;">
-                        <label for="customRowName" style="font-weight: bold;">Name der Zeile:</label>
+                    <div id="custom-row-name-container" class="hidden">
+                        <label for="customRowName">Name der Zeile:</label>
                         <input type="text" id="customRowName" placeholder="z.B. 'Manuelle Prüfung Pilot'"
-                            style="width: 100%;">
+                            maxlength="50">
                     </div>
                 </div>
                 <h4>Schritt 4: Profil speichern</h4>
@@ -132,26 +130,24 @@
             <button class="accordion-header">📖 Vorlagen verwalten</button>
             <div class="accordion-panel">
 
-                <div style="background: #eee; padding: 10px; border-radius: 5px;">
-                    <label for="templateSelect" style="font-weight: bold;">Vorlage laden:</label>
-                    <select id="templateSelect" style="width: 100%;">
+                <div class="template-box">
+                    <label for="templateSelect">Vorlage laden:</label>
+                    <select id="templateSelect">
                         <option value="">-- Vorlage wählen --</option>
                     </select>
 
-                    <button id="loadTemplateButton"
-                        style="width: 100%; background-color: var(--color-success); margin-top: 10px;">Ausgewählte
+                    <button id="loadTemplateButton">Ausgewählte
                         Vorlage laden</button>
-                    <button id="deleteTemplateButton"
-                        style="width: 100%; background-color: var(--color-danger); margin-top: 5px;">Ausgewählte Vorlage
+                    <button id="deleteTemplateButton">Ausgewählte Vorlage
                         löschen</button>
 
-                    <hr style="margin: 10px 0;">
+                    <hr class="sidebar-separator-sm">
 
-                    <label for="templateName" style="font-weight: bold;">(oder) Aktuelle Regeln als Vorlage
+                    <label for="templateName">(oder) Aktuelle Regeln als Vorlage
                         speichern:</label>
                     <input type="text" id="templateName" placeholder="Name für Vorlage (z.B. 'Heli VFR')"
-                        style="width: 100%;">
-                    <button id="saveTemplateButton" style="width: 100%;">Als Vorlage speichern</button>
+                        maxlength="50">
+                    <button id="saveTemplateButton">Als Vorlage speichern</button>
                 </div>
 
             </div>
@@ -160,7 +156,7 @@
             <div class="accordion-panel">
                 <button id="exportButton">Alle Profile exportieren</button>
                 <br><br>
-                <input type="file" id="importFile" accept=".json" style="display: none;">
+                <input type="file" id="importFile" accept=".json" class="hidden">
                 <button id="importButton">Profile importieren</button>
             </div>
 

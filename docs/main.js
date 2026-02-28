@@ -235,7 +235,7 @@ async function handleMapCreate(layer) {
     // 2. Mache den Container "Schritt 3: Regeln definieren" sichtbar.
     const rulesContainer = document.getElementById('rules-workflow-container');
     if (rulesContainer) {
-        rulesContainer.style.display = 'block';
+        rulesContainer.classList.remove('hidden');
     }
 
     // 3. UI freischalten (wie bisher)
@@ -500,12 +500,12 @@ async function handleManualCheck(profileData) {
     // 5. Mache den (sonst versteckten) Regel-Container sichtbar
     const rulesContainer = document.getElementById('rules-workflow-container');
     if (rulesContainer) {
-        rulesContainer.style.display = 'block';
+        rulesContainer.classList.remove('hidden');
     }
 
     ui.activateManualMonitorTab();
 
-    ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name}</h4><p>Lade Wetterdaten vom Server...</p>`);
+    ui.setManualMonitorMessage(`<h4>Prüfbericht für: ${profileData.name.replace(/[<>&"']/g, '')}</h4><p>Lade Wetterdaten vom Server...</p>`);
     map.clearMapLayers();
 
     map.drawProfileBoundary(profileData.geojson);
@@ -680,7 +680,7 @@ async function handleTemplateSelect(templateId) {
     // 3. NEU: Mache den (sonst versteckten) Regel-Container sichtbar
     const rulesContainer = document.getElementById('rules-workflow-container');
     if (rulesContainer) {
-        rulesContainer.style.display = 'block';
+        rulesContainer.classList.remove('hidden');
     }
 
     // 4. KORREKTUR: Rufe die 'applyTemplateToInputs'-Funktion auf

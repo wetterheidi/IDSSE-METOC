@@ -6,21 +6,34 @@
 :root {
     /* Farben */
     --color-primary: #4da8da;
+    --color-primary-hover: #0056b3;
     --color-secondary: #6c757d;
     --color-success: #28a745;
+    --color-success-hover: #218838;
+    --color-success-light: #d4edda;
     --color-danger: #dc3545;
+    --color-danger-hover: #a71d2a;
     --color-warning: #ffc107;
     --color-info: #17a2b8;
+
+    /* Ampel-Farben (Status) */
+    --status-ok: #c8e6c9;
+    --status-warn: #fff9c4;
+    --status-alarm: #ffcdd2;
+    --status-no-data: #d8d8d8;
+    --status-no-data-stripe: #f0f0f0;
 
     /* Hintergrund-Farben */
     --background-main: #f8f9fa;
     --background-surface: #ffffff;
     --background-interactive: #e9ecef;
     --background-dark: #343a40; /* Wichtig für den Slider! */
+    --background-disabled: #eeeeee;
 
     /* Text-Farben */
     --text-primary: #212529;
     --text-secondary: #6c757d;
+    --text-disabled: #999999;
     --text-on-dark: #ffffff;
     --text-on-primary: #ffffff;
 
@@ -142,7 +155,7 @@ body {
 /* Tab Navigation */
 .footer-tabs {
     flex-shrink: 0;
-    background: #e9ecef;
+    background: var(--background-interactive);
     border-bottom: 1px solid var(--border-color);
     padding-left: 10px;
 }
@@ -162,7 +175,7 @@ body {
 }
 
 .footer-tab:hover {
-    background: #fff;
+    background: var(--background-surface);
     color: var(--text-primary);
 }
 
@@ -235,20 +248,20 @@ button {
 }
 
 button:hover {
-    background: #0056b3;
+    background: var(--color-primary-hover);
 }
 
 #saveButton:disabled {
-    background: #eee;
-    color: #999;
+    background: var(--background-disabled);
+    color: var(--text-disabled);
 }
 
 #runAutoCheckButton {
-    background: #28a745;
+    background: var(--color-success);
 }
 
 #runAutoCheckButton:hover {
-    background: #218838;
+    background: var(--color-success-hover);
 }
 
 #modelSelect, #daySelect {
@@ -289,7 +302,7 @@ button:hover {
 
 .accordion-header:hover,
 .accordion-header.active {
-    background-color: #e2e6ea;
+    background-color: var(--background-interactive);
 }
 
 .accordion-header:after {
@@ -330,7 +343,7 @@ button:hover {
     padding-left: 15px;
     max-height: 200px;
     overflow-y: auto;
-    border: 1px dashed #ccc;
+    border: 1px dashed var(--border-color-strong);
     padding-top: 5px;
     padding-bottom: 5px;
 }
@@ -373,8 +386,8 @@ button:hover {
 }
 
 .delete-profile-button:hover {
-    background: #f0f0f0;
-    color: #a71d2a;
+    background: var(--background-interactive);
+    color: var(--color-danger-hover);
 }
 
 
@@ -422,12 +435,20 @@ button:hover {
     outline: none;
 }
 
-input[id$="_alarm"] {
+input[id$="_alarm"],
+select[id$="_alarm"] {
     border-color: var(--color-danger);
 }
 
-input[id$="_warn"] {
+input[id$="_warn"],
+select[id$="_warn"] {
     border-color: var(--color-warning);
+}
+
+/* Hinweis-Text unter den Regel-Selects */
+.rule-hint {
+    font-size: 0.8em;
+    color: var(--text-secondary);
 }
 
 .rule-input-fields span {
@@ -617,7 +638,7 @@ input[id$="_warn"] {
 
 .ampel-table th,
 .ampel-table td {
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-color-strong);
     padding: 4px;
     text-align: center;
     font-size: 0.9em;
@@ -630,26 +651,26 @@ input[id$="_warn"] {
 
 /* Status Farben */
 .status-ok {
-    background-color: #c8e6c9;
+    background-color: var(--status-ok);
 }
 
 .status-warn {
-    background-color: #fff9c4;
+    background-color: var(--status-warn);
 }
 
 .status-alarm {
-    background-color: #ffcdd2;
+    background-color: var(--status-alarm);
 }
 
 /* Kein Daten Status (mit leichter Textur) */
 .status-no-data {
-    background-color: #d8d8d8;
+    background-color: var(--status-no-data);
     cursor: default;
     background-image: repeating-linear-gradient(-45deg,
-            #f0f0f0,
-            #f0f0f0 5px,
-            #d8d8d8 5px,
-            #d8d8d8 10px);
+            var(--status-no-data-stripe),
+            var(--status-no-data-stripe) 5px,
+            var(--status-no-data) 5px,
+            var(--status-no-data) 10px);
     opacity: 0.8;
 }
 
@@ -663,13 +684,13 @@ input[id$="_warn"] {
 
 /* Gesamt-Status Zeile */
 .ampel-table tr.summary-row td {
-    border-top: 2px solid #333;
-    border-bottom: 2px solid #333;
+    border-top: 2px solid var(--text-primary);
+    border-bottom: 2px solid var(--text-primary);
     font-weight: bold;
 }
 
 .ampel-table tr.summary-row strong {
-    color: #000;
+    color: var(--text-primary);
 }
 
 
@@ -745,7 +766,7 @@ input[id$="_warn"] {
 
 .toast-info {
     background: var(--color-info);
-    color: #fff;
+    color: var(--text-on-dark);
 }
 
 .toast-warning {
@@ -755,7 +776,7 @@ input[id$="_warn"] {
 
 .toast-error {
     background: var(--color-danger);
-    color: #fff;
+    color: var(--text-on-dark);
 }
 
 .toast-close {
@@ -774,4 +795,180 @@ input[id$="_warn"] {
 .toast-close:hover {
     opacity: 1;
     background: transparent;
+}
+
+
+/* -----------------------------------------------------------
+   12. DASHBOARD STATUS-KLASSEN (für dynamisch erzeugtes HTML)
+----------------------------------------------------------- */
+
+.dashboard-ok {
+    color: var(--color-success);
+    padding: 10px;
+}
+
+.dashboard-alarm-header {
+    color: var(--color-danger);
+}
+
+.dashboard-alarm-detail {
+    color: var(--color-danger);
+}
+
+.dashboard-warn-detail {
+    color: var(--color-warning);
+}
+
+.dashboard-error {
+    color: magenta;
+}
+
+.dashboard-error-box {
+    color: magenta;
+    border: 1px solid magenta;
+    padding: 5px;
+    margin-bottom: 5px;
+}
+
+.alarm-item {
+    border-bottom: 1px solid var(--border-color);
+    padding: 5px;
+    margin-bottom: 5px;
+    cursor: pointer;
+}
+
+
+/* -----------------------------------------------------------
+   13. SIDEBAR LAYOUT-HELFER (ex-Inline-Styles)
+----------------------------------------------------------- */
+
+/* Verstecktes Element (display: none) */
+.hidden {
+    display: none;
+}
+
+/* Cursor-Pointer für Labels/Checkboxen */
+.clickable {
+    cursor: pointer;
+}
+
+/* Map-Status Container */
+#mapStatusContainer {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px dashed var(--border-color-strong);
+    border-radius: var(--border-radius);
+}
+
+/* Setting-Group Varianten */
+.setting-group {
+    padding-bottom: 10px;
+}
+
+.setting-group-spaced {
+    padding-bottom: 10px;
+    margin-top: 10px;
+}
+
+.setting-group hr {
+    margin: 5px 0;
+}
+
+/* Radio/Checkbox Labels (eingerückt) */
+.radio-label {
+    display: inline;
+    margin-left: 10px;
+}
+
+/* Flex-Label (für Checkbox + Text nebeneinander) */
+.flex-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+/* Checkbox im Flex-Layout */
+.checkbox-inline {
+    width: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
+/* Custom-Row Name Container */
+#custom-row-name-container {
+    margin-top: 10px;
+    padding-left: 10px;
+}
+
+/* Custom-Row Settings Box */
+#custom-row-settings {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+}
+
+/* Dynamic Rules Container */
+#dynamic-rules-container {
+    margin-top: 10px;
+}
+
+/* Sidebar Trennlinien */
+.sidebar-separator {
+    margin: 15px 0;
+}
+
+.sidebar-separator-sm {
+    margin: 10px 0;
+}
+
+/* Vorlagen-Box */
+.template-box {
+    background: var(--background-disabled);
+    padding: 10px;
+    border-radius: 5px;
+}
+
+.template-box label {
+    font-weight: bold;
+}
+
+/* Vollbreite Elemente */
+.full-width {
+    width: 100%;
+}
+
+/* Vorlagen-Buttons */
+#loadTemplateButton {
+    width: 100%;
+    background-color: var(--color-success);
+    margin-top: 10px;
+}
+
+#deleteTemplateButton {
+    width: 100%;
+    background-color: var(--color-danger);
+    margin-top: 5px;
+}
+
+#saveTemplateButton {
+    width: 100%;
+}
+
+#templateSelect {
+    width: 100%;
+}
+
+#templateName {
+    width: 100%;
+}
+
+#customRowName {
+    width: 100%;
+}
+
+/* Day-Select im Header */
+#daySelect {
+    width: 130px;
+    margin-left: 10px;
 }

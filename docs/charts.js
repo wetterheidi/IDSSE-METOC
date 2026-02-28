@@ -193,9 +193,10 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
             const rawData = summary[summaryKey].hourlyData;
             let processedData;
 
-            // --- PRÜFUNG FÜR WOLKENUNTERGRENZE ---
-            if (summaryKey === 'cloudBase') {
-                // Wandle 99999 (unser SKC-Wert) in 'null' um
+            // --- PRÜFUNG FÜR WOLKEN (cloudBase UND cloudCeiling) ---
+            if (summaryKey === 'cloudBase' || summaryKey === 'cloudCeiling') {
+                // Wandle 99999 (unser "kein Layer/Ceiling"-Wert) in 'null' um,
+                // damit die Y-Achse nicht auf 328.000 ft skaliert wird.
                 processedData = rawData.map(val => (val >= 99999) ? null : val);
             } else {
                 processedData = rawData;
@@ -342,9 +343,10 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                     callbacks: {
                         label: function (context) {
                             const datasetLabel = context.dataset.label || '';
+                            const sk = context.dataset.summaryKey;
 
                             // --- Spezialbehandlung für sigWx ---
-                            if (context.dataset.summaryKey === 'sigWx') {
+                            if (sk === 'sigWx') {
                                 const dataPoint = context.raw;
 
                                 if (dataPoint && dataPoint.code !== undefined) {
@@ -353,6 +355,11 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                                     return `${datasetLabel}: ${formatted.value}${formatted.unit}`;
                                 }
                                 return `${datasetLabel}: N/A`; // Fallback
+                            }
+
+                            // --- Spezialbehandlung für cloudBase/cloudCeiling ---
+                            if ((sk === 'cloudBase' || sk === 'cloudCeiling') && context.raw === null) {
+                                return `${datasetLabel}: SKC (keine Wolken)`;
                             }
 
                             // --- Standard-Verhalten für alle anderen (Wind, Temp etc.) ---
