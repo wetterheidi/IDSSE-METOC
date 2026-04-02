@@ -142,7 +142,7 @@ async function handleModelChange(apiName, runTimeISO) {
     }
     if (currentForecastDay >= maxDays) {
         const resetToDay = 0;
-        alert(`Das Modell "${WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName}" liefert nur ${maxDays} Tage Prognose. Sie wurden auf "Heute" (Tag ${resetToDay + 1}) zurückgesetzt.`);
+        ui.showToast(`Modell liefert nur ${maxDays} Tage Prognose – zurückgesetzt auf Heute.`, 'warning');
         currentForecastDay = resetToDay;
         timeSlider.resetDaySelector();
         timeSlider.setForecastDay(resetToDay);
@@ -260,7 +260,7 @@ async function handleMapCreate(layer) {
  */
 async function handleSaveProfile(profileData) {
     if (!currentLayer) {
-        alert("Bitte zuerst eine Fläche auf der Karte zeichnen.");
+        ui.showToast('Bitte zuerst eine Fläche auf der Karte zeichnen.', 'warning');
         return;
     }
 
@@ -270,7 +270,7 @@ async function handleSaveProfile(profileData) {
 
     if (existingProfile) {
         // Wenn ein Profil gefunden wurde, zeige Fehler und brich ab.
-        alert(`Fehler: Ein Profil mit dem Namen "${profileData.name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
+        ui.showToast(`Profil "${profileData.name}" existiert bereits. Bitte anderen Namen wählen.`, 'error');
         return; // Stoppt die Funktion hier.
     }
 
@@ -284,7 +284,7 @@ async function handleSaveProfile(profileData) {
     };
 
     await db.saveProfile(profile);
-    // 'profile' hat jetzt eine 'id' von der Datenbank
+    ui.showToast(`Profil "${profile.name}" gespeichert.`, 'success');
 
     // Aufräumen (wie bisher)
     currentLayer.pm.disable();
@@ -465,7 +465,7 @@ async function handleManualCheck(profileData) {
 
     // KUGELSICHERER CHECK: Hat das Profil eine Form?
     if (!profileData.geojson) {
-        alert("Fehler: Dieses Profil hat keine gezeichnete Form. Bitte löschen und neu anlegen.");
+        ui.showToast('Dieses Profil hat keine Geometrie. Bitte löschen und neu anlegen.', 'error');
         ui.setManualMonitorMessage(`<p>Fehler: Profil "${profileData.name}" hat keine Geometrie.</p>`);
         return;
     }
@@ -618,27 +618,19 @@ async function updateTemplateList() {
 async function handleSaveTemplate(name, rules) {
     // 1. Prüfen, ob der Name leer ist (bereits in ui.js, aber sicher ist sicher)
     if (!name || name.trim() === '') {
-        alert("Bitte einen Namen für die Vorlage eingeben.");
+        ui.showToast('Bitte einen Namen für die Vorlage eingeben.', 'warning');
         return;
     }
 
-    // 2. Anforderung 3: Auf Eindeutigkeit prüfen
     const existingTemplate = await db.findTemplateByName(name);
     if (existingTemplate) {
-        alert(`Fehler: Eine Vorlage mit dem Namen "${name}" existiert bereits. Bitte wählen Sie einen anderen Namen.`);
-        return; // Abbrechen
+        ui.showToast(`Vorlage "${name}" existiert bereits. Bitte anderen Namen wählen.`, 'error');
+        return;
     }
 
-    // 3. Speichern
     await db.saveTemplate({ name, rules });
-
-    // 4. UI aktualisieren
     await updateTemplateList();
-
-    // 5. Anforderung 2: Erfolgs-Bestätigung
-    alert(`Vorlage "${name}" erfolgreich gespeichert.`);
-
-    // 6. (Bonus) Textfeld leeren
+    ui.showToast(`Vorlage "${name}" gespeichert.`, 'success');
     ui.clearTemplateNameInput();
 }
 
@@ -649,15 +641,14 @@ async function handleDeleteTemplate() {
     // 1. Finde die ausgewählte ID aus dem Dropdown
     const templateIdStr = ui.uiElements.templateSelect.value;
     if (!templateIdStr) {
-        alert("Bitte wählen Sie zuerst die zu löschende Vorlage aus der Liste aus.");
+        ui.showToast('Bitte zuerst eine Vorlage aus der Liste wählen.', 'warning');
         return;
     }
     const templateId = parseInt(templateIdStr, 10);
 
-    // 2. Bestätigung einholen
     const template = await db.getTemplate(templateId);
     if (!template) {
-        alert("Fehler: Vorlage nicht gefunden.");
+        ui.showToast('Vorlage nicht gefunden.', 'error');
         return;
     }
 
@@ -677,7 +668,7 @@ async function handleDeleteTemplate() {
 async function handleTemplateSelect(templateId) {
     const template = await db.getTemplate(templateId);
     if (!template) {
-        alert("Fehler: Vorlage konnte nicht geladen werden.");
+        ui.showToast('Vorlage konnte nicht geladen werden.', 'error');
         return;
     }
 
@@ -696,8 +687,7 @@ async function handleTemplateSelect(templateId) {
     // 4. KORREKTUR: Rufe die 'applyTemplateToInputs'-Funktion auf
     ui.applyTemplateToInputs(template);
 
-    // 5. Feedback-Meldung
-    alert(`Vorlage "${template.name}" erfolgreich geladen.`);
+    ui.showToast(`Vorlage "${template.name}" geladen.`, 'success');
 }
 
 /**
@@ -706,7 +696,7 @@ async function handleTemplateSelect(templateId) {
 async function handleExport() {
     const profiles = await db.getProfilesForExport();
     if (profiles.length === 0) {
-        alert("Keine Profile zum Exportieren vorhanden.");
+        ui.showToast('Keine Profile zum Exportieren vorhanden.', 'warning');
         return;
     }
 

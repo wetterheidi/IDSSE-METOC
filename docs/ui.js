@@ -1047,6 +1047,45 @@ export const setDashboardMessage = (html) => {
     }
 };
 
+/**
+ * Zeigt eine Toast-Benachrichtigung an.
+ * @param {string} message - Der anzuzeigende Text.
+ * @param {'info'|'warning'|'error'|'success'} type - Typ der Nachricht.
+ * @param {number} duration - Anzeigedauer in ms (Standard: 3500).
+ */
+export function showToast(message, type = 'info', duration = 3500) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type === 'success' ? 'info' : type}`;
+
+    // Icon je nach Typ
+    const icons = { info: 'ℹ', warning: '⚠', error: '✕', success: '✓' };
+    toast.innerHTML = `
+        <span style="font-size:1.1em;flex-shrink:0">${icons[type] || icons.info}</span>
+        <span style="flex-grow:1">${escapeHtml(message)}</span>
+        <button class="toast-close" aria-label="Schließen">×</button>
+    `;
+
+    // Erfolg: grüner Hintergrund
+    if (type === 'success') {
+        toast.style.background = 'var(--color-success)';
+        toast.style.color = '#fff';
+    }
+
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('toast-visible'));
+
+    const remove = () => {
+        toast.classList.remove('toast-visible');
+        setTimeout(() => toast.remove(), 350);
+    };
+
+    toast.querySelector('.toast-close').addEventListener('click', remove);
+    setTimeout(remove, duration);
+}
+
 export const setManualMonitorMessage = (html) => {
     if (uiElements.manualWarningMonitor) {
         uiElements.manualWarningMonitor.innerHTML = html;
@@ -1300,39 +1339,3 @@ function handleManualOverrideClick(event) {
 // TOAST-NOTIFICATION SYSTEM
 // -----------------------------------------------------------
 
-/**
- * Zeigt eine Toast-Benachrichtigung an.
- * @param {string} message - Die Nachricht
- * @param {'info'|'warning'|'error'} level - Schweregrad
- * @param {number} durationMs - Anzeigedauer in ms (0 = manuell schliessen)
- */
-export function showToast(message, level = 'info', durationMs = 5000) {
-    let container = document.getElementById('toast-container');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'toast-container';
-        document.body.appendChild(container);
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${level}`;
-    toast.textContent = message;
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'toast-close';
-    closeBtn.textContent = '\u00D7';
-    closeBtn.addEventListener('click', () => toast.remove());
-    toast.appendChild(closeBtn);
-
-    container.appendChild(toast);
-
-    // Animation: einblenden
-    requestAnimationFrame(() => toast.classList.add('toast-visible'));
-
-    if (durationMs > 0) {
-        setTimeout(() => {
-            toast.classList.remove('toast-visible');
-            toast.addEventListener('transitionend', () => toast.remove());
-        }, durationMs);
-    }
-}

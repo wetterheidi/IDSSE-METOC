@@ -551,6 +551,31 @@ button:hover {
     font-weight: 600;
 }
 
+.check-profile-button {
+    background: transparent !important;
+    border: 1px solid var(--color-primary) !important;
+    color: var(--color-primary) !important;
+    font-size: 0.78em !important;
+    font-weight: 600 !important;
+    padding: 3px 8px !important;
+    border-radius: 4px;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.check-profile-button:hover {
+    background: var(--color-primary) !important;
+    color: #fff !important;
+}
+
+.check-profile-button:disabled {
+    border-color: var(--border-color-strong) !important;
+    color: var(--text-disabled) !important;
+    background: transparent !important;
+    cursor: default;
+    opacity: 0.6;
+}
+
 .delete-profile-button {
     background: transparent !important;
     border: 1px solid var(--border-color-strong) !important;
@@ -675,10 +700,16 @@ body.dark select[id$="_warn"] {
 }
 
 #selectedTime {
-    font-size: 14px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 13px;
     color: var(--text-primary);
     white-space: nowrap;
-    font-weight: bold;
+    font-weight: 600;
+    background: var(--background-interactive);
+    border: 1px solid var(--border-color-strong);
+    border-radius: 6px;
+    padding: 3px 10px;
+    letter-spacing: 0.04em;
 }
 
 #autoupdateToggle label {
