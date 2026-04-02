@@ -431,19 +431,21 @@ export const displayAutoWarnings = (alarmResults) => {
     if (!monitor) return;
     monitor.innerHTML = '';
 
+    const timestamp = new Date().toLocaleTimeString('de-DE');
+
     if (alarmResults.length === 0) {
-        monitor.innerHTML = `<p class="dashboard-ok">${new Date().toLocaleTimeString('de-DE')}: Alle Profile OK.</p>`;
+        monitor.innerHTML = `<p class="dashboard-ok">✓ Alle Profile OK</p><p class="monitor-timestamp">Stand: ${timestamp}</p>`;
         return;
     }
 
-    let html = `<h4><span class="dashboard-alarm-header">${alarmResults.length} ALARM(E)</span> - Stand: ${new Date().toLocaleTimeString('de-DE')}</h4>`;
+    let html = `<p class="monitor-timestamp"><span class="dashboard-alarm-header">${alarmResults.length} Alarm(e)</span> — Stand: ${timestamp}</p>`;
     alarmResults.forEach(result => {
         const p = result.profile;
         const s = result.summary;
         const r = p.rules;
 
         html += `<div class="alarm-item" data-profile-id="${p.id}">
-                    <strong>Profil: ${escapeHtml(p.name)}</strong><br>`;
+                    <strong>📍 ${escapeHtml(p.name)}</strong>`;
 
         // --- NEUE DYNAMISCHE SCHLEIFE ---
         for (const metric of Object.values(METRICS_CONFIG)) {
@@ -494,7 +496,7 @@ export const displayAutoWarnings = (alarmResults) => {
                     const range = getAlarmTimeRange(blendedStatus, 'alarm'); // <-- Neuer Aufruf
 
                     // Nutze die harte Alarmfarbe (rot)
-                    html += `<span class="dashboard-alarm-detail">&#9658; ${metric.displayName} (ALARM: ${value}${unit}): ${range}</span><br>`;
+                    html += `<span class="dashboard-alarm-detail">▸ ${metric.displayName}: ${value}${unit} — ${range}</span>`;
                 }
 
                 // --- 2. BLOCK: WARNUNGEN (gelb) ---
@@ -521,13 +523,13 @@ export const displayAutoWarnings = (alarmResults) => {
                     const { value, unit } = metric.formatter(worstValue, p);
                     const range = getAlarmTimeRange(blendedStatus, 'warn');
 
-                    html += `<span class="dashboard-warn-detail">&#9658; ${metric.displayName} (Warnung: ${value}${unit}): ${range}</span><br>`;
+                    html += `<span class="dashboard-warn-detail">▸ ${metric.displayName}: ${value}${unit} — ${range}</span>`;
                 }
             }
         }
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
-        if (s.error) html += `<span class="dashboard-error">&#9658; FEHLER: ${s.error}</span><br>`;
+        if (s.error) html += `<span class="dashboard-error">⚠ FEHLER: ${s.error}</span>`;
         html += `</div>`;
     });
     monitor.innerHTML = html;

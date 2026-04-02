@@ -13,7 +13,7 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=4.1" />
+    <link rel="stylesheet" href="style.css?v=4.8" />
 </head>
 
 <body>
@@ -21,25 +21,25 @@
     <div class="page-container">
 
         <header class="page-header">
-            <div class="header-left-compact"> IDSSE-M Cockpit
-                <div id="demoModeCompact">
-                    <label for="demoModeCheckbox" class="clickable">
-                        <input type="checkbox" id="demoModeCheckbox" class="clickable">
-                        Demo-Modus
-                    </label>
+            <div class="header-left-compact">
+                <span class="header-title">IDSSE-M Cockpit</span>
+                <div class="header-controls">
                     <button id="themeToggle" title="Design wechseln">☀️</button>
+                    <div id="demoBadge" class="demo-badge hidden" title="Demo-Modus aktiv (Shift+D zum Deaktivieren)">DEMO</div>
                 </div>
+                <!-- Checkbox bleibt im DOM, wird aber nicht angezeigt -->
+                <input type="checkbox" id="demoModeCheckbox" class="hidden">
             </div>
 
             <div id="slider-container">
                 <div class="slider-content-wrapper">
 
-                    <div class="time-model-row-compact"> <span id="selectedTime">Zeit: --:--</span>
+                    <div class="time-model-row-compact">
+                        <span id="selectedTime">Zeit: --:--</span>
                         <div id="autoupdateToggle">
-                            <label for="autoupdateCheckbox" title="Autoupdate">⟳</label>
+                            <label for="autoupdateCheckbox" title="Auto-Update ein/aus">⟳</label>
                             <input type="checkbox" id="autoupdateCheckbox">
                         </div>
-
                         <select id="modelSelect">
                             <option value="">-- Lade Modelle --</option>
                         </select>
@@ -63,106 +63,96 @@
         <div id="sidebar">
             <button id="sidebarToggle" title="Sidebar einklappen">◀</button>
 
+            <!-- SEKTION 1: Profil erstellen -->
             <button class="accordion-header"><span class="acc-icon">✍️</span><span class="acc-text"> Profil erstellen</span></button>
             <div class="accordion-panel">
 
-                <h4>Schritt 1: Gebiet auf Karte zeichnen</h4>
+                <div class="workflow-step">
+                    <span class="step-badge">1</span>
+                    <span class="step-label">Gebiet auf Karte zeichnen</span>
+                </div>
                 <div id="mapStatusContainer">
-                    <div id="mapStatusText">
-                        ⚠️ **Warte auf Zeichnung...**
-                    </div>
+                    <div id="mapStatusText">⚠️ Bitte zuerst eine Area auf der Karte definieren.</div>
                 </div>
 
-                <h4>Schritt 2: Profil benennen</h4>
+                <div class="workflow-step">
+                    <span class="step-badge">2</span>
+                    <span class="step-label">Profil benennen</span>
+                </div>
                 <input type="text" id="profileName" placeholder="z.B. Heli A" maxlength="50">
 
                 <div id="rules-workflow-container" class="hidden">
-                    <h4>Schritt 3: Regeln definieren</h4>
-
-                    <div class="setting-group">
-                        <hr>
-                        <strong>Einheiten-Modus:</strong>
-                        <br>
-                        <label class="radio-label">
-                            <input type="radio" name="unitMode" value="metric" checked> Metrisch (m, km/h, °C)
-                        </label>
-                        <br>
-                        <label class="radio-label">
-                            <input type="radio" name="unitMode" value="aviation"> Aviation (ft, kt, °C)
-                        </label>
-                    </div>
-                    <div class="setting-group setting-group-spaced">
-                        <strong>Logik-Modus (Gesamt-Status):</strong>
-                        <br>
-                        <label class="radio-label">
-                            <input type="radio" name="logicMode" value="OR" checked> ODER (Wenn EINE Regel auslöst)
-                        </label>
-                        <br>
-                        <label class="radio-label">
-                            <input type="radio" name="logicMode" value="AND"> UND (Wenn ALLE Regeln auslösen)
-                        </label>
+                    <div class="workflow-step">
+                        <span class="step-badge">3</span>
+                        <span class="step-label">Regeln definieren</span>
                     </div>
 
-                    <div class="rule-input-container" id="dynamic-rules-container">
+                    <div class="settings-row">
+                        <div class="settings-col">
+                            <span class="settings-label">Einheiten</span>
+                            <label class="radio-label"><input type="radio" name="unitMode" value="metric" checked> Metrisch</label>
+                            <label class="radio-label"><input type="radio" name="unitMode" value="aviation"> Aviation</label>
+                        </div>
+                        <div class="settings-col">
+                            <span class="settings-label">Logik</span>
+                            <label class="radio-label"><input type="radio" name="logicMode" value="OR" checked> ODER</label>
+                            <label class="radio-label"><input type="radio" name="logicMode" value="AND"> UND</label>
+                        </div>
                     </div>
+
+                    <div class="rule-input-container" id="dynamic-rules-container"></div>
                 </div>
-                <hr class="sidebar-separator">
-                <h4>Zusatz-Optionen</h4>
-                <div class="setting-group" id="custom-row-settings">
 
+                <div id="custom-row-settings" class="setting-group">
                     <label class="flex-label">
                         <input type="checkbox" id="customRowEnabled" class="checkbox-inline">
-                        Manuelle Ampelzeile einfügen
+                        <span>Manuelle Ampelzeile einfügen</span>
                     </label>
-
                     <div id="custom-row-name-container" class="hidden">
-                        <label for="customRowName">Name der Zeile:</label>
-                        <input type="text" id="customRowName" placeholder="z.B. 'Manuelle Prüfung Pilot'"
-                            maxlength="50">
+                        <input type="text" id="customRowName" placeholder="Name der Zeile" maxlength="50">
                     </div>
                 </div>
-                <h4>Schritt 4: Profil speichern</h4>
-                <button id="saveButton" disabled>Profil speichern</button>
+
+                <div class="workflow-step">
+                    <span class="step-badge">4</span>
+                    <span class="step-label">Profil speichern</span>
+                </div>
+                <button id="saveButton" class="btn-primary" disabled>Profil speichern</button>
             </div>
 
-            <button class="accordion-header"><span class="acc-icon">📂</span><span class="acc-text"> Gespeicherte Profile laden &amp; prüfen</span></button>
+            <!-- SEKTION 2: Profile laden -->
+            <button class="accordion-header"><span class="acc-icon">📂</span><span class="acc-text"> Gespeicherte Profile</span></button>
             <div class="accordion-panel">
-                <h4>Profile verwalten:</h4>
-                <ul id="profileList"></ul>
-                <hr>
+                <ul id="profileList" class="profile-card-list"></ul>
             </div>
 
-            <button class="accordion-header"><span class="acc-icon">📖</span><span class="acc-text"> Vorlagen verwalten</span></button>
+            <!-- SEKTION 3: Vorlagen -->
+            <button class="accordion-header"><span class="acc-icon">📖</span><span class="acc-text"> Vorlagen</span></button>
             <div class="accordion-panel">
-
                 <div class="template-box">
-                    <label for="templateSelect">Vorlage laden:</label>
+                    <label for="templateSelect" class="settings-label">Vorlage laden</label>
                     <select id="templateSelect">
                         <option value="">-- Vorlage wählen --</option>
                     </select>
-
-                    <button id="loadTemplateButton">Ausgewählte
-                        Vorlage laden</button>
-                    <button id="deleteTemplateButton">Ausgewählte Vorlage
-                        löschen</button>
-
+                    <div class="btn-row">
+                        <button id="loadTemplateButton" class="btn-success btn-half">Laden</button>
+                        <button id="deleteTemplateButton" class="btn-danger btn-half">Löschen</button>
+                    </div>
                     <hr class="sidebar-separator-sm">
-
-                    <label for="templateName">(oder) Aktuelle Regeln als Vorlage
-                        speichern:</label>
-                    <input type="text" id="templateName" placeholder="Name für Vorlage (z.B. 'Heli VFR')"
-                        maxlength="50">
-                    <button id="saveTemplateButton">Als Vorlage speichern</button>
+                    <label for="templateName" class="settings-label">Aktuelle Regeln speichern</label>
+                    <input type="text" id="templateName" placeholder="Name (z.B. Heli VFR)" maxlength="50">
+                    <button id="saveTemplateButton" class="btn-primary">Als Vorlage speichern</button>
                 </div>
-
             </div>
 
-            <button class="accordion-header"><span class="acc-icon">☁️</span><span class="acc-text"> Daten-Export / Import</span></button>
+            <!-- SEKTION 4: Export/Import -->
+            <button class="accordion-header"><span class="acc-icon">☁️</span><span class="acc-text"> Export / Import</span></button>
             <div class="accordion-panel">
-                <button id="exportButton">Alle Profile exportieren</button>
-                <br><br>
+                <div class="btn-row">
+                    <button id="exportButton" class="btn-half">Exportieren</button>
+                    <button id="importButton" class="btn-half">Importieren</button>
+                </div>
                 <input type="file" id="importFile" accept=".json" class="hidden">
-                <button id="importButton">Profile importieren</button>
             </div>
 
         </div>
@@ -237,13 +227,30 @@
                 localStorage.setItem('theme', isDark ? 'dark' : 'light');
             }
 
-            // Initialen Zustand setzen
             const isDark = document.body.classList.contains('dark');
             themeToggle.textContent = isDark ? '☀️' : '🌙';
             themeToggle.title = isDark ? 'Helles Design aktivieren' : 'Dunkles Design aktivieren';
 
             themeToggle.addEventListener('click', () => {
                 applyTheme(!document.body.classList.contains('dark'));
+            });
+
+            // --- Demo-Modus: Shift+D ---
+            const demoCheckbox = document.getElementById('demoModeCheckbox');
+            const demoBadge = document.getElementById('demoBadge');
+
+            function syncDemoBadge() {
+                if (!demoBadge || !demoCheckbox) return;
+                demoBadge.classList.toggle('hidden', !demoCheckbox.checked);
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.shiftKey && e.key === 'D' && demoCheckbox) {
+                    demoCheckbox.checked = !demoCheckbox.checked;
+                    syncDemoBadge();
+                    // Change-Event auslösen, damit main.js reagiert
+                    demoCheckbox.dispatchEvent(new Event('change'));
+                }
             });
         });
     </script>

@@ -109,9 +109,18 @@ function handleSliderChange(hour) {
     console.log(`Main.js: Slider-Stunde geändert auf ${hour}`);
     currentSliderHour = hour;
 
-    // --- NEU: Karte neu zeichnen, wenn der Slider bewegt wird ---
-    // (Zeichnet nur was, wenn ein 'currentManualSummary' geladen ist)
     map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
+
+    // Chart-Zeitlinie mitziehen wenn ein Profil geladen ist
+    if (currentManualProfile && currentManualSummary) {
+        charts.updateWeatherChart(
+            currentManualProfile,
+            currentManualSummary,
+            (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides),
+            getManualOverrides,
+            currentSliderHour
+        );
+    }
 }
 
 /**
@@ -329,7 +338,9 @@ export async function updateManualOverride(ruleKey, hour, newStatus) {
         charts.updateWeatherChart(
             currentManualProfile,
             currentManualSummary,
-            (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides)
+            (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides),
+            getManualOverrides,
+            currentSliderHour
         );
 
         map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
@@ -559,10 +570,9 @@ async function handleManualCheck(profileData) {
     charts.updateWeatherChart(
         profileData,
         summary,
-        // 1. Die Funktion zur kombinierten Statusberechnung 
         (p, s) => getBlendedCombinedStatus(p, s, getManualOverrides),
-        // 2. Die Funktion zum Abrufen der Overrides (wird vom Setter gesetzt, nur zur Sicherheit hier)
-        getManualOverrides
+        getManualOverrides,
+        currentSliderHour
     );
     map.visualizeWarnings(currentManualProfile, currentManualSummary, currentSliderHour);
 }

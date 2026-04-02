@@ -97,13 +97,15 @@ const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, l
     borderDash: borderDash,
     label: {
         content: labelContent,
-        enabled: true,
+        display: true,
         position: 'end',
-        font: { weight: 'bold', size: 11 },
+        font: { weight: '600', size: 10, family: "'Inter', sans-serif" },
         color: borderColor,
         backgroundColor: getChartTheme().labelBg,
-        padding: 4,
-        borderRadius: 3
+        padding: { top: 3, bottom: 3, left: 6, right: 6 },
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: borderColor,
     },
     summaryKey: summaryKey
 });
@@ -118,7 +120,7 @@ const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, l
  * @param {object} summary - Die Wetter-Zusammenfassung (Summary).
  * @param {function} getBlendedCombinedStatusFunc - Funktion zur Abfrage des Gesamtstatus (injiziert).
  */
-export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFunc) {
+export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFunc, getManualOverridesFunc2, currentHour = 0) {
     clearChart(); // Alten Graphen löschen
 
     const ctx = document.getElementById('weatherChartCanvas').getContext('2d');
@@ -340,7 +342,28 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
         return null;
     }).filter(a => a !== null);
 
-    const finalAnnotations = annotationLimits.concat(alarmBands);
+    // Vertikale Linie für die aktuell gewählte Stunde
+    const currentHourLine = {
+        type: 'line',
+        xMin: currentHour,
+        xMax: currentHour,
+        borderColor: theme.textColor,
+        borderWidth: 1.5,
+        borderDash: [4, 3],
+        label: {
+            content: `◀ ${String(currentHour).padStart(2, '0')}:00`,
+            display: true,
+            position: 'start',
+            xAdjust: 22,
+            font: { weight: '600', size: 10, family: "'Inter', sans-serif" },
+            color: theme.textColor,
+            backgroundColor: getChartTheme().labelBg,
+            padding: { top: 3, bottom: 3, left: 5, right: 5 },
+            borderRadius: 4,
+        }
+    };
+
+    const finalAnnotations = annotationLimits.concat(alarmBands).concat([currentHourLine]);
 
     console.log("%c[charts.js DEBUG 2] FINALE DATEN VOR DEM ZEICHNEN:", "color: blue; font-weight: bold;", {
         labels: hours,
