@@ -1,7 +1,7 @@
-/* docs/style.css (Version 3.0 - Final Strukturiert) */
+/* docs/style.css (Version 4.1 - Light/Dark Toggle) */
 
 /* -----------------------------------------------------------
-   1. ROOT VARIABLEN & FARBPALETTE
+   1. ROOT VARIABLEN & FARBPALETTE – LIGHT (Default)
 ----------------------------------------------------------- */
 :root {
     /* Farben */
@@ -27,7 +27,7 @@
     --background-main: #f8f9fa;
     --background-surface: #ffffff;
     --background-interactive: #e9ecef;
-    --background-dark: #343a40; /* Wichtig für den Slider! */
+    --background-dark: #343a40;
     --background-disabled: #eeeeee;
 
     /* Text-Farben */
@@ -46,17 +46,84 @@
     --footer-height: 150px;
 }
 
+/* -----------------------------------------------------------
+   1b. DARK THEME VARIABLEN
+----------------------------------------------------------- */
+body.dark {
+    /* Farben */
+    --color-primary: #58a6ff;
+    --color-primary-hover: #79b8ff;
+    --color-secondary: #8b949e;
+    --color-success: #3fb950;
+    --color-success-hover: #2ea043;
+    --color-success-light: #1a3a2a;
+    --color-danger: #f85149;
+    --color-danger-hover: #da3633;
+    --color-warning: #e3b341;
+    --color-info: #388bfd;
+
+    /* Ampel-Farben (Status – dunkel-adaptiert) */
+    --status-ok: #1c3829;
+    --status-warn: #3a2d08;
+    --status-alarm: #3a1616;
+    --status-no-data: #21262d;
+    --status-no-data-stripe: #2d333b;
+
+    /* Hintergrund-Farben */
+    --background-main: #0d1117;
+    --background-surface: #161b22;
+    --background-interactive: #21262d;
+    --background-dark: #010409;
+    --background-disabled: #21262d;
+
+    /* Text-Farben */
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-disabled: #484f58;
+    --text-on-dark: #e6edf3;
+    --text-on-primary: #ffffff;
+
+    /* Ränder & Schatten */
+    --border-color: #30363d;
+    --border-color-strong: #484f58;
+    --border-radius: .25rem;
+    --shadow: 0 .5rem 1rem rgba(0, 0, 0, .5);
+}
+
 
 /* -----------------------------------------------------------
    2. GRUNDGERÜST (Grid Layout)
 ----------------------------------------------------------- */
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     margin: 0;
     padding: 0;
     overflow: hidden;
+    background: var(--background-main);
+    color: var(--text-primary);
 }
+
+/* Globale Überschriften */
+h4 {
+    color: var(--text-primary);
+    margin: 10px 0 5px;
+    font-size: 0.9em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 10px 0;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--background-main); }
+::-webkit-scrollbar-thumb { background: var(--border-color-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
 .page-container {
     display: grid;
@@ -95,6 +162,9 @@ body {
     font-size: 0.8em;
     margin-top: 5px;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 /* -----------------------------------------------------------
@@ -235,9 +305,33 @@ button {
     box-sizing: border-box;
 }
 
+input[type="text"],
+input[type="number"],
+select {
+    border-radius: var(--border-radius);
+}
+
+body.dark input[type="text"],
+body.dark input[type="number"],
+body.dark select {
+    background: var(--background-interactive);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color-strong);
+}
+
+body.dark input[type="text"]::placeholder,
+body.dark input[type="number"]::placeholder {
+    color: var(--text-disabled);
+}
+
+body.dark select option {
+    background: var(--background-surface);
+    color: var(--text-primary);
+}
+
 button {
     font-size: 14px;
-    font-weight: bold;
+    font-weight: 600;
     color: var(--text-on-primary);
     background: var(--color-primary);
     border: none;
@@ -698,15 +792,43 @@ select[id$="_warn"] {
    10. MAP LEAFLET CUSTOM STYLES
 ----------------------------------------------------------- */
 
+/* Leaflet Controls – Dark Theme */
+body.dark .leaflet-control-zoom a,
+body.dark .leaflet-bar a {
+    background: var(--background-surface) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+body.dark .leaflet-bar a:hover {
+    background: var(--background-interactive) !important;
+}
+body.dark .leaflet-bar {
+    border-color: var(--border-color-strong) !important;
+    box-shadow: var(--shadow) !important;
+}
+body.dark .leaflet-pm-toolbar .button-container button,
+body.dark .leaflet-pm-toolbar .button-container .action-button {
+    background: var(--background-surface) !important;
+    color: var(--text-primary) !important;
+}
+body.dark .leaflet-pm-toolbar .button-container button:hover {
+    background: var(--background-interactive) !important;
+}
+
 .leaflet-control-coords {
     background-color: rgba(255, 255, 255, 0.7);
-    padding: 5px 8px; 
+    padding: 5px 8px;
     border-radius: 3px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 12px;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
     color: var(--text-primary);
-    white-space: nowrap; 
+    white-space: nowrap;
+}
+
+body.dark .leaflet-control-coords {
+    background-color: rgba(22, 27, 34, 0.85);
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.4);
 }
 
 /* MGRS Gitter-Beschriftung */
@@ -971,4 +1093,136 @@ select[id$="_warn"] {
 #daySelect {
     width: 130px;
     margin-left: 10px;
+}
+
+/* Theme-Toggle Button */
+#themeToggle {
+    background: transparent;
+    border: 1px solid var(--border-color-strong);
+    color: var(--text-primary);
+    width: auto !important;
+    min-width: 0;
+    padding: 2px 8px;
+    margin: 0;
+    font-size: 15px;
+    border-radius: 20px;
+    cursor: pointer;
+    line-height: 1.4;
+    transition: background 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+}
+
+#themeToggle:hover {
+    background: var(--background-interactive);
+}
+
+
+/* -----------------------------------------------------------
+   14. KOLLABIERBARE SIDEBAR
+----------------------------------------------------------- */
+
+#sidebar {
+    transition: width 0.25s ease, min-width 0.25s ease;
+}
+
+/* Toggle-Button */
+#sidebarToggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 22px !important;
+    height: 22px;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: bold;
+    line-height: 1;
+    background: var(--background-interactive);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color-strong);
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, color 0.2s;
+    flex-shrink: 0;
+}
+
+#sidebarToggle:hover {
+    background: var(--border-color-strong);
+    color: var(--text-primary);
+}
+
+/* Accordion-Header mit Icon/Text-Struktur */
+.accordion-header .acc-icon {
+    flex-shrink: 0;
+    font-size: 1em;
+    transition: font-size 0.2s;
+}
+
+.accordion-header .acc-text {
+    flex-grow: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: opacity 0.15s ease;
+}
+
+/* Collapsed State */
+#sidebar.collapsed {
+    width: 48px;
+    min-width: 48px;
+    overflow: hidden;
+}
+
+#sidebar.collapsed .acc-text,
+#sidebar.collapsed .accordion-header::after,
+#sidebar.collapsed #sidebarToggle {
+    display: none !important;
+}
+
+#sidebar.collapsed .accordion-header {
+    justify-content: center;
+    padding: 13px 0;
+    font-size: 1.15em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#sidebar.collapsed .accordion-header .acc-icon {
+    font-size: 1.2em;
+}
+
+/* Panels im collapsed State ausblenden */
+#sidebar.collapsed .accordion-panel.open {
+    display: none !important;
+}
+
+/* Collapsed-Toggle am linken Rand der Karte */
+#sidebar-expand-btn {
+    display: none;
+    position: absolute;
+    left: 48px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 48px;
+    background: var(--background-surface);
+    border: 1px solid var(--border-color-strong);
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    cursor: pointer;
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 9px;
+    padding: 0;
+    min-width: 0;
+}
+
+#sidebar.collapsed + #map + #sidebar-expand-btn,
+#sidebar.collapsed ~ #sidebar-expand-btn {
+    display: flex;
 }

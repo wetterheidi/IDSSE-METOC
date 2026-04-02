@@ -7,6 +7,24 @@ import { METRICS_CONFIG, isMetricActive } from './metricsConfig.js';
 import * as formatter from './formatter.js';
 
 // -----------------------------------------------------------
+// 1b. CHART.JS THEME DEFAULTS (dynamisch je nach body.dark)
+// -----------------------------------------------------------
+function getChartTheme() {
+    const isDark = document.body.classList.contains('dark');
+    return {
+        textColor:   isDark ? '#8b949e' : '#666666',
+        gridColor:   isDark ? '#30363d' : '#e0e0e0',
+        tooltipBg:   isDark ? '#21262d' : '#ffffff',
+        tooltipTitle:isDark ? '#e6edf3' : '#212529',
+        tooltipBody: isDark ? '#8b949e' : '#666666',
+        tooltipBorder:isDark ? '#30363d' : '#dee2e6',
+        labelBg:     isDark ? 'rgba(13,17,23,0.85)' : 'rgba(255,255,255,0.85)',
+        alarmBand:   isDark ? 'rgba(248,81,73,0.15)'  : 'rgba(220,53,69,0.08)',
+        warnBand:    isDark ? 'rgba(227,179,65,0.12)' : 'rgba(255,193,7,0.10)',
+    };
+}
+
+// -----------------------------------------------------------
 // 2. MODUL-ZUSTAND (ZUR AUFLÖSUNG ZIRKULÄRER ABHÄNGIGKEITEN)
 // -----------------------------------------------------------
 let weatherChart = null; // Globale Chart-Instanz
@@ -74,17 +92,18 @@ const createLimitLine = (value, yAxisID, borderColor, borderWidth, borderDash, l
     yMin: value,
     yMax: value,
     yScaleID: yAxisID,
-    borderColor: borderColor,   
-    borderWidth: borderWidth, 
-    borderDash: borderDash,   
+    borderColor: borderColor,
+    borderWidth: borderWidth,
+    borderDash: borderDash,
     label: {
-        content: labelContent,  
+        content: labelContent,
         enabled: true,
         position: 'end',
-        font: {
-            weight: 'bold'
-        },
-        color: borderColor
+        font: { weight: 'bold', size: 11 },
+        color: borderColor,
+        backgroundColor: getChartTheme().labelBg,
+        padding: 4,
+        borderRadius: 3
     },
     summaryKey: summaryKey
 });
@@ -103,6 +122,7 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
     clearChart(); // Alten Graphen löschen
 
     const ctx = document.getElementById('weatherChartCanvas').getContext('2d');
+    const theme = getChartTheme();
 
     if (!profile || !profile.rules) {
         return; 
@@ -125,7 +145,9 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
     const datasets = [];
     const scales = {
         x: {
-            title: { display: true, text: 'Uhrzeit (UTC)' }
+            title: { display: true, text: 'Uhrzeit (UTC)', color: theme.textColor },
+            ticks: { color: theme.textColor },
+            grid: { color: theme.gridColor }
         }
     };
     const annotationLimits = [];
@@ -234,10 +256,12 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
         if (!scales[opts.axisId]) {
             scales[opts.axisId] = {
                 type: 'linear',
-                display: (opts.axisId === 'ySigWx') ? false : true, // sigWx-Achse ausblenden
+                display: (opts.axisId === 'ySigWx') ? false : true,
                 position: opts.axisPosition,
-                title: { display: true, text: `${opts.axisLabel} (${unit})` },
+                title: { display: true, text: `${opts.axisLabel} (${unit})`, color: theme.textColor },
+                ticks: { color: theme.textColor },
                 grid: {
+                    color: theme.gridColor,
                     drawOnChartArea: (opts.axisPosition === 'left' || axisGridCounter === 0)
                 }
             };
@@ -307,10 +331,10 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 type: 'box',
                 xMin: index,
                 xMax: index + 1,
-                backgroundColor: status === 'alarm' ? 'rgba(220, 53, 69, 0.1)' : 'rgba(255, 193, 7, 0.1)',
+                backgroundColor: status === 'alarm' ? theme.alarmBand : theme.warnBand,
                 borderColor: 'transparent',
                 borderWidth: 0,
-                yScaleID: Object.values(METRICS_CONFIG)[0].chartOptions.axisId, // Binde an die erste Y-Achse
+                yScaleID: Object.values(METRICS_CONFIG)[0].chartOptions.axisId,
             };
         }
         return null;
@@ -338,8 +362,11 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 tooltip: {
                     mode: 'index',
                     intersect: false,
-
-                    // --- ANPASSUNG FÜR TOOLTIP-INHALT ---
+                    backgroundColor: theme.tooltipBg,
+                    titleColor: theme.tooltipTitle,
+                    bodyColor: theme.tooltipBody,
+                    borderColor: theme.tooltipBorder,
+                    borderWidth: 1,
                     callbacks: {
                         label: function (context) {
                             const datasetLabel = context.dataset.label || '';
@@ -371,6 +398,11 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 },
                 legend: {
                     position: 'bottom',
+                    labels: {
+                        color: theme.textColor,
+                        padding: 12,
+                        font: { size: 11 }
+                    },
                     onClick: (e, legendItem, legend) => {
                         // 1. Führe das Standard-Verhalten aus (blendet den Graphen aus)
                         Chart.defaults.plugins.legend.onClick(e, legendItem, legend);

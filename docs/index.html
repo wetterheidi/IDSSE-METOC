@@ -11,7 +11,9 @@
 
     <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.19.2/dist/leaflet-geoman.css" />
 
-    <link rel="stylesheet" href="style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=4.1" />
 </head>
 
 <body>
@@ -20,10 +22,12 @@
 
         <header class="page-header">
             <div class="header-left-compact"> IDSSE-M Cockpit
-                <div id="demoModeCompact"> <label for="demoModeCheckbox" class="clickable">
+                <div id="demoModeCompact">
+                    <label for="demoModeCheckbox" class="clickable">
                         <input type="checkbox" id="demoModeCheckbox" class="clickable">
                         Demo-Modus
                     </label>
+                    <button id="themeToggle" title="Design wechseln">☀️</button>
                 </div>
             </div>
 
@@ -57,8 +61,9 @@
         </header>
 
         <div id="sidebar">
+            <button id="sidebarToggle" title="Sidebar einklappen">◀</button>
 
-            <button class="accordion-header">✍️ Profil erstellen</button>
+            <button class="accordion-header"><span class="acc-icon">✍️</span><span class="acc-text"> Profil erstellen</span></button>
             <div class="accordion-panel">
 
                 <h4>Schritt 1: Gebiet auf Karte zeichnen</h4>
@@ -120,14 +125,14 @@
                 <button id="saveButton" disabled>Profil speichern</button>
             </div>
 
-            <button class="accordion-header">📂 Gespeicherte Profile laden & prüfen</button>
+            <button class="accordion-header"><span class="acc-icon">📂</span><span class="acc-text"> Gespeicherte Profile laden &amp; prüfen</span></button>
             <div class="accordion-panel">
                 <h4>Profile verwalten:</h4>
                 <ul id="profileList"></ul>
                 <hr>
             </div>
 
-            <button class="accordion-header">📖 Vorlagen verwalten</button>
+            <button class="accordion-header"><span class="acc-icon">📖</span><span class="acc-text"> Vorlagen verwalten</span></button>
             <div class="accordion-panel">
 
                 <div class="template-box">
@@ -152,7 +157,7 @@
 
             </div>
 
-            <button class="accordion-header">☁️ Daten-Export / Import</button>
+            <button class="accordion-header"><span class="acc-icon">☁️</span><span class="acc-text"> Daten-Export / Import</span></button>
             <div class="accordion-panel">
                 <button id="exportButton">Alle Profile exportieren</button>
                 <br><br>
@@ -200,6 +205,48 @@
         src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
     <script type="module" src="main.js"></script>
     <script type="module" src="cloudBaseTests.js"></script>
+    <script>
+        // Theme wird VOR DOMContentLoaded angewendet, damit kein Aufflackern entsteht
+        (function () {
+            if (localStorage.getItem('theme') === 'dark') {
+                document.body.classList.add('dark');
+            }
+        })();
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Sidebar Toggle ---
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const container = document.querySelector('.page-container');
+            if (sidebarToggle && sidebar && container) {
+                sidebarToggle.addEventListener('click', () => {
+                    sidebar.classList.toggle('collapsed');
+                    const isCollapsed = sidebar.classList.contains('collapsed');
+                    container.style.gridTemplateColumns = isCollapsed ? '48px 1fr' : '350px 1fr';
+                });
+            }
+
+            // --- Theme Toggle ---
+            const themeToggle = document.getElementById('themeToggle');
+            if (!themeToggle) return;
+
+            function applyTheme(isDark) {
+                document.body.classList.toggle('dark', isDark);
+                themeToggle.textContent = isDark ? '☀️' : '🌙';
+                themeToggle.title = isDark ? 'Helles Design aktivieren' : 'Dunkles Design aktivieren';
+                localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            }
+
+            // Initialen Zustand setzen
+            const isDark = document.body.classList.contains('dark');
+            themeToggle.textContent = isDark ? '☀️' : '🌙';
+            themeToggle.title = isDark ? 'Helles Design aktivieren' : 'Dunkles Design aktivieren';
+
+            themeToggle.addEventListener('click', () => {
+                applyTheme(!document.body.classList.contains('dark'));
+            });
+        });
+    </script>
 </body>
 
 </html>
