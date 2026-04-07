@@ -222,6 +222,7 @@ async function handleMapCreate(layer) {
         await timeSlider.updateAvailableModelsForArea(lat, lng);
     } catch (e) {
         console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
+        ui.showToast(e.message || 'Open-Meteo API nicht erreichbar.', 'error', 6000);
     }
 
     // --- NEU: Land/See-Check ---
@@ -445,8 +446,24 @@ async function runAndUpdateDashboard() {
     }
 
     try {
-        const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
-        ui.displayAutoWarnings(activeAlarms, getManualOverrides);
+        const timestamp = new Date().toLocaleTimeString('de-DE');
+        const errorResults = results.filter(r => r.summary.error);
+
+        if (errorResults.length > 0 && errorResults.length === results.length) {
+            // Alle Profile konnten nicht abgerufen werden → klare Fehlermeldung statt "Alle OK"
+            ui.setDashboardMessage(
+                `<p class="dashboard-error">⚠ Open-Meteo API nicht erreichbar – Wetterdaten konnten nicht geladen werden.</p>` +
+                `<p class="monitor-timestamp">Stand: ${timestamp}</p>`
+            );
+            ui.showToast('Open-Meteo API nicht erreichbar. Bitte später erneut versuchen.', 'error', 8000);
+        } else {
+            if (errorResults.length > 0) {
+                // Einige Profile fehlgeschlagen, andere OK → Warnung im Toast
+                ui.showToast(`${errorResults.length} von ${results.length} Profile konnten nicht abgerufen werden.`, 'warning', 6000);
+            }
+            const activeAlarms = results.filter(r => r.summary.combined && r.summary.combined.triggered);
+            ui.displayAutoWarnings(activeAlarms, getManualOverrides);
+        }
     } finally {
         // Immer zurücksetzen, auch wenn ein Fehler auftritt
         dashboardRunning = false;
@@ -483,6 +500,7 @@ async function handleManualCheck(profileData) {
 
     } catch (e) {
         console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
+        ui.showToast(e.message || 'Open-Meteo API nicht erreichbar.', 'error', 6000);
         // Fallback, falls Update fehlschlägt
         currentWeatherModel = { apiName: 'auto', runTimeISO: 'latest' };
     }

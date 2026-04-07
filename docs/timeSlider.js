@@ -1,6 +1,21 @@
 import { WEATHER_MODELS, API_URLS } from './config.js';
 
 // -----------------------------------------------------------
+// 0. TIMEOUT-HILFSFUNKTION
+// -----------------------------------------------------------
+
+/**
+ * Wrapper um fetch() mit AbortController-Timeout.
+ * Wirft bei Ablauf einen Fehler mit name === 'AbortError'.
+ */
+function fetchWithTimeout(url, timeoutMs = 6000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { signal: controller.signal })
+        .finally(() => clearTimeout(timeoutId));
+}
+
+// -----------------------------------------------------------
 // 1. MODUL-ZUSTAND
 // -----------------------------------------------------------
 
@@ -72,14 +87,21 @@ async function checkAvailableModels(lat, lng) {
     console.log("[timeSlider] Prüfe verfügbare Modelle...");
 
     const modelList = WEATHER_MODELS.LIST;
-    let availableModels = [];
+    const availableModels = [];
+    let networkErrorCount = 0;
 
     // Wir prüfen nur, ob die API uns die Daten für eine Koordinate gibt.
     for (const apiName of modelList) {
+        // Frühzeitiger Abbruch: Nach 2 Netzwerkfehlern in Folge ist der Server vermutlich nicht erreichbar.
+        if (networkErrorCount >= 2) {
+            console.warn('[timeSlider] Mehrere Netzwerkfehler – Open-Meteo API vermutlich nicht erreichbar. Modellprüfung abgebrochen.');
+            return { models: availableModels, networkError: true };
+        }
+
         try {
-            // Nur eine leichte Testanfrage (temp 2m)
+            // Nur eine leichte Testanfrage (temp 2m) – mit 6s Timeout
             const url = `${API_URLS.FORECAST}?latitude=${lat}&longitude=${lng}&hourly=temperature_2m&models=${apiName}&forecast_days=1`;
-            const response = await fetch(url);
+            const response = await fetchWithTimeout(url, 6000);
 
             if (response.ok) {
                 let data;
@@ -88,9 +110,7 @@ async function checkAvailableModels(lat, lng) {
                     const rawText = await response.text();
                     data = JSON.parse(rawText);
                 } catch (jsonError) {
-                    // Hier fangen wir den "Unexpected token 'a'" (nan) Fehler ab
-                    // Wir loggen es nur als Warnung, nicht als Fehler.
-                    // console.warn(`[timeSlider] Modell '${apiName}' lieferte ungültiges JSON (vermutlich out-of-bounds):`, jsonError);
+                    // Ungültiges JSON (z.B. "nan" im Body) = Modell außerhalb seines Gebiets, kein Netzwerkfehler.
                     continue; // Nächstes Modell prüfen
                 }
                 // Prüfe, ob die API tatsächlich Daten zurückgibt
@@ -102,15 +122,21 @@ async function checkAvailableModels(lat, lng) {
                 }
             } else if (response.status === 429) {
                 console.warn(`[timeSlider] API-Limit beim Prüfen von Modell '${apiName}' erreicht.`);
+                networkErrorCount++;
             } else {
                 console.warn(`[timeSlider] Modell '${apiName}' ist nicht verfügbar (Status: ${response.status})`);
             }
         } catch (e) {
-            console.error(`[timeSlider] Netzwerkfehler bei Modellprüfung '${apiName}':`, e);
+            if (e.name === 'AbortError') {
+                console.warn(`[timeSlider] Timeout bei Modellprüfung '${apiName}' (>6s).`);
+            } else {
+                console.error(`[timeSlider] Netzwerkfehler bei Modellprüfung '${apiName}':`, e);
+            }
+            networkErrorCount++;
         }
     }
 
-    return availableModels;
+    return { models: availableModels, networkError: networkErrorCount >= 2 };
 }
 
 /**
@@ -135,7 +161,7 @@ async function fetchLastRunTime(selectedApiName) {
     const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`;
 
     try {
-        const metaResponse = await fetch(metaUrl);
+        const metaResponse = await fetchWithTimeout(metaUrl, 6000);
         if (!metaResponse.ok) {
             // Loggt den Statuscode (z.B. 404) zur besseren Diagnose
             throw new Error(`Status ${metaResponse.status}`);
@@ -541,10 +567,15 @@ export async function updateAvailableModelsForArea(lat, lng) {
     dom.modelSelect.innerHTML = '<option value="">-- Modelle werden geladen --</option>';
 
     // 2. Modelle prüfen (interne Funktion)
-    const models = await checkAvailableModels(lat, lng);
+    const { models, networkError } = await checkAvailableModels(lat, lng);
 
     // 3. Dropdown befüllen (mit Übergabe des bevorzugten Modells)
-    updateModelSelect(models, preferredModelApiName); // <-- Geänderter Aufruf
+    updateModelSelect(models, preferredModelApiName);
+
+    // 4a. Wenn der Server nicht erreichbar war, Fehler werfen (main.js zeigt Toast)
+    if (networkError) {
+        throw new Error('Open-Meteo API nicht erreichbar. Wetterdaten können nicht abgerufen werden.');
+    }
 
     // 4. Setze die Standard-Werte (basierend auf der *neuen* Auswahl)
     const [selectedApiName] = dom.modelSelect.value.split('|');

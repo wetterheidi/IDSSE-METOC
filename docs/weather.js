@@ -17,6 +17,15 @@ import {
 } from './utils.js';
 import { showToast } from './ui.js';
 
+// Verhindert Toast-Spam bei mehreren gleichzeitig fehlschlagenden Profilen
+let _lastApiErrorToastTime = 0;
+function showApiErrorToast(message, type = 'error') {
+    const now = Date.now();
+    if (now - _lastApiErrorToastTime > 10000) {
+        _lastApiErrorToastTime = now;
+        showToast(message, type, 6000);
+    }
+}
 
 // -----------------------------------------------------------
 // 2. GLOBALE REQUEST-QUEUE (Rate Limiter)
@@ -50,8 +59,12 @@ const RequestQueue = (() => {
             active++;
             lastSent = Date.now();
 
-            fetch(url)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+            fetch(url, { signal: controller.signal })
                 .then(async res => {
+                    clearTimeout(timeoutId);
                     if (res.status === 429 && retries > 0) {
                         const backoffMs = Math.pow(2, 3 - retries) * 1500; // 1.5s, 3s, 6s
                         console.warn(`[Queue] 429 – Retry in ${backoffMs}ms (${retries} versuche übrig)`);
@@ -66,9 +79,14 @@ const RequestQueue = (() => {
                     resolve(res);
                 })
                 .catch(err => {
+                    clearTimeout(timeoutId);
                     active--;
                     tryNext();
-                    reject(err);
+                    if (err.name === 'AbortError') {
+                        reject(new Error('Open-Meteo API antwortet nicht (Timeout nach 15s). Bitte später erneut versuchen.'));
+                    } else {
+                        reject(err);
+                    }
                 });
         }, waitMs);
     }
@@ -863,7 +881,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             for (const response of responses) {
                 if (!response.ok) {
                     console.error("API-Fehler bei Chunk:", response.statusText, response.url);
-                    showToast(`Wetterdaten-Abruf fehlgeschlagen: ${response.statusText}`, 'error');
+                    showApiErrorToast(`Wetterdaten-Abruf fehlgeschlagen: ${response.statusText}`);
                     throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
                 }
             }
@@ -921,7 +939,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
             // Fehlerprüfung (wie bisher, aber am gemergten Objekt)
             if (mergedLocationsData[0] && mergedLocationsData[0].error) {
                 console.error("Open-Meteo API-Fehler:", mergedLocationsData[0].reason);
-                showToast(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`, 'error');
+                showApiErrorToast(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
                 throw new Error(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
             }
 
@@ -929,8 +947,13 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
         } catch (err) {
             console.error("Fehler beim Abrufen eines Tiling-Stapels:", err);
-            showToast('Wetterdaten konnten nicht geladen werden.', 'error');
-            return Object.assign(getEmptySummary(), { error: err.message });
+            showApiErrorToast('Wetterdaten konnten nicht geladen werden.');
+            const userMessage = (err.name === 'AbortError' || err.message.includes('Timeout'))
+                ? 'API-Timeout: Server antwortet nicht.'
+                : (err.name === 'TypeError' || err.message.toLowerCase().includes('fetch'))
+                    ? 'Keine Verbindung zum Server. Internetverbindung prüfen.'
+                    : err.message;
+            return Object.assign(getEmptySummary(), { error: userMessage });
         }
     }
 
