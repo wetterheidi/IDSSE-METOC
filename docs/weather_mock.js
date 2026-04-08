@@ -203,6 +203,22 @@ export async function fetchAndCheckProfile(profile, modelInfo) {
     return Promise.resolve(summary);
 }
 
+/**
+ * Mock für batchFetchProfiles: Ruft fetchAndCheckProfile sequenziell auf.
+ * @param {Array<{profile: object, gridPoints: object, activeMetrics: Array}>} profileEntries
+ * @param {object|null} modelInfo
+ * @param {number} forecastDay
+ * @returns {Promise<Map<number, object>>} Map von profileId -> summary
+ */
+export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay) {
+    const resultMap = new Map();
+    for (const entry of profileEntries) {
+        const summary = await fetchAndCheckProfile(entry.profile, modelInfo, entry.gridPoints, entry.activeMetrics, forecastDay);
+        resultMap.set(entry.profile.id, summary);
+    }
+    return resultMap;
+}
+
 // NEU: Mock für den Land/See-Check
 export async function performLandSeaCheck(geojson) {
     console.warn("%cDEMO-MODUS: Land/See-Check -> 'isMaritime: true' (Seegebiet simuliert)", "color: magenta;");

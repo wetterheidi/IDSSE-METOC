@@ -404,6 +404,8 @@ async function runAndUpdateDashboard() {
         ? weather_MOCK.getGridPoints
         : weather_LIVE.getGridPoints;
 
+    // Erster Durchlauf: Grid-Punkte für alle Profile berechnen
+    const profileEntries = [];
     for (let pi = 0; pi < profiles.length; pi++) {
         const profile = profiles[pi];
         const progressEl = document.getElementById('dashboardProgress');
@@ -416,10 +418,9 @@ async function runAndUpdateDashboard() {
             geojson: JSON.parse(profile.geojsonString)
         };
 
-        // KUGELSICHERER CHECK: Hat das Profil eine Form?
-        // (Diese Zeile hat den Fehler 'profileData is not defined' verursacht)
         if (!profileData.geojson) {
             console.warn(`Profil "${profileData.name}" wird übersprungen (keine Geometrie).`);
+            results.push({ profile: profileData, summary: weather_LIVE.getEmptySummary() });
             continue;
         }
 
@@ -430,19 +431,23 @@ async function runAndUpdateDashboard() {
         }
 
         const activeMetrics = getActiveMetrics(profileData.rules);
-        // --- ENDE DES FEHLENDEN BLOCKS ---
+        profileEntries.push({ profile: profileData, gridPoints, activeMetrics });
+    }
 
+    // Gebündelter API-Aufruf: alle gültigen Profile in einer Anfrage
+    if (profileEntries.length > 0) {
+        const progressEl = document.getElementById('dashboardProgress');
+        if (progressEl) progressEl.textContent = '– Lade Wetterdaten...';
 
-        // --- KORRIGIERTER AUFRUF ---
-        // (Verwendet das 'dashboardModelInfo')
-        const summary = await getWeatherModule().fetchAndCheckProfile(
-            profileData,
-            dashboardModelInfo, // <-- HIER IST DIE ÄNDERUNG
-            gridPoints,
-            activeMetrics,
+        const summaryMap = await getWeatherModule().batchFetchProfiles(
+            profileEntries,
+            dashboardModelInfo,
             currentForecastDay
         );
-        results.push({ profile: profileData, summary: summary });
+        for (const entry of profileEntries) {
+            const summary = summaryMap.get(entry.profile.id) || weather_LIVE.getEmptySummary();
+            results.push({ profile: entry.profile, summary });
+        }
     }
 
     try {

@@ -768,8 +768,120 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
 }
 
 // -----------------------------------------------------------
-// 5. INTERNE KERNLOGIK: SCHWELLENWERTPRÜFUNG
+// 5. INTERNE KERNLOGIK: API-FETCH & SCHWELLENWERTPRÜFUNG
 // -----------------------------------------------------------
+
+/**
+ * Privater Helfer: Holt Rohdaten von der Open-Meteo API für eine deduplizierte
+ * Liste von Koordinaten. Schlüssel im Ergebnis entsprechen den *angefragten*
+ * Koordinaten (nicht den von der API zurückgegebenen), um Rounding-Probleme zu vermeiden.
+ *
+ * @param {Array<{lat: number, lon: number}>} allCoords - Koordinaten (dedupliziert)
+ * @param {object} apiParams  - Ergebnis von getApiParams()
+ * @param {boolean} hasForecastParams
+ * @param {boolean} hasMarineParams
+ * @param {object|null} modelInfo
+ * @param {number} forecastDays
+ * @returns {Promise<Map<string, object>>} Map von "lat,lon" -> locationData
+ * @throws {Error} mit benutzerfreundlicher Nachricht bei API-Fehler
+ */
+async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineParams, modelInfo, forecastDays) {
+    const CHUNK_SIZE = 50;
+    const coordChunks = chunkArray(allCoords, CHUNK_SIZE);
+    const rawDataMap = new Map();
+
+    for (const chunk of coordChunks) {
+        const lats = chunk.map(c => c.lat.toFixed(4)).join(',');
+        const lons = chunk.map(c => c.lon.toFixed(4)).join(',');
+        // Schlüssel nach Anfrage-Reihenfolge – nicht nach API-Rückgabe (verhindert Rounding-Mismatch)
+        const keys = chunk.map(c => `${c.lat.toFixed(4)},${c.lon.toFixed(4)}`);
+
+        const fetchPromises = [];
+
+        if (hasForecastParams) {
+            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
+            if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
+            if (apiParams.forecast.daily.length > 0)  forecastUrl += `&daily=${apiParams.forecast.daily}`;
+            forecastUrl += `&models=${apiParams.forecast.models}`;
+            if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
+                forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
+            }
+            fetchPromises.push(RequestQueue.fetch(forecastUrl));
+        }
+
+        if (hasMarineParams) {
+            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
+            marineUrl += `&hourly=${apiParams.marine.hourly}`;
+            marineUrl += `&models=${apiParams.marine.models}`;
+            fetchPromises.push(RequestQueue.fetch(marineUrl));
+        }
+
+        let mergedLocationsData;
+        try {
+            const responses = await Promise.all(fetchPromises);
+
+            for (const response of responses) {
+                if (!response.ok) {
+                    throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
+                }
+            }
+
+            const allData = await Promise.all(responses.map(res => res.json()));
+
+            let forecastJson = null;
+            let marineJson = null;
+            let promiseIndex = 0;
+            if (hasForecastParams) { forecastJson = allData[promiseIndex]; promiseIndex++; }
+            if (hasMarineParams)   { marineJson   = allData[promiseIndex]; }
+
+            const forecastData = hasForecastParams ? (Array.isArray(forecastJson) ? forecastJson : [forecastJson]) : [];
+            const marineData   = hasMarineParams   ? (Array.isArray(marineJson)   ? marineJson   : [marineJson])   : [];
+
+            if (!hasForecastParams && hasMarineParams) {
+                mergedLocationsData = marineData;
+            } else {
+                mergedLocationsData = forecastData;
+                if (hasMarineParams && marineData.length > 0) {
+                    if (mergedLocationsData.length === 0) {
+                        mergedLocationsData = marineData;
+                    } else {
+                        for (let i = 0; i < mergedLocationsData.length; i++) {
+                            if (marineData[i] && marineData[i].hourly) {
+                                mergedLocationsData[i].hourly = {
+                                    ...mergedLocationsData[i].hourly,
+                                    ...marineData[i].hourly
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (mergedLocationsData[0] && mergedLocationsData[0].error) {
+                throw new Error(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
+            }
+
+        } catch (err) {
+            console.error("Fehler beim Abrufen eines Tiling-Stapels:", err);
+            showApiErrorToast('Wetterdaten konnten nicht geladen werden.');
+            const userMessage = (err.name === 'AbortError' || err.message.includes('Timeout'))
+                ? 'API-Timeout: Server antwortet nicht.'
+                : (err.name === 'TypeError' || err.message.toLowerCase().includes('fetch'))
+                    ? 'Keine Verbindung zum Server. Internetverbindung prüfen.'
+                    : err.message;
+            throw new Error(userMessage);
+        }
+
+        // Ergebnisse nach Anfrage-Reihenfolge speichern
+        for (let i = 0; i < chunk.length; i++) {
+            if (mergedLocationsData[i]) {
+                rawDataMap.set(keys[i], mergedLocationsData[i]);
+            }
+        }
+    }
+
+    return rawDataMap;
+}
 
 export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activeMetrics, forecastDay) {
     // 1. Cache-Schlüssel
@@ -798,168 +910,41 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
         return { error: "Keine Sampling-Punkte zum Abfragen.", ...getEmptySummary() };
     }
 
-    // 4. Punkte stapeln (Unverändert)
-    const CHUNK_SIZE = 50;
-    const pointChunks = chunkArray(gridPoints.features, CHUNK_SIZE);
-    let allApiResponses = [];
-
-    // NEU: API-Parameter dynamisch UND gruppiert holen
+    // 4. API-Parameter holen
     const metricsForParams = activeMetrics || Object.values(METRICS_CONFIG);
-    const { hourly, daily, pressure } = getApiParams(metricsForParams, modelInfo);
-
-    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte...`);
-    console.log(`Hourly-Params: ${hourly}`);
-    console.log(`Daily-Params: ${daily}`);
-    console.log(`Pressure-Params: ${pressure}`); // <-- Neuer Log
-
-    // 5. Sequenzielle Schleife (API-URL-Bau)
     const apiParams = getApiParams(metricsForParams, modelInfo);
-
     const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
     const hasMarineParams = apiParams.marine.hourly.length > 0;
 
-    console.log(`Starte Tiling-Fetch: ${gridPoints.features.length} Punkte...`);
-    if (hasForecastParams) console.log(`Forecast-Params: ${apiParams.forecast.hourly}`);
-    if (hasMarineParams) console.log(`Marine-Params: ${apiParams.marine.hourly}`);
-
+    // 5. forecastDays berechnen
     let forecastDays = getModelMaxDays(modelApiName);
-
-    // Prüfe, ob ein spezifisches Modell (nicht 'auto') gewählt wurde
     if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
-        // Lese die maxDays aus unserer Config
         forecastDays = WEATHER_MODELS.MODEL_PROPERTIES[modelApiName].maxDays || 7;
     } else if (modelApiName !== 'auto') {
-        // Fallback für Modelle, die wir in config.js vergessen haben (z.B. GEM)
-        // Wir müssen raten. 7 ist oft zu viel, 2 ist sicherer.
-        // Update: Wir haben GEM in der config.js, also sollte der erste Block greifen.
-        // Wir behalten 7 als Standard.
-        console.warn(`[weather.js] Modell ${modelApiName} nicht in MODEL_PROPERTIES (config.js) gefunden. Nutze Standard ${forecastDays} Tage.`);
+        console.warn(`[weather.js] Modell ${modelApiName} nicht in MODEL_PROPERTIES gefunden. Nutze Standard ${forecastDays} Tage.`);
     }
     console.log(`[weather.js] Angeforderte Prognosetage für ${modelApiName}: ${forecastDays}`);
 
-    // 5. Sequenzielle Schleife (API-URL-Bau)
-    // Alle fetch()-Aufrufe laufen durch die globale RequestQueue (Rate-Limiter oben).
-    // Kein manuelles Delay oder fetchWithRetry nötig – die Queue regelt alles.
-    for (const chunk of pointChunks) {
+    // 6. Koordinaten extrahieren und Rohdaten gebündelt abrufen
+    const coords = gridPoints.features.map(p => ({
+        lat: p.geometry.coordinates[1],
+        lon: p.geometry.coordinates[0]
+    }));
+    console.log(`Starte Tiling-Fetch: ${coords.length} Punkte...`);
 
-        const lats = chunk.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
-        const lons = chunk.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
-
-        const fetchPromises = [];
-
-        // --- URL 1: FORECAST (Wind, Temp, etc.) ---
-        if (hasForecastParams) {
-            // SICHERSTELLEN, DASS HIER 'let' STEHT!
-            let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
-
-            // Fortlaufende Zuweisungen mit '+=' sind erlaubt, da 'forecastUrl' als 'let' deklariert ist.
-            if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
-            if (apiParams.forecast.daily.length > 0) forecastUrl += `&daily=${apiParams.forecast.daily}`;
-
-            forecastUrl += `&models=${apiParams.forecast.models}`;
-
-            if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
-                // Dies ist Zeile 283 (Die Fehlerzeile)
-                forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
-            }
-            fetchPromises.push(RequestQueue.fetch(forecastUrl));
-        }
-
-        // --- URL 2: MARINE (Wellen, etc.) ---
-        if (hasMarineParams) {
-            // SICHERSTELLEN, DASS HIER 'let' STEHT!
-            let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
-            marineUrl += `&hourly=${apiParams.marine.hourly}`;
-            marineUrl += `&models=${apiParams.marine.models}`;
-            fetchPromises.push(RequestQueue.fetch(marineUrl));
-        }
-
-        try {
-            const responses = await Promise.all(fetchPromises);
-
-            // Prüfen, ob ALLE Antworten OK waren
-            for (const response of responses) {
-                if (!response.ok) {
-                    console.error("API-Fehler bei Chunk:", response.statusText, response.url);
-                    showApiErrorToast(`Wetterdaten-Abruf fehlgeschlagen: ${response.statusText}`);
-                    throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
-                }
-            }
-
-            // JSON-Daten aus allen Antworten extrahieren
-            const allData = await Promise.all(responses.map(res => res.json()));
-
-            // --- NEUES DATEN-MERGING ---
-            // Wir nehmen die erste Antwort (Forecast) als Basis
-            let forecastJson = null;
-            let marineJson = null;
-            let promiseIndex = 0; // Ein Zähler für die Antworten
-
-            // Wir weisen die Antworten in der Reihenfolge zu, in der wir die Anfragen gestellt haben
-            if (hasForecastParams) {
-                forecastJson = allData[promiseIndex];
-                promiseIndex++;
-            }
-            if (hasMarineParams) {
-                marineJson = allData[promiseIndex];
-            }
-
-            // Jetzt wandeln wir sie sicher in Arrays um
-            const forecastData = hasForecastParams ? (Array.isArray(forecastJson) ? forecastJson : [forecastJson]) : [];
-            const marineData = hasMarineParams ? (Array.isArray(marineJson) ? marineJson : [marineJson]) : [];
-
-            // Wenn nur Marine-Daten da sind, nutze sie als Basis
-            if (!hasForecastParams && hasMarineParams) {
-                allApiResponses.push(...marineData);
-                continue; // Nächster Chunk
-            }
-
-            // Standardfall: Forecast-Daten (auch wenn leer) als Basis nehmen
-            let mergedLocationsData = forecastData;
-
-            // Wenn wir auch Marine-Daten haben, müssen wir sie in die Forecast-Daten "hinein-mergen"
-            if (hasMarineParams && marineData.length > 0) {
-                if (mergedLocationsData.length === 0) {
-                    // Fall: Nur Marine-Daten wurden zurückgegeben (z.B. Forecast-API down?)
-                    mergedLocationsData = marineData;
-                } else {
-                    // Normalfall: Beide APIs haben geantwortet. Wir mergen 'hourly'.
-                    for (let i = 0; i < mergedLocationsData.length; i++) {
-                        // Mergen das 'hourly' Objekt von Marine in das 'hourly' Objekt von Forecast
-                        if (marineData[i] && marineData[i].hourly) {
-                            mergedLocationsData[i].hourly = {
-                                ...mergedLocationsData[i].hourly,
-                                ...marineData[i].hourly
-                            };
-                        }
-                    }
-                }
-            }
-
-            // Fehlerprüfung (wie bisher, aber am gemergten Objekt)
-            if (mergedLocationsData[0] && mergedLocationsData[0].error) {
-                console.error("Open-Meteo API-Fehler:", mergedLocationsData[0].reason);
-                showApiErrorToast(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
-                throw new Error(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
-            }
-
-            allApiResponses.push(...mergedLocationsData);
-
-        } catch (err) {
-            console.error("Fehler beim Abrufen eines Tiling-Stapels:", err);
-            showApiErrorToast('Wetterdaten konnten nicht geladen werden.');
-            const userMessage = (err.name === 'AbortError' || err.message.includes('Timeout'))
-                ? 'API-Timeout: Server antwortet nicht.'
-                : (err.name === 'TypeError' || err.message.toLowerCase().includes('fetch'))
-                    ? 'Keine Verbindung zum Server. Internetverbindung prüfen.'
-                    : err.message;
-            return Object.assign(getEmptySummary(), { error: userMessage });
-        }
+    let rawDataMap;
+    try {
+        rawDataMap = await _fetchRawData(coords, apiParams, hasForecastParams, hasMarineParams, modelInfo, forecastDays);
+    } catch (err) {
+        return Object.assign(getEmptySummary(), { error: err.message });
     }
 
-    // 6. Daten zusammennähen (Unverändert)
-    console.log(`Tiling-Fetch beendet. Nähe ${allApiResponses.length} Punkte zusammen.`);
-    console.log("%cRAW API DATA (Aggregated from Tiling):", "color: blue; font-weight: bold;", allApiResponses);
+    const allApiResponses = coords
+        .map(c => rawDataMap.get(`${c.lat.toFixed(4)},${c.lon.toFixed(4)}`))
+        .filter(Boolean);
+
+    // 7. Daten auswerten
+    console.log(`Tiling-Fetch beendet. ${allApiResponses.length} Punkte geladen.`);
     const finalSummary = checkThresholds_Sampling(profile, allApiResponses, activeMetrics, forecastDay, modelInfo);
     // 7. Cache speichern (Unverändert)
     try {
@@ -970,6 +955,119 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
     // 8. Fertig (Unverändert)
     return finalSummary;
+}
+
+/**
+ * Holt Wetterdaten für mehrere Profile in einem gebündelten API-Aufruf.
+ * Koordinaten werden über alle Profile dedupliziert; Metriken werden vereinigt.
+ * So wird die Open-Meteo API bei vielen Profilen deutlich weniger belastet.
+ *
+ * @param {Array<{profile: object, gridPoints: object, activeMetrics: Array}>} profileEntries
+ * @param {object|null} modelInfo  - { apiName, runTimeISO }
+ * @param {number} forecastDay
+ * @returns {Promise<Map<number, object>>} Map von profileId -> summary
+ */
+export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay) {
+    const modelApiName = modelInfo ? modelInfo.apiName : 'auto';
+    const THIRTY_MINUTES = 30 * 60 * 1000;
+    const resultMap = new Map();
+
+    // 1. Cache-Prüfung: gecachte Profile sofort auflösen
+    const uncachedEntries = [];
+    for (const entry of profileEntries) {
+        const cacheKey = `${entry.profile.id}_${modelApiName}_day${forecastDay || 0}`;
+        try {
+            const cachedData = await getCache(cacheKey);
+            if (cachedData && (Date.now() - cachedData.timestamp < THIRTY_MINUTES)) {
+                console.log(`%cDATEN AUS CACHE GELADEN: ${cacheKey}`, "color: green; font-weight: bold;");
+                resultMap.set(entry.profile.id, cachedData.summary);
+                continue;
+            }
+        } catch (e) {
+            console.warn("Cache-Lesefehler:", e);
+        }
+        uncachedEntries.push(entry);
+    }
+
+    if (uncachedEntries.length === 0) return resultMap;
+
+    // 2. Einzigartige Koordinaten über alle ungecachten Profile sammeln
+    const coordSet = new Map(); // "lat,lon" -> { lat, lon }
+    for (const entry of uncachedEntries) {
+        for (const feature of (entry.gridPoints?.features || [])) {
+            const lat = feature.geometry.coordinates[1];
+            const lon = feature.geometry.coordinates[0];
+            const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+            if (!coordSet.has(key)) coordSet.set(key, { lat, lon });
+        }
+    }
+    const allUniqueCoords = Array.from(coordSet.values());
+    const totalPoints = uncachedEntries.reduce((s, e) => s + (e.gridPoints?.features?.length || 0), 0);
+    console.log(`[batchFetchProfiles] ${uncachedEntries.length} Profile ohne Cache – ${allUniqueCoords.length} einzigartige Koordinaten (von ${totalPoints} gesamt).`);
+
+    // 3. Vereinigung aller aktiven Metriken
+    const seenMetrics = new Set();
+    const unionMetrics = [];
+    for (const entry of uncachedEntries) {
+        for (const metric of (entry.activeMetrics || Object.values(METRICS_CONFIG))) {
+            if (!seenMetrics.has(metric.summaryKey)) {
+                seenMetrics.add(metric.summaryKey);
+                unionMetrics.push(metric);
+            }
+        }
+    }
+
+    // 4. API-Parameter und forecastDays
+    const apiParams = getApiParams(unionMetrics, modelInfo);
+    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
+    const hasMarineParams = apiParams.marine.hourly.length > 0;
+
+    let forecastDays = getModelMaxDays(modelApiName);
+    if (modelApiName !== 'auto' && WEATHER_MODELS.MODEL_PROPERTIES[modelApiName]) {
+        forecastDays = WEATHER_MODELS.MODEL_PROPERTIES[modelApiName].maxDays || 7;
+    } else if (modelApiName !== 'auto') {
+        console.warn(`[batchFetchProfiles] Modell ${modelApiName} nicht in MODEL_PROPERTIES gefunden. Nutze Standard ${forecastDays} Tage.`);
+    }
+
+    // 5. Einmaliger API-Aufruf für alle einzigartigen Koordinaten
+    let rawDataMap;
+    try {
+        rawDataMap = await _fetchRawData(allUniqueCoords, apiParams, hasForecastParams, hasMarineParams, modelInfo, forecastDays);
+    } catch (err) {
+        console.error("[batchFetchProfiles] Fetch fehlgeschlagen:", err.message);
+        for (const entry of uncachedEntries) {
+            resultMap.set(entry.profile.id, Object.assign(getEmptySummary(), { error: err.message }));
+        }
+        return resultMap;
+    }
+
+    // 6. Pro Profil: passende Datenpunkte filtern und Summary berechnen
+    for (const entry of uncachedEntries) {
+        const { profile, gridPoints, activeMetrics } = entry;
+
+        const profileLocationsData = (gridPoints?.features || [])
+            .map(f => {
+                const lat = f.geometry.coordinates[1];
+                const lon = f.geometry.coordinates[0];
+                return rawDataMap.get(`${lat.toFixed(4)},${lon.toFixed(4)}`);
+            })
+            .filter(Boolean);
+
+        if (profileLocationsData.length === 0) {
+            resultMap.set(profile.id, Object.assign(getEmptySummary(), { error: "Keine API-Daten für dieses Profil." }));
+            continue;
+        }
+
+        console.log(`[batchFetchProfiles] Summary für "${profile.name}" (${profileLocationsData.length} Punkte).`);
+        const finalSummary = checkThresholds_Sampling(profile, profileLocationsData, activeMetrics, forecastDay, modelInfo);
+
+        const cacheKey = `${profile.id}_${modelApiName}_day${forecastDay || 0}`;
+        try { await setCache(cacheKey, finalSummary); } catch (e) { console.warn("Cache-Schreibfehler:", e); }
+
+        resultMap.set(profile.id, finalSummary);
+    }
+
+    return resultMap;
 }
 
 /**
