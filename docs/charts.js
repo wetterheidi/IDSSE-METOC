@@ -201,7 +201,7 @@ export function updateWeatherChart(profile, summary, getBlendedCombinedStatusFun
                 // Erstelle das Bild-Objekt
                 const img = new Image(20, 20);
                 const codeString = code.toString().padStart(2, '0');
-                img.src = `../img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
+                img.src = `img/WeatherSymbol_WMO_PresentWeather_ww_${codeString}.png`;
 
                 pointStyles[index] = img; // Speichere das Bild-Objekt
 
