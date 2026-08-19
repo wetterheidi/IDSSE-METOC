@@ -191,7 +191,7 @@ async function handleDayChange(e) {
         await handleManualCheck(currentManualProfile);
     }
 
-    // 2. Dashboard neu laden (nutzt jetzt sein eigenes, festes 'icon_seamless')
+    // 2. Dashboard neu laden (nutzt jetzt sein eigenes, festes 'icon_eu')
     await runAndUpdateDashboard();
 }
 
@@ -388,13 +388,24 @@ async function runAndUpdateDashboard() {
     ui.setDashboardMessage(`<p>Prüfe ${profileCount} Profile... <span id="dashboardProgress"></span></p>`);
 
     // --- LÖSUNG: Feste Modell-Konfiguration für das Dashboard ---
-    // (Stellt sicher, dass der Auto-Monitor immer 'icon_seamless' verwendet)
+    // (Stellt sicher, dass der Auto-Monitor immer ein festes Modell verwendet)
+    // icon_eu statt icon_seamless (Stand 2026-08-19): icon_eu hat auf Michaels
+    // Instanz volle Abdeckung -- Oberflächenwerte UND native Modell-Level-
+    // Wolkendaten fuer cloudBase/cloudCeiling (siehe config.js
+    // MICHAEL_LEVEL_CLOUD_MODELS) -- dadurch laeuft der automatische
+    // Profil-Check praktisch komplett ueber Michaels ratenlimitfreie Instanz
+    // statt in die 429-Grenze der oeffentlichen API zu laufen. icon_seamless
+    // hatte das nicht (Michael fuehrt dort keine Level-Wolkendaten), die
+    // schwere Druckstufen-Anfrage fuer cloudBase/cloudCeiling ging weiterhin
+    // an public. Kompromiss: 5 statt 7 Tage Vorhersage, Abdeckung ganz Europa
+    // (lat 29.5-70.5, lon -23.5-62.5) statt global -- fuer Profile ausserhalb
+    // dieses Bereichs liefert icon_eu keine Daten.
     const dashboardModelInfo = {
-        apiName: 'icon_seamless',
+        apiName: 'icon_eu',
         runTimeISO: 'latest'
     };
 
-    const dashboardResolution = getModelResolution('icon_seamless');
+    const dashboardResolution = getModelResolution('icon_eu');
     const profiles = await db.getProfiles();
     const results = [];
 

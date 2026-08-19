@@ -39,21 +39,20 @@ export const UNITS = {
 // -----------------------------------------------------------
 
 export const WEATHER_MODELS = {
-    // Liste der Modelle, die auf Verfügbarkeit geprüft werden sollen (Open-Meteo API Name)
+    // Liste der Modelle, die auf Verfügbarkeit geprüft werden sollen (Open-Meteo API Name).
+    // BRANCH feature/michael-datasource: bewusst auf die beiden Modelle mit
+    // VOLLER Michael-Abdeckung eingeschränkt (Oberfläche + native Cloud-Level,
+    // siehe MICHAEL_LEVEL_CLOUD_MODELS unten). timeSlider.js `checkAvailableModels()`
+    // testet jedes Listen-Element mit einem eigenen Request gegen die
+    // OEFFENTLICHE API -- bei allen 13 Modellen 13 Public-Requests pro
+    // Testfeld-Definition, unabhaengig vom letztlich gewaehlten Modell. Das
+    // war der Haupttreiber der anhaltenden 429er. Die restlichen Modelle
+    // bleiben in DISPLAY_MAP/API_MAP/MODEL_PROPERTIES unten vollstaendig
+    // erhalten (nur diese Liste ist branch-spezifisch verkuerzt) -- ein
+    // Merge zurueck zu main gibt die volle Liste ohne Konflikt wieder frei.
     LIST: [
-        'icon_seamless',
-        'icon_global',
         'icon_eu',
         'icon_d2',
-        'ecmwf_ifs025',
-        'ecmwf_aifs025_single',
-        'gfs_seamless',
-        'gfs_global',
-        'gfs_hrrr',
-        'gfs_graphcast025',
-        'arome_france',
-        'gem_hrdps_continental',
-        'gem_regional'
     ],
     // Mappings für die Anzeige
     DISPLAY_MAP: {
@@ -102,12 +101,17 @@ export const WEATHER_MODELS = {
         'icon_eu': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
             maxDays: 5,
-            resolutionKm: 7
+            resolutionKm: 7,
+            // Bbox aus meteokit/src/config.js (dieselbe DWD-ICON-EU-Domain) --
+            // ermoeglicht checkAvailableModels() eine reine Geometrie-Pruefung
+            // statt eines Live-Requests gegen public (siehe timeSlider.js).
+            bbox: { latMin: 29.5, latMax: 70.5, lonMin: -23.5, lonMax: 62.5 }
         },
         'icon_d2': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
             maxDays: 2,
-            resolutionKm: 2.2
+            resolutionKm: 2.2,
+            bbox: { latMin: 43.18, latMax: 58.08, lonMin: -3.94, lonMax: 20.34 }
         },
 
         // ECMWF-Modelle
@@ -169,8 +173,60 @@ export const WEATHER_MODELS = {
 export const API_URLS = {
     FORECAST: "https://api.open-meteo.com/v1/forecast",
     MARINE: "https://marine-api.open-meteo.com/v1/marine",
-    ELEVATION: "https://api.open-meteo.com/v1/elevation"
+    // ELEVATION entfernt: performLandSeaCheck() in weather.js prüft seit
+    // diesem Branch lokal gegen landPolygons.js (kein API-Aufruf mehr nötig).
 };
+
+// -----------------------------------------------------------
+// 4b. MICHAELS INSTANZ (ratenlimitfrei, nur ICON-Modelle)
+// -----------------------------------------------------------
+// Verifiziert per curl-Stichprobe (2026-08-19) gegen open-meteo.mah.priv.at /
+// open-meteo-temp.mah.priv.at, siehe Plan "IDSSE-METOC: Michael-Instanz als
+// primäre Datenquelle". Nicht geraten/versucht-und-zurückgefallen, sondern
+// deterministisch geroutet: Michael liefert bei fehlenden Feldern still
+// `null` statt eines Fehlers, ein reiner try/catch-Fallback würde das nicht
+// abfangen -- bei einem Alarm-Tool wäre ein stiller Fehlalarm gefährlicher
+// als ein 429.
+
+// Zwei Hosts: icon_d2/icon_eu laufen über die Hauptinstanz; icon_global/
+// icon_seamless (== dwd_icon) über eine zweite, dedizierte Instanz -- auf der
+// Hauptinstanz ist die icon_global-Level-Ingestion kaputt (bestätigt: Level-
+// Request dort liefert keine gültige JSON-Antwort).
+export const MICHAEL_HOSTS = {
+    icon_d2: "https://open-meteo.mah.priv.at",
+    icon_eu: "https://open-meteo.mah.priv.at",
+    icon_global: "https://open-meteo-temp.mah.priv.at",
+    icon_seamless: "https://open-meteo-temp.mah.priv.at",
+};
+
+// Modelle, bei denen Michael native Modell-Level-Wolkendaten
+// (cloud_cover_level{N}, height_agl_level{N}) tatsächlich führt -- bei
+// icon_global/icon_seamless kommt cloud_cover_level{N} auch auf der
+// dedizierten Instanz durchgehend null zurück, dort bleibt cloudBase/
+// cloudCeiling auf dem alten Druckstufen-Pfad (siehe weather.js).
+export const MICHAEL_LEVEL_CLOUD_MODELS = new Set(["icon_d2", "icon_eu"]);
+
+// Level-Anzahl je Modell (für die Cap-Sondierung, wie droneforecast/
+// cloudoverlay.js ensureBand()). Nur für die oben gelisteten Modelle nötig.
+export const MICHAEL_MODEL_LEVELS = { icon_d2: 65, icon_eu: 74 };
+
+// Höhen-Cap für die Wolken-Level-Sondierung (m AGL) -- wie meteokit
+// CLOUD_OVERLAY_CAP_M, deckt auch Cirren ab.
+export const MICHAEL_CLOUD_CAP_M = 12000;
+
+// Whitelist: NUR diese Oberflächen-Parameter sind auf Michael bestätigt real
+// befüllt (curl-Stichprobe). Alles andere (snow_depth, soil_temperature_0cm,
+// precipitation_probability, alle *_hPa-Druckstufenparameter) geht immer an
+// die öffentliche API -- bewusst als Whitelist (fail-closed), nicht als
+// Blacklist: ein künftiger, hier nicht gelisteter Parameter landet damit
+// automatisch auf dem sicheren (öffentlichen) Pfad statt still auf Michael
+// null zurückzubekommen.
+export const MICHAEL_SURFACE_WHITELIST = new Set([
+    "temperature_2m", "wind_gusts_10m", "wind_speed_10m", "wind_direction_10m",
+    "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high",
+    "visibility", "apparent_temperature", "precipitation", "weather_code",
+    "relative_humidity_2m", "dew_point_2m", "freezing_level_height", "cape", "snowfall",
+]);
 
 // -----------------------------------------------------------
 // 5. HELPER FUNKTIONEN

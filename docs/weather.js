@@ -5,7 +5,13 @@
 // -----------------------------------------------------------
 import { getCache, setCache } from './db.js';
 import { METRICS_CONFIG, getApiParams, getMetricRules } from './metricsConfig.js';
-import { WEATHER_MODELS, API_URLS, getModelMaxDays } from './config.js';
+import {
+    WEATHER_MODELS, API_URLS, getModelMaxDays,
+    MICHAEL_HOSTS, MICHAEL_LEVEL_CLOUD_MODELS, MICHAEL_MODEL_LEVELS,
+    MICHAEL_CLOUD_CAP_M, MICHAEL_SURFACE_WHITELIST,
+} from './config.js';
+import { cloudCeiling, lowestCloudBase } from './clouds.js';
+import { LAND_POLYGONS } from './landPolygons.js';
 import {
     analyzeCloudLayers,
     calculateDewpoint,
@@ -113,6 +119,106 @@ const RequestQueue = (() => {
     };
 })();
 
+
+// -----------------------------------------------------------
+// 2b. MICHAELS INSTANZ: DIREKTER FETCH (kein Rate-Limiting noetig)
+// -----------------------------------------------------------
+
+/**
+ * Einfacher fetch() mit Timeout, OHNE die RequestQueue -- Michaels Instanz ist
+ * ratenlimitfrei, die Drosselung/Concurrency-Begrenzung der RequestQueue ist
+ * ausschliesslich fuer die oeffentliche API noetig (siehe config.js
+ * MICHAEL_HOSTS-Kommentar). So bleibt die (fuer public ohnehin knappe)
+ * RequestQueue-Kapazitaet ungeschmaelert.
+ */
+async function fetchDirect(url, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { signal: controller.signal });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+/**
+ * Teilt eine Liste angefragter hourly-Parameter danach auf, ob sie auf
+ * Michaels Instanz bestaetigt real befuellt sind (MICHAEL_SURFACE_WHITELIST,
+ * fail-closed: alles Unbekannte -> public).
+ */
+function splitHourlyParams(paramNames, whitelist) {
+    const michael = [];
+    const publicOnly = [];
+    for (const name of paramNames) {
+        (whitelist.has(name) ? michael : publicOnly).push(name);
+    }
+    return { michael, publicOnly };
+}
+
+// Modul-Level-Cache: das sondierte Level-Band aendert sich pro Modell kaum
+// (Levelhoehen sind primaer eine Funktion des Modellgitters, nicht der
+// Wetterlage) -- eine Sondierung pro Modell und Sitzung reicht, spart eine
+// zusaetzliche Anfrage bei jedem Profil-Check.
+let _cloudBandCache = { modelApiName: null, band: null };
+
+/**
+ * Sondiert einmal je Modell (an EINEM Punkt) die AGL-Hoehe aller Modell-Level
+ * und schneidet das Band bei MICHAEL_CLOUD_CAP_M ab -- exaktes Vorgehen wie
+ * droneforecast/src/cloudoverlay.js `ensureBand()`. Gibt bei Fehlern `null`
+ * zurueck (Aufrufer faellt dann auf den alten Druckstufen-Pfad zurueck, statt
+ * cloudBase/cloudCeiling ohne Daten dastehen zu lassen).
+ * @returns {Promise<{levels: number[]} | null>}
+ */
+async function ensureCloudBand(modelApiName, sampleCoord) {
+    if (_cloudBandCache.modelApiName === modelApiName && _cloudBandCache.band) {
+        return _cloudBandCache.band;
+    }
+    const nLevels = MICHAEL_MODEL_LEVELS[modelApiName];
+    if (!nLevels) return null;
+
+    const probeLevels = [];
+    for (let l = nLevels; l >= 1; l--) probeLevels.push(l);
+    const vars = probeLevels.map(l => `height_agl_level${l}`).join(',');
+    const url = `${MICHAEL_HOSTS[modelApiName]}/v1/forecast?latitude=${sampleCoord.lat.toFixed(4)}&longitude=${sampleCoord.lon.toFixed(4)}&hourly=${vars}&models=${modelApiName}&forecast_days=1`;
+
+    try {
+        const res = await fetchDirect(url);
+        if (!res.ok) throw new Error(`Sondierung fehlgeschlagen: ${res.statusText}`);
+        const data = await res.json();
+        const hourly = (Array.isArray(data) ? data[0] : data)?.hourly;
+        if (!hourly) throw new Error('Sondierung: keine hourly-Daten erhalten.');
+
+        const levels = [];
+        for (const l of probeLevels) {
+            const arr = hourly[`height_agl_level${l}`] || [];
+            const heightVal = arr.find(v => v != null);
+            levels.push(l);
+            if (heightVal != null && heightVal >= MICHAEL_CLOUD_CAP_M) break;
+        }
+        const band = { levels };
+        _cloudBandCache = { modelApiName, band };
+        return band;
+    } catch (e) {
+        console.warn(`[weather.js] Cloud-Level-Sondierung fuer ${modelApiName} fehlgeschlagen (${e.message}) -- falle auf Druckstufen-Pfad zurueck.`);
+        return null;
+    }
+}
+
+/**
+ * Wandelt die Rohantwort eines Level-Cloud-Requests (hourly-Objekt mit
+ * cloud_cover_level{N}/height_agl_level{N}) in die von clouds.js erwartete
+ * schlanke `col`-Form um. band.levels[0] ist per Konvention das unterste
+ * sondierte Level (siehe ensureCloudBand), passt exakt zu clouds.js'
+ * Annahme aufsteigender Hoehe bei aufsteigendem Level-Index.
+ */
+function buildLevelCloud(hourlyRaw, band) {
+    const h = [], clc = [];
+    for (const lvl of band.levels) {
+        h.push(hourlyRaw[`height_agl_level${lvl}`] || []);
+        clc.push(hourlyRaw[`cloud_cover_level${lvl}`] || []);
+    }
+    return { h, clc, nLevels: band.levels.length };
+}
 
 // -----------------------------------------------------------
 // 3. INTERNE HELFER: DATENVERARBEITUNG
@@ -252,7 +358,7 @@ function logCloudProfile(locationInfo, timeISO, profile, layers, thresholds) {
 }
 
 
-function calculateDerivedValue(metric, hourly, h, elevation, locationInfo) {
+function calculateDerivedValue(metric, hourly, h, elevation, locationInfo, levelCloud) {
     const summaryKey = metric.summaryKey; // Holen wir uns aus dem Objekt
     try {
         switch (summaryKey) {
@@ -268,6 +374,23 @@ function calculateDerivedValue(metric, hourly, h, elevation, locationInfo) {
                 return chill;
             case 'cloudBase':
             case 'cloudCeiling': {
+                // Neuer Pfad: native Modell-Level-Wolkendaten von Michaels Instanz
+                // (nur icon_d2/icon_eu, siehe config.js MICHAEL_LEVEL_CLOUD_MODELS).
+                // clc ist ICONs eigene Bedeckungsdiagnose je Modell-Level -- direkter
+                // und praeziser als die RH-Heuristik auf Druckstufen unten, siehe
+                // clouds.js Kopfkommentar. Faellt levelCloud aus (Sondierung
+                // fehlgeschlagen, anderes Modell), greift unveraendert der alte Pfad.
+                if (levelCloud) {
+                    const col = { h: levelCloud.h, clc: levelCloud.clc, nLevels: levelCloud.nLevels };
+                    const result = summaryKey === 'cloudBase'
+                        ? lowestCloudBase(col, h)
+                        : (cloudCeiling(col, h)?.baseM ?? null);
+                    // Gleiche Konvention wie der alte Pfad: keine Schicht gefunden
+                    // (SKC) UND fehlende Daten münden beide in 99999m (kein Alarm).
+                    return result == null ? 99999 : result;
+                }
+
+                // Alter Pfad: Druckstufen-Interpolation + RH-Korrektur.
                 // Gemeinsame Interpolationslogik für cloudBase UND cloudCeiling.
                 // Der Unterschied liegt nur in der Layer-Filterung am Ende.
                 // cloudBase  → niedrigste Wolke ab FEW  (alle Layer)
@@ -557,7 +680,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                     value = dailyValueCache[summaryKey];
 
                 } else if (metric.paramType === 'derived') {
-                    value = calculateDerivedValue(metric, hourly, dataIndex, null, null);
+                    value = calculateDerivedValue(metric, hourly, dataIndex, null, null, null);
                 } else if (metric.paramType === 'derived_pressure') {
                     const locInfo = {
                         lat: locationData.latitude,
@@ -571,7 +694,7 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                             ? (WEATHER_MODELS.DISPLAY_MAP[modelInfo.apiName] || modelInfo.apiName)
                             : 'unbekannt'
                     };
-                    value = calculateDerivedValue(metric, hourly, dataIndex, elevation, locInfo);
+                    value = calculateDerivedValue(metric, hourly, dataIndex, elevation, locInfo, locationData.levelCloud);
                 }
 
                 // Prüft, ob diese Metrik 'maritimeOnly' ist UND ob der aktuelle Punkt 'land' ist.
@@ -790,35 +913,104 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
     const coordChunks = chunkArray(allCoords, CHUNK_SIZE);
     const rawDataMap = new Map();
 
+    // ── Routing-Entscheidung (einmalig, nicht pro Chunk) ───────────────────
+    // Michael nur fuer explizit gelistete ICON-Modelle. KORREKTUR (siehe
+    // Bugfix-Notiz unten): urspruenglich stand hier zusaetzlich eine Pruefung
+    // auf modelInfo.runTimeISO === 'latest' -- das war ein Fehlschluss.
+    // timeSlider.js `fetchLastRunTime()` loest bei JEDER Modellwahl einen
+    // konkreten ISO-Zeitstempel des jeweils aktuellsten Laufs auf (fuer den
+    // public forecast_run-Parameter, damit alle Chunks eines Profil-Checks
+    // konsistent denselben Lauf sehen) -- die App hat KEINE UI, einen
+    // aelteren/gepinnten Lauf auszuwaehlen. Der literale String 'latest'
+    // kommt nur beim Modell 'auto' oder bei einem meta.json-Fehler vor. Die
+    // alte Bedingung war damit praktisch immer falsch und hat JEDEN Request
+    // auf public zurueckfallen lassen, unabhaengig vom Modell.
+    // Michaels Instanz bekommt ohnehin nie einen forecast_run-Parameter
+    // (siehe michaelSurface/michaelClouds-URLs unten) -- sie liefert immer
+    // ihren eigenen aktuellsten eingelesenen Lauf.
+    const michaelApiName = modelInfo ? modelInfo.apiName : null;
+    const useMichael = hasForecastParams && !!michaelApiName && !!MICHAEL_HOSTS[michaelApiName];
+
+    const allHourlyParams = apiParams.forecast.hourly ? apiParams.forecast.hourly.split(',').filter(Boolean) : [];
+    let michaelHourly = [];
+    let publicOnlyHourly = allHourlyParams;
+    if (useMichael) {
+        const split = splitHourlyParams(allHourlyParams, MICHAEL_SURFACE_WHITELIST);
+        michaelHourly = split.michael;
+        publicOnlyHourly = split.publicOnly;
+    }
+
+    // Cloud-Level-Band: nur sondieren, wenn cloudBase/cloudCeiling ueberhaupt
+    // aktiv ist (erkennbar an *_hPa-Parametern in publicOnlyHourly) UND das
+    // Modell native Level-Wolkendaten fuehrt. Schlaegt die Sondierung fehl,
+    // bleiben die *_hPa-Parameter in publicOnlyHourly -- der alte
+    // Druckstufen-Pfad greift dann unveraendert ueber public.
+    const hasCloudPressureParams = publicOnlyHourly.some(p => p.endsWith('hPa'));
+    let cloudBand = null;
+    if (useMichael && hasCloudPressureParams && MICHAEL_LEVEL_CLOUD_MODELS.has(michaelApiName) && allCoords.length > 0) {
+        cloudBand = await ensureCloudBand(michaelApiName, allCoords[0]);
+        if (cloudBand) {
+            // *_hPa-Parameter UND ihre Oberflaechen-Abhaengigkeit surface_pressure
+            // (siehe metricsConfig.js cloudBase/cloudCeiling apiName-Liste) werden
+            // beide nur vom ALTEN Druckstufen-Pfad gebraucht -- beim neuen
+            // Level-Pfad (col = {h, clc, nLevels}) unbenutzt. surface_pressure
+            // matcht die MICHAEL_SURFACE_WHITELIST nicht und wuerde sonst pro
+            // Chunk einen eigenen (kleinen, aber unnoetigen) Public-Request
+            // ausloesen.
+            publicOnlyHourly = publicOnlyHourly.filter(p => !p.endsWith('hPa') && p !== 'surface_pressure');
+        }
+    }
+
     for (const chunk of coordChunks) {
         const lats = chunk.map(c => c.lat.toFixed(4)).join(',');
         const lons = chunk.map(c => c.lon.toFixed(4)).join(',');
         // Schlüssel nach Anfrage-Reihenfolge – nicht nach API-Rückgabe (verhindert Rounding-Mismatch)
         const keys = chunk.map(c => `${c.lat.toFixed(4)},${c.lon.toFixed(4)}`);
 
-        const fetchPromises = [];
+        const jobs = {};
 
-        if (hasForecastParams) {
+        if (useMichael && michaelHourly.length > 0) {
+            const url = `${MICHAEL_HOSTS[michaelApiName]}/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${michaelHourly.join(',')}&models=${michaelApiName}`;
+            jobs.michaelSurface = fetchDirect(url);
+        }
+
+        if (hasForecastParams && (!useMichael || publicOnlyHourly.length > 0 || apiParams.forecast.daily.length > 0)) {
             let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
-            if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
-            if (apiParams.forecast.daily.length > 0)  forecastUrl += `&daily=${apiParams.forecast.daily}`;
-            forecastUrl += `&models=${apiParams.forecast.models}`;
+            const hourlyForPublic = useMichael ? publicOnlyHourly.join(',') : apiParams.forecast.hourly;
+            if (hourlyForPublic.length > 0) forecastUrl += `&hourly=${hourlyForPublic}`;
+            if (apiParams.forecast.daily.length > 0) forecastUrl += `&daily=${apiParams.forecast.daily}`;
+            // 'models=auto' ist bei der oeffentlichen API KEIN gueltiger Wert
+            // (Fehler: "Cannot initialize MultiDomains from invalid String
+            // value auto") -- das Weglassen des Parameters bewirkt dasselbe
+            // (automatische Modellwahl). Vorbestehender Bug, unabhaengig von
+            // der Michael-Anbindung -- getApiParams() setzt 'auto' immer,
+            // wenn kein Modell explizit gewaehlt ist.
+            if (apiParams.forecast.models !== 'auto') {
+                forecastUrl += `&models=${apiParams.forecast.models}`;
+            }
             if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
                 forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-            fetchPromises.push(RequestQueue.fetch(forecastUrl));
+            jobs.publicSurface = RequestQueue.fetch(forecastUrl);
         }
 
         if (hasMarineParams) {
             let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
             marineUrl += `&hourly=${apiParams.marine.hourly}`;
             marineUrl += `&models=${apiParams.marine.models}`;
-            fetchPromises.push(RequestQueue.fetch(marineUrl));
+            jobs.marine = RequestQueue.fetch(marineUrl);
+        }
+
+        if (cloudBand) {
+            const vars = cloudBand.levels.flatMap(l => [`cloud_cover_level${l}`, `height_agl_level${l}`]).join(',');
+            const url = `${MICHAEL_HOSTS[michaelApiName]}/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${vars}&models=${michaelApiName}`;
+            jobs.michaelClouds = fetchDirect(url);
         }
 
         let mergedLocationsData;
         try {
-            const responses = await Promise.all(fetchPromises);
+            const jobNames = Object.keys(jobs);
+            const responses = await Promise.all(jobNames.map(name => jobs[name]));
 
             for (const response of responses) {
                 if (!response.ok) {
@@ -827,35 +1019,39 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             }
 
             const allData = await Promise.all(responses.map(res => res.json()));
+            const byName = {};
+            jobNames.forEach((name, i) => { byName[name] = allData[i]; });
 
-            let forecastJson = null;
-            let marineJson = null;
-            let promiseIndex = 0;
-            if (hasForecastParams) { forecastJson = allData[promiseIndex]; promiseIndex++; }
-            if (hasMarineParams)   { marineJson   = allData[promiseIndex]; }
+            const asArray = (json) => (json == null ? [] : (Array.isArray(json) ? json : [json]));
+            const michaelSurfaceData = asArray(byName.michaelSurface);
+            const publicSurfaceData = asArray(byName.publicSurface);
+            const marineData = asArray(byName.marine);
+            const michaelCloudsData = asArray(byName.michaelClouds);
 
-            const forecastData = hasForecastParams ? (Array.isArray(forecastJson) ? forecastJson : [forecastJson]) : [];
-            const marineData   = hasMarineParams   ? (Array.isArray(marineJson)   ? marineJson   : [marineJson])   : [];
+            // Basis-Array liefert latitude/longitude/elevation -- bevorzugt
+            // Michael-Oberflächendaten, sonst public, sonst marine (falls nur
+            // Marine-Parameter aktiv sind, wie im alten Code).
+            const baseData = michaelSurfaceData.length ? michaelSurfaceData
+                : publicSurfaceData.length ? publicSurfaceData
+                    : marineData;
 
-            if (!hasForecastParams && hasMarineParams) {
-                mergedLocationsData = marineData;
-            } else {
-                mergedLocationsData = forecastData;
-                if (hasMarineParams && marineData.length > 0) {
-                    if (mergedLocationsData.length === 0) {
-                        mergedLocationsData = marineData;
-                    } else {
-                        for (let i = 0; i < mergedLocationsData.length; i++) {
-                            if (marineData[i] && marineData[i].hourly) {
-                                mergedLocationsData[i].hourly = {
-                                    ...mergedLocationsData[i].hourly,
-                                    ...marineData[i].hourly
-                                };
-                            }
-                        }
-                    }
+            mergedLocationsData = baseData.map((entry, i) => {
+                if (!entry) return entry;
+                const merged = { ...entry, hourly: { ...(entry.hourly || {}) } };
+                if (baseData !== michaelSurfaceData && michaelSurfaceData[i]?.hourly) {
+                    merged.hourly = { ...merged.hourly, ...michaelSurfaceData[i].hourly };
                 }
-            }
+                if (baseData !== publicSurfaceData && publicSurfaceData[i]?.hourly) {
+                    merged.hourly = { ...merged.hourly, ...publicSurfaceData[i].hourly };
+                }
+                if (baseData !== marineData && marineData[i]?.hourly) {
+                    merged.hourly = { ...merged.hourly, ...marineData[i].hourly };
+                }
+                if (michaelCloudsData[i]?.hourly && cloudBand) {
+                    merged.levelCloud = buildLevelCloud(michaelCloudsData[i].hourly, cloudBand);
+                }
+                return merged;
+            });
 
             if (mergedLocationsData[0] && mergedLocationsData[0].error) {
                 throw new Error(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
@@ -1071,7 +1267,30 @@ export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay)
 }
 
 /**
- * Führt einen schlanken API-Call durch, um Land/See-Punkte zu prüfen (mittels Elevation API).
+ * Prüft, ob ein einzelner Punkt (turf Point-Feature) innerhalb irgendeines
+ * der vereinfachten Landflaechen-Polygone liegt (LAND_POLYGONS, siehe
+ * landPolygons.js).
+ */
+function isPointOverLand(pointFeature) {
+    for (const landFeature of LAND_POLYGONS.features) {
+        if (turf.booleanPointInPolygon(pointFeature, landFeature)) return true;
+    }
+    return false;
+}
+
+/**
+ * Prüft Land/See-Punkte rein geometrisch (lokale Küstenlinien-Polygone,
+ * siehe landPolygons.js), OHNE API-Aufruf.
+ *
+ * Vorher: ein Open-Meteo-Elevation-API-Request pro gezeichnetem Prüfgebiet
+ * (Höhe 0 an irgendeinem Sampling-Punkt -> als "See" gewertet). Das war der
+ * letzte verbliebene, nicht auf Michael umleitbare public-Aufruf im
+ * Zeichnen-Flow (Michaels /v1/elevation liefert nachweislich nur 'nan') und
+ * trug zu den 429ern bei. Eine reine Ja/Nein-Frage ("liegt irgendein Punkt
+ * des Gebiets im Wasser?") braucht aber gar keine echte Höhenauflösung --
+ * turf.booleanPointInPolygon gegen eine (fuer Europa/Nordatlantik
+ * zugeschnittene) Natural-Earth-Küstenlinie ist dafür präzise genug, läuft
+ * synchron und komplett ohne Netzwerk.
  */
 export async function performLandSeaCheck(geojson) {
 
@@ -1084,39 +1303,14 @@ export async function performLandSeaCheck(geojson) {
         return { error: "Keine Grid-Punkte im gezeichneten Gebiet gefunden." };
     }
 
-    // 2. Wir testen einen Stapel von Punkten (max 50)
+    // 2. Wir testen einen Stapel von Punkten (max 50, wie zuvor)
     const pointsToTest = gridPoints.features.slice(0, 50);
-    const lats = pointsToTest.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
-    const lons = pointsToTest.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
-    // 3. URL zur ELEVATION-API (unverändert)
-    const url = `${API_URLS.ELEVATION}?latitude=${lats}&longitude=${lons}`;
-
-    // 4. API abfragen
     try {
-        // Läuft ebenfalls durch die globale RequestQueue
-        const response = await RequestQueue.fetch(url);
-
-        if (!response.ok) {
-            throw new Error(`API-Antwort war nicht OK: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // 5. Die 'elevation' auswerten (DEIN VORSCHLAG)
-        // data = { elevation: [150, 145, 0, 12, ...] }
-        if (!data || !data.elevation) {
-            // Dies ersetzt den 'land_sea_mask'-Fehler
-            throw new Error("API-Antwort enthielt kein 'elevation'-Array.");
-        }
-
-        // Prüfe, ob IRGENDEIN Punkt im Array eine Höhe von 0 hat
-        const isMaritime = data.elevation.some(elevationValue => elevationValue === 0);
-
-        return { isMaritime }; // true (wenn 0 gefunden wurde), sonst false
-
+        const isMaritime = pointsToTest.some(p => !isPointOverLand(p));
+        return { isMaritime };
     } catch (err) {
-        console.error("Fehler bei performLandSeaCheck Fetch:", err);
+        console.error("Fehler bei performLandSeaCheck:", err);
         showToast('Land/See-Pruefung fehlgeschlagen.', 'warning');
         return { error: err.message };
     }

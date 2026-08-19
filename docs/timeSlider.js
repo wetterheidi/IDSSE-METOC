@@ -81,7 +81,23 @@ function formatIsoToRunTime(isoString) {
 // -----------------------------------------------------------
 
 /**
- * Prüft bei Open Meteo, welche Modelle für die BBox verfügbar sind.
+ * Prüft, ob ein Punkt innerhalb der bekannten Bbox eines Modells liegt.
+ */
+function isInModelBbox(lat, lng, bbox) {
+    return lat >= bbox.latMin && lat <= bbox.latMax && lng >= bbox.lonMin && lng <= bbox.lonMax;
+}
+
+/**
+ * Prüft, welche Modelle für die Koordinate verfügbar sind.
+ *
+ * Modelle mit bekannter Bbox (MODEL_PROPERTIES[apiName].bbox, z.B. icon_d2/
+ * icon_eu) werden rein geometrisch geprüft -- KEIN API-Request. Grund: diese
+ * Funktion lief bisher für JEDES gezeichnete Prüfgebiet einmal PRO Modell
+ * gegen die öffentliche API (bei allen 13 Modellen 13 Requests), unabhängig
+ * vom später gewählten Modell -- Haupttreiber wiederholter 429er. Für Modelle
+ * OHNE bekannte Bbox bleibt der bisherige Live-Probe-Fallback bestehen
+ * (unveränderte Semantik, inkl. dem seltenen Fall "geografisch abgedeckt,
+ * aber für diesen Tag keine Daten").
  */
 async function checkAvailableModels(lat, lng) {
     console.log("[timeSlider] Prüfe verfügbare Modelle...");
@@ -90,8 +106,21 @@ async function checkAvailableModels(lat, lng) {
     const availableModels = [];
     let networkErrorCount = 0;
 
-    // Wir prüfen nur, ob die API uns die Daten für eine Koordinate gibt.
     for (const apiName of modelList) {
+        const bbox = WEATHER_MODELS.MODEL_PROPERTIES[apiName]?.bbox;
+        if (bbox) {
+            if (isInModelBbox(lat, lng, bbox)) {
+                availableModels.push({
+                    apiName: apiName,
+                    name: WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName
+                });
+            } else {
+                console.log(`[timeSlider] Modell '${apiName}' deckt diese Position geografisch nicht ab (Bbox-Check, kein Request).`);
+            }
+            continue;
+        }
+
+        // Fallback fuer Modelle ohne bekannte Bbox: bisheriger Live-Probe gegen public.
         // Frühzeitiger Abbruch: Nach 2 Netzwerkfehlern in Folge ist der Server vermutlich nicht erreichbar.
         if (networkErrorCount >= 2) {
             console.warn('[timeSlider] Mehrere Netzwerkfehler – Open-Meteo API vermutlich nicht erreichbar. Modellprüfung abgebrochen.');
