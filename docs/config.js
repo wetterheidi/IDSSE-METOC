@@ -102,12 +102,17 @@ export const WEATHER_MODELS = {
         'icon_eu': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
             maxDays: 5,
-            resolutionKm: 7
+            resolutionKm: 7,
+            // Bbox aus meteokit/src/config.js (dieselbe DWD-ICON-EU-Domain) --
+            // ermoeglicht checkAvailableModels() eine reine Geometrie-Pruefung
+            // statt eines Live-Requests gegen public (siehe timeSlider.js).
+            bbox: { latMin: 29.5, latMax: 70.5, lonMin: -23.5, lonMax: 62.5 }
         },
         'icon_d2': {
             pressureLevels: [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200],
             maxDays: 2,
-            resolutionKm: 2.2
+            resolutionKm: 2.2,
+            bbox: { latMin: 43.18, latMax: 58.08, lonMin: -3.94, lonMax: 20.34 }
         },
 
         // ECMWF-Modelle
@@ -169,7 +174,8 @@ export const WEATHER_MODELS = {
 export const API_URLS = {
     FORECAST: "https://api.open-meteo.com/v1/forecast",
     MARINE: "https://marine-api.open-meteo.com/v1/marine",
-    ELEVATION: "https://api.open-meteo.com/v1/elevation"
+    // ELEVATION entfernt: performLandSeaCheck() in weather.js prüft seit
+    // diesem Fix lokal gegen landPolygons.js (kein API-Aufruf mehr nötig).
 };
 
 // -----------------------------------------------------------
