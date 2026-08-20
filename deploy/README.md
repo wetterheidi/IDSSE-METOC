@@ -62,8 +62,12 @@ voneinander aktualisieren.
 
 ## Login/Zugriff
 
-Beide Domains sind per HTTP Basic Auth geschützt (`/etc/nginx/.htpasswd-wetterheidi`,
-gemeinsam für beide Instanzen).
+Beide Domains sind über den zentralen "Pförtner"-Login geschützt (siehe Repo
+`Nutzerverwaltung`, `pfoertner-offene-punkte.md`) -- nicht mehr über das
+frühere `auth_basic`/`.htpasswd-wetterheidi`. Tool-Namen im Pförtner-Panel
+(https://verwaltung.wetterheidi.de): `idsse` bzw. `idsseml`. Neue Nutzer
+brauchen dort das jeweilige Häkchen, bevor sie Zugriff bekommen -- das ist
+unabhängig von den beiden nginx-Configs hier im Repo.
 
 ## Falls certbot bei einer neuen Domain meckert
 
