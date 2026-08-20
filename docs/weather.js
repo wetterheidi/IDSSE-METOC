@@ -6,6 +6,7 @@
 import { getCache, setCache } from './db.js';
 import { METRICS_CONFIG, getApiParams, getMetricRules } from './metricsConfig.js';
 import { WEATHER_MODELS, API_URLS, getModelMaxDays } from './config.js';
+import { LAND_POLYGONS } from './landPolygons.js';
 import {
     analyzeCloudLayers,
     calculateDewpoint,
@@ -1093,7 +1094,30 @@ export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay)
 }
 
 /**
- * Führt einen schlanken API-Call durch, um Land/See-Punkte zu prüfen (mittels Elevation API).
+ * Prüft, ob ein einzelner Punkt (turf Point-Feature) innerhalb irgendeines
+ * der vereinfachten Landflaechen-Polygone liegt (LAND_POLYGONS, siehe
+ * landPolygons.js).
+ */
+function isPointOverLand(pointFeature) {
+    for (const landFeature of LAND_POLYGONS.features) {
+        if (turf.booleanPointInPolygon(pointFeature, landFeature)) return true;
+    }
+    return false;
+}
+
+/**
+ * Prüft Land/See-Punkte rein geometrisch (lokale, weltweite Küstenlinien-
+ * Polygone, siehe landPolygons.js), OHNE API-Aufruf.
+ *
+ * Vorher: ein Open-Meteo-Elevation-API-Request pro gezeichnetem Prüfgebiet
+ * (Höhe 0 an irgendeinem Sampling-Punkt -> als "See" gewertet) -- ein Beitrag
+ * zu den wiederholten 429ern. Eine reine Ja/Nein-Frage ("liegt irgendein
+ * Punkt des Gebiets im Wasser?") braucht aber gar keine echte Höhenauflösung
+ * -- turf.booleanPointInPolygon gegen eine Natural-Earth-Küstenlinie (1:50m,
+ * global) ist dafür präzise genug, läuft synchron und komplett ohne
+ * Netzwerk. Bekannte Grenze der Basisauflösung: sehr schmale Landzungen/
+ * Inseln (z.B. Manhattan) werden nicht aufgelöst und fälschlich als Wasser
+ * eingestuft -- für die grobe Ja/Nein-Prüfung akzeptabel.
  */
 export async function performLandSeaCheck(geojson) {
 
@@ -1106,39 +1130,14 @@ export async function performLandSeaCheck(geojson) {
         return { error: "Keine Grid-Punkte im gezeichneten Gebiet gefunden." };
     }
 
-    // 2. Wir testen einen Stapel von Punkten (max 50)
+    // 2. Wir testen einen Stapel von Punkten (max 50, wie zuvor)
     const pointsToTest = gridPoints.features.slice(0, 50);
-    const lats = pointsToTest.map(p => p.geometry.coordinates[1].toFixed(4)).join(',');
-    const lons = pointsToTest.map(p => p.geometry.coordinates[0].toFixed(4)).join(',');
 
-    // 3. URL zur ELEVATION-API (unverändert)
-    const url = `${API_URLS.ELEVATION}?latitude=${lats}&longitude=${lons}`;
-
-    // 4. API abfragen
     try {
-        // Läuft ebenfalls durch die globale RequestQueue
-        const response = await RequestQueue.fetch(url);
-
-        if (!response.ok) {
-            throw new Error(`API-Antwort war nicht OK: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // 5. Die 'elevation' auswerten (DEIN VORSCHLAG)
-        // data = { elevation: [150, 145, 0, 12, ...] }
-        if (!data || !data.elevation) {
-            // Dies ersetzt den 'land_sea_mask'-Fehler
-            throw new Error("API-Antwort enthielt kein 'elevation'-Array.");
-        }
-
-        // Prüfe, ob IRGENDEIN Punkt im Array eine Höhe von 0 hat
-        const isMaritime = data.elevation.some(elevationValue => elevationValue === 0);
-
-        return { isMaritime }; // true (wenn 0 gefunden wurde), sonst false
-
+        const isMaritime = pointsToTest.some(p => !isPointOverLand(p));
+        return { isMaritime };
     } catch (err) {
-        console.error("Fehler bei performLandSeaCheck Fetch:", err);
+        console.error("Fehler bei performLandSeaCheck:", err);
         showToast('Land/See-Pruefung fehlgeschlagen.', 'warning');
         return { error: err.message };
     }
