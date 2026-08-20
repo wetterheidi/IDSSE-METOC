@@ -219,7 +219,8 @@ async function handleMapCreate(layer) {
         const coords = geojson.geometry.coordinates[0][0];
         const lng = coords[0];
         const lat = coords[1];
-        await timeSlider.updateAvailableModelsForArea(lat, lng);
+        const { warnings } = await timeSlider.updateAvailableModelsForArea(lat, lng);
+        warnings?.forEach(w => ui.showToast(w, 'warning', 6000));
     } catch (e) {
         console.error("Fehler beim Aktualisieren der Modell-Liste:", e);
         ui.showToast(e.message || 'Open-Meteo API nicht erreichbar.', 'error', 6000);
@@ -508,7 +509,8 @@ async function handleManualCheck(profileData) {
         const coords = profileData.geojson.geometry.coordinates[0][0];
         const lng = coords[0];
         const lat = coords[1];
-        await timeSlider.updateAvailableModelsForArea(lat, lng);
+        const { warnings } = await timeSlider.updateAvailableModelsForArea(lat, lng);
+        warnings?.forEach(w => ui.showToast(w, 'warning', 6000));
 
         // Hole das Modell, das der User (oder der Auto-Fallback) gewählt hat
         currentWeatherModel = timeSlider.getCurrentModelInfo();

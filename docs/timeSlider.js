@@ -1,4 +1,4 @@
-import { WEATHER_MODELS, API_URLS } from './config.js';
+import { WEATHER_MODELS, API_URLS, MICHAEL_HOSTS } from './config.js';
 
 // -----------------------------------------------------------
 // 0. TIMEOUT-HILFSFUNKTION
@@ -88,14 +88,40 @@ function isInModelBbox(lat, lng, bbox) {
 }
 
 /**
+ * Prüft gegen Michaels eigenes meta.json, ob für ein Modell aktuell ein
+ * gültiger Lauf geladen ist. Nur für globale (bbox-lose) Michael-Modelle
+ * relevant, z.B. icon_global -- laut Nutzer "nicht immer verfügbar". Bewusst
+ * KEIN Public-Fallback: schlägt die Prüfung fehl, bleibt das Modell trotzdem
+ * wählbar (Nutzer-Vorgabe: als Option für Gebiete außerhalb EU/D2 nötig),
+ * aber mit sichtbarer Warnung statt eines stillen Rückfalls auf public.
+ */
+async function checkMichaelRunAvailable(apiName) {
+    const host = MICHAEL_HOSTS[apiName];
+    const dataset = WEATHER_MODELS.API_MAP[apiName];
+    if (!host || !dataset) return true;
+    try {
+        const metaUrl = `${host}/data/${dataset}/static/meta.json`;
+        const response = await fetchWithTimeout(metaUrl, 6000);
+        if (!response.ok) return false;
+        const metaData = await response.json();
+        return typeof metaData.last_run_initialisation_time === 'number';
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
  * Prüft, welche Modelle für die Koordinate verfügbar sind.
  *
  * Modelle mit bekannter Bbox (MODEL_PROPERTIES[apiName].bbox, z.B. icon_d2/
  * icon_eu) werden rein geometrisch geprüft -- KEIN API-Request. Grund: diese
  * Funktion lief bisher für JEDES gezeichnete Prüfgebiet einmal PRO Modell
  * gegen die öffentliche API (bei allen 13 Modellen 13 Requests), unabhängig
- * vom später gewählten Modell -- Haupttreiber wiederholter 429er. Für Modelle
- * OHNE bekannte Bbox bleibt der bisherige Live-Probe-Fallback bestehen
+ * vom später gewählten Modell -- Haupttreiber wiederholter 429er. Michael-
+ * Modelle OHNE Bbox (icon_global, global) werden gegen Michaels eigenes
+ * meta.json geprüft (checkMichaelRunAvailable, s.o.) -- ebenfalls kein
+ * Public-Request. Für alle übrigen Modelle OHNE bekannte Bbox UND ohne
+ * Michael-Host bleibt der bisherige Live-Probe-Fallback bestehen
  * (unveränderte Semantik, inkl. dem seltenen Fall "geografisch abgedeckt,
  * aber für diesen Tag keine Daten").
  */
@@ -120,7 +146,20 @@ async function checkAvailableModels(lat, lng) {
             continue;
         }
 
-        // Fallback fuer Modelle ohne bekannte Bbox: bisheriger Live-Probe gegen public.
+        if (MICHAEL_HOSTS[apiName]) {
+            const isRunAvailable = await checkMichaelRunAvailable(apiName);
+            availableModels.push({
+                apiName: apiName,
+                name: WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName,
+                warning: isRunAvailable ? null : 'Michaels Server hat aktuell keinen gültigen Modelllauf für dieses Modell geladen.',
+            });
+            if (!isRunAvailable) {
+                console.warn(`[timeSlider] Modell '${apiName}': kein gültiger Lauf auf Michaels Server (meta.json).`);
+            }
+            continue;
+        }
+
+        // Fallback fuer Modelle ohne bekannte Bbox und ohne Michael-Host: bisheriger Live-Probe gegen public.
         // Frühzeitiger Abbruch: Nach 2 Netzwerkfehlern in Folge ist der Server vermutlich nicht erreichbar.
         if (networkErrorCount >= 2) {
             console.warn('[timeSlider] Mehrere Netzwerkfehler – Open-Meteo API vermutlich nicht erreichbar. Modellprüfung abgebrochen.');
@@ -186,8 +225,11 @@ async function fetchLastRunTime(selectedApiName) {
     }
 
     // 3. Metadaten-URL erstellen
-    // KORREKTUR: Verwende das robuste Format aus dem anderen Projekt
-    const metaUrl = `https://api.open-meteo.com/data/${modelMetaId}/static/meta.json`;
+    // Michael-Modelle: Laufzeit von Michaels eigenem Server abfragen, nicht
+    // von public -- sonst könnte die angezeigte "Run:"-Zeit von einem anderen
+    // Lauf stammen als die tatsächlich von Michael bezogenen Wetterdaten.
+    const metaHost = MICHAEL_HOSTS[selectedApiName] || 'https://api.open-meteo.com';
+    const metaUrl = `${metaHost}/data/${modelMetaId}/static/meta.json`;
 
     try {
         const metaResponse = await fetchWithTimeout(metaUrl, 6000);
@@ -302,7 +344,10 @@ function updateModelSelect(models, preferredModelApiName = null) {
         const displayLabel = WEATHER_MODELS.DISPLAY_MAP[model.apiName] || model.apiName;
         const option = document.createElement('option');
         option.value = `${model.apiName}|latest`;
-        option.textContent = displayLabel;
+        option.textContent = model.warning ? `⚠ ${displayLabel}` : displayLabel;
+        if (model.warning) {
+            option.title = model.warning;
+        }
 
         if (model.apiName === 'icon_eu') {
             iconEuAvailable = true;
@@ -580,7 +625,7 @@ export function resetDaySelector() {
  * Löst den onModelChange-Callback aus, wenn die Liste aktualisiert wurde.
  */
 export async function updateAvailableModelsForArea(lat, lng) {
-    if (!dom.modelSelect) return;
+    if (!dom.modelSelect) return { warnings: [] };
     console.log(`[timeSlider] Aktualisiere Modelle für Standort: ${lat}, ${lng}`);
 
     // --- KORREKTUR: Aktuell ausgewähltes Modell merken ---
@@ -612,6 +657,13 @@ export async function updateAvailableModelsForArea(lat, lng) {
     updateModelInfoDisplay(selectedApiName, runTimeISO);
 
     // (Der onModelChange Callback bleibt entfernt, das war korrekt so)
+
+    // 6. Warnungen (z.B. icon_global ohne gültigen Lauf auf Michaels Server)
+    // an den Aufrufer zurückgeben, damit main.js sie sichtbar anzeigen kann.
+    const warnings = models
+        .filter(m => m.warning)
+        .map(m => `${WEATHER_MODELS.DISPLAY_MAP[m.apiName] || m.apiName}: ${m.warning}`);
+    return { warnings };
 }
 
 /**

@@ -53,6 +53,11 @@ export const WEATHER_MODELS = {
     LIST: [
         'icon_eu',
         'icon_d2',
+        // icon_global: kein Bbox-Eintrag in MODEL_PROPERTIES (globale Abdeckung) --
+        // timeSlider.js checkAvailableModels() prueft es deshalb nicht geometrisch,
+        // sondern gegen Michaels eigenes meta.json (siehe MICHAEL_HOSTS). Fuer
+        // Gebiete ausserhalb von EU/D2 (Nutzer-Vorgabe: "dringend erforderlich").
+        'icon_global',
     ],
     // Mappings für die Anzeige
     DISPLAY_MAP: {
