@@ -778,14 +778,13 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
  *
  * @param {Array<{lat: number, lon: number}>} allCoords - Koordinaten (dedupliziert)
  * @param {object} apiParams  - Ergebnis von getApiParams()
- * @param {boolean} hasForecastParams
  * @param {boolean} hasMarineParams
  * @param {object|null} modelInfo
  * @param {number} forecastDays
  * @returns {Promise<Map<string, object>>} Map von "lat,lon" -> locationData
  * @throws {Error} mit benutzerfreundlicher Nachricht bei API-Fehler
  */
-async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineParams, modelInfo, forecastDays) {
+async function _fetchRawData(allCoords, apiParams, hasMarineParams, modelInfo, forecastDays) {
     const CHUNK_SIZE = 50;
     const coordChunks = chunkArray(allCoords, CHUNK_SIZE);
     const rawDataMap = new Map();
@@ -796,29 +795,49 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
         // Schlüssel nach Anfrage-Reihenfolge – nicht nach API-Rückgabe (verhindert Rounding-Mismatch)
         const keys = chunk.map(c => `${c.lat.toFixed(4)},${c.lon.toFixed(4)}`);
 
-        const fetchPromises = [];
+        const jobs = {};
 
-        if (hasForecastParams) {
+        if (apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0) {
             let forecastUrl = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
             if (apiParams.forecast.hourly.length > 0) forecastUrl += `&hourly=${apiParams.forecast.hourly}`;
             if (apiParams.forecast.daily.length > 0)  forecastUrl += `&daily=${apiParams.forecast.daily}`;
-            forecastUrl += `&models=${apiParams.forecast.models}`;
+            // 'auto' ist kein gültiger Open-Meteo-Modellname (liefert 400 Bad Request) --
+            // Auto-Auswahl entsteht serverseitig einfach dadurch, dass models= weggelassen wird.
+            if (apiParams.forecast.models !== 'auto') {
+                forecastUrl += `&models=${apiParams.forecast.models}`;
+            }
             if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
                 forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-            fetchPromises.push(RequestQueue.fetch(forecastUrl));
+            jobs.forecast = RequestQueue.fetch(forecastUrl);
         }
 
         if (hasMarineParams) {
             let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
             marineUrl += `&hourly=${apiParams.marine.hourly}`;
             marineUrl += `&models=${apiParams.marine.models}`;
-            fetchPromises.push(RequestQueue.fetch(marineUrl));
+            jobs.marine = RequestQueue.fetch(marineUrl);
+        }
+
+        // Metriken mit erzwungenem Modell (z.B. seaSurfaceTemp -> immer icon_seamless,
+        // siehe metricsConfig.js addForced()): je EIN eigener Single-Model-Request,
+        // damit Open-Meteo keine Modell-Suffixe an die Feldnamen haengt (passiert nur
+        // bei mehreren Modellen in einem Request, z.B. models=icon_d2,icon_seamless)
+        // -- sonst faende der unsuffixierte hourly[apiName]-Zugriff in
+        // checkThresholds_Sampling nichts mehr, sobald das Profil ein anderes
+        // Hauptmodell nutzt als das erzwungene.
+        const forcedModelNames = Object.keys(apiParams.forecast.forcedModel || {});
+        for (const modelName of forcedModelNames) {
+            const paramNames = apiParams.forecast.forcedModel[modelName];
+            if (!paramNames || paramNames.length === 0) continue;
+            const url = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${paramNames.join(',')}&models=${modelName}`;
+            jobs[`forcedModel:${modelName}`] = RequestQueue.fetch(url);
         }
 
         let mergedLocationsData;
         try {
-            const responses = await Promise.all(fetchPromises);
+            const jobNames = Object.keys(jobs);
+            const responses = await Promise.all(jobNames.map(name => jobs[name]));
 
             for (const response of responses) {
                 if (!response.ok) {
@@ -827,35 +846,40 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             }
 
             const allData = await Promise.all(responses.map(res => res.json()));
+            const byName = {};
+            jobNames.forEach((name, i) => { byName[name] = allData[i]; });
 
-            let forecastJson = null;
-            let marineJson = null;
-            let promiseIndex = 0;
-            if (hasForecastParams) { forecastJson = allData[promiseIndex]; promiseIndex++; }
-            if (hasMarineParams)   { marineJson   = allData[promiseIndex]; }
+            const asArray = (json) => (json == null ? [] : (Array.isArray(json) ? json : [json]));
+            const forecastData = asArray(byName.forecast);
+            const marineData = asArray(byName.marine);
+            const forcedModelData = forcedModelNames
+                .map(m => asArray(byName[`forcedModel:${m}`]))
+                .filter(arr => arr.length > 0);
 
-            const forecastData = hasForecastParams ? (Array.isArray(forecastJson) ? forecastJson : [forecastJson]) : [];
-            const marineData   = hasMarineParams   ? (Array.isArray(marineJson)   ? marineJson   : [marineJson])   : [];
+            // Basis-Array liefert latitude/longitude/elevation -- bevorzugt die
+            // regulären Forecast-Daten, sonst marine, sonst (falls wirklich nur
+            // eine erzwungene-Modell-Metrik aktiv ist, z.B. nur seaSurfaceTemp)
+            // das erste Forced-Model-Ergebnis.
+            const baseData = forecastData.length ? forecastData
+                : marineData.length ? marineData
+                    : (forcedModelData[0] || []);
 
-            if (!hasForecastParams && hasMarineParams) {
-                mergedLocationsData = marineData;
-            } else {
-                mergedLocationsData = forecastData;
-                if (hasMarineParams && marineData.length > 0) {
-                    if (mergedLocationsData.length === 0) {
-                        mergedLocationsData = marineData;
-                    } else {
-                        for (let i = 0; i < mergedLocationsData.length; i++) {
-                            if (marineData[i] && marineData[i].hourly) {
-                                mergedLocationsData[i].hourly = {
-                                    ...mergedLocationsData[i].hourly,
-                                    ...marineData[i].hourly
-                                };
-                            }
-                        }
+            mergedLocationsData = baseData.map((entry, i) => {
+                if (!entry) return entry;
+                const merged = { ...entry, hourly: { ...(entry.hourly || {}) } };
+                if (baseData !== forecastData && forecastData[i]?.hourly) {
+                    merged.hourly = { ...merged.hourly, ...forecastData[i].hourly };
+                }
+                if (baseData !== marineData && marineData[i]?.hourly) {
+                    merged.hourly = { ...merged.hourly, ...marineData[i].hourly };
+                }
+                for (const fData of forcedModelData) {
+                    if (fData !== baseData && fData[i]?.hourly) {
+                        merged.hourly = { ...merged.hourly, ...fData[i].hourly };
                     }
                 }
-            }
+                return merged;
+            });
 
             if (mergedLocationsData[0] && mergedLocationsData[0].error) {
                 throw new Error(`Open-Meteo API-Fehler: ${mergedLocationsData[0].reason}`);
@@ -913,7 +937,6 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     // 4. API-Parameter holen
     const metricsForParams = activeMetrics || Object.values(METRICS_CONFIG);
     const apiParams = getApiParams(metricsForParams, modelInfo);
-    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
     const hasMarineParams = apiParams.marine.hourly.length > 0;
 
     // 5. forecastDays berechnen
@@ -934,7 +957,7 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
 
     let rawDataMap;
     try {
-        rawDataMap = await _fetchRawData(coords, apiParams, hasForecastParams, hasMarineParams, modelInfo, forecastDays);
+        rawDataMap = await _fetchRawData(coords, apiParams, hasMarineParams, modelInfo, forecastDays);
     } catch (err) {
         return Object.assign(getEmptySummary(), { error: err.message });
     }
@@ -1019,7 +1042,6 @@ export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay)
 
     // 4. API-Parameter und forecastDays
     const apiParams = getApiParams(unionMetrics, modelInfo);
-    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
     const hasMarineParams = apiParams.marine.hourly.length > 0;
 
     let forecastDays = getModelMaxDays(modelApiName);
@@ -1032,7 +1054,7 @@ export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay)
     // 5. Einmaliger API-Aufruf für alle einzigartigen Koordinaten
     let rawDataMap;
     try {
-        rawDataMap = await _fetchRawData(allUniqueCoords, apiParams, hasForecastParams, hasMarineParams, modelInfo, forecastDays);
+        rawDataMap = await _fetchRawData(allUniqueCoords, apiParams, hasMarineParams, modelInfo, forecastDays);
     } catch (err) {
         console.error("[batchFetchProfiles] Fetch fehlgeschlagen:", err.message);
         for (const entry of uncachedEntries) {
