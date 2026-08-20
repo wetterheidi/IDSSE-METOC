@@ -262,6 +262,53 @@ function chunkArray(array, size) {
  * @param {object[]} layers      - Gefundene Wolkenschichten
  * @param {object} thresholds    - Aktive RH-Schwellen { low, mid, high }
  */
+/**
+ * Debug-Log-Gegenstück zu logCloudProfile(), aber für den NEUEN Pfad
+ * (native Modell-Level-Wolkendaten von Michael statt Druckstufen-RH-Heuristik).
+ * Zeigt bewusst BEIDE Einheiten (m und ft) nebeneinander, damit die
+ * m->ft-Umrechnung (formatAltitude_FT in formatter.js, downstream in der
+ * UI) an den Rohwerten überprüfbar ist -- der hier geloggte Wert ist exakt
+ * der, der auch an calculateDerivedValue()'s Aufrufer zurückgegeben wird.
+ * timeISO stammt bewusst aus DEMSELBEN hourly.time-Array wie beim alten Pfad
+ * (siehe Aufrufer) -- Level-Cloud-Requests laufen mit identischem
+ * Modell/forecast_days wie die Oberflächen-Requests, die time-Arrays sind
+ * daher inhaltsgleich (keine eigene Zeitachse je Fetch). Alle Zeiten sind
+ * GMT/UTC (="Z"), da nirgends im Code ein &timezone-Parameter gesetzt wird
+ * -- Open-Meteo liefert dann per Default GMT (ISO-String ohne "Z"-Suffix,
+ * aber inhaltlich UTC).
+ */
+function logLevelCloudProfile(locationInfo, timeISO, col, h, resultM, label) {
+    const FT = 3.28084;
+    const loc = locationInfo || {};
+    const lat = loc.lat != null ? loc.lat.toFixed(4) : '?';
+    const lon = loc.lon != null ? loc.lon.toFixed(4) : '?';
+    const model = loc.modelName || 'unbekannt';
+    const resultFt = Number.isFinite(resultM) ? Math.round(resultM * FT / 100) * 100 : null;
+
+    console.groupCollapsed(
+        `%c☁ Wolkenprofil (Michael/native Level) | ${model} | ${timeISO} UTC | ${lat}°N ${lon}°E`,
+        'color: #1abc9c; font-weight: bold;'
+    );
+    console.log(
+        `%c-> ${label}: ${resultM >= 99999 ? 'SKC/keine Daten' : `${Math.round(resultM)} m AGL  =  ${resultFt} ft AGL`}`,
+        'color: #e74c3c; font-weight: bold; font-size: 1.1em;'
+    );
+    const tableData = [];
+    for (let k = 0; k < col.nLevels; k++) {
+        const heightM = col.h[k]?.[h];
+        const cc = col.clc[k]?.[h];
+        if (!Number.isFinite(heightM)) continue;
+        tableData.push({
+            'Höhe (m AGL)': Math.round(heightM),
+            'Höhe (ft AGL)': Math.round(heightM * FT / 100) * 100,
+            'CLC (%)': Number.isFinite(cc) ? Math.round(cc) : null,
+        });
+        if (heightM > 12000) break; // wie MICHAEL_CLOUD_CAP_M, Rest ist fuer die Tabelle irrelevant
+    }
+    console.table(tableData);
+    console.groupEnd();
+}
+
 function logCloudProfile(locationInfo, timeISO, profile, layers, thresholds) {
     const FT = 3.28084;
 
@@ -387,7 +434,21 @@ function calculateDerivedValue(metric, hourly, h, elevation, locationInfo, level
                         : (cloudCeiling(col, h)?.baseM ?? null);
                     // Gleiche Konvention wie der alte Pfad: keine Schicht gefunden
                     // (SKC) UND fehlende Daten münden beide in 99999m (kein Alarm).
-                    return result == null ? 99999 : result;
+                    const resultM = result == null ? 99999 : result;
+
+                    // Debug-Log: ein Log pro Punkt/Stunde, unabhaengig davon ob
+                    // cloudBase oder cloudCeiling aktiv ist (gleiches Gating wie
+                    // beim alten Pfad weiter unten).
+                    const logByBase = (summaryKey === 'cloudBase');
+                    const logByCeiling = (summaryKey === 'cloudCeiling') &&
+                                         !(locationInfo && locationInfo.cloudBaseActive);
+                    if (logByBase || logByCeiling) {
+                        const timeISO = hourly.time?.[h] ?? `Index ${h}`;
+                        const label = summaryKey === 'cloudBase' ? 'cloudBase' : 'cloudCeiling';
+                        logLevelCloudProfile(locationInfo, timeISO, col, h, resultM, label);
+                    }
+
+                    return resultM;
                 }
 
                 // Alter Pfad: Druckstufen-Interpolation + RH-Korrektur.
@@ -1007,6 +1068,22 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             jobs.michaelClouds = fetchDirect(url);
         }
 
+        // Metriken mit erzwungenem Modell (z.B. seaSurfaceTemp -> immer
+        // icon_seamless, siehe metricsConfig.js addForced()): je EIN eigener
+        // Single-Model-Request, damit Open-Meteo keine Modell-Suffixe an die
+        // Feldnamen haengt (passiert nur bei mehreren Modellen in einem
+        // Request) -- sonst faende der unsuffixierte hourly[apiName]-Zugriff
+        // in checkThresholds_Sampling nichts mehr. Immer public (die
+        // betroffenen Felder, z.B. soil_temperature_0cm, sind auf Michael
+        // ohnehin bestaetigt leer).
+        const forcedModelNames = Object.keys(apiParams.forecast.forcedModel || {});
+        for (const modelName of forcedModelNames) {
+            const paramNames = apiParams.forecast.forcedModel[modelName];
+            if (!paramNames || paramNames.length === 0) continue;
+            const url = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${paramNames.join(',')}&models=${modelName}`;
+            jobs[`forcedModel:${modelName}`] = RequestQueue.fetch(url);
+        }
+
         let mergedLocationsData;
         try {
             const jobNames = Object.keys(jobs);
@@ -1027,13 +1104,18 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             const publicSurfaceData = asArray(byName.publicSurface);
             const marineData = asArray(byName.marine);
             const michaelCloudsData = asArray(byName.michaelClouds);
+            const forcedModelData = forcedModelNames
+                .map(m => asArray(byName[`forcedModel:${m}`]))
+                .filter(arr => arr.length > 0);
 
             // Basis-Array liefert latitude/longitude/elevation -- bevorzugt
-            // Michael-Oberflächendaten, sonst public, sonst marine (falls nur
-            // Marine-Parameter aktiv sind, wie im alten Code).
+            // Michael-Oberflächendaten, sonst public, sonst marine, sonst
+            // (falls WIRKLICH nur eine erzwungene-Modell-Metrik aktiv ist,
+            // z.B. nur seaSurfaceTemp) das erste Forced-Model-Ergebnis.
             const baseData = michaelSurfaceData.length ? michaelSurfaceData
                 : publicSurfaceData.length ? publicSurfaceData
-                    : marineData;
+                    : marineData.length ? marineData
+                        : (forcedModelData[0] || []);
 
             mergedLocationsData = baseData.map((entry, i) => {
                 if (!entry) return entry;
@@ -1046,6 +1128,11 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
                 }
                 if (baseData !== marineData && marineData[i]?.hourly) {
                     merged.hourly = { ...merged.hourly, ...marineData[i].hourly };
+                }
+                for (const fData of forcedModelData) {
+                    if (fData !== baseData && fData[i]?.hourly) {
+                        merged.hourly = { ...merged.hourly, ...fData[i].hourly };
+                    }
                 }
                 if (michaelCloudsData[i]?.hourly && cloudBand) {
                     merged.levelCloud = buildLevelCloud(michaelCloudsData[i].hourly, cloudBand);
@@ -1109,7 +1196,8 @@ export async function fetchAndCheckProfile(profile, modelInfo, gridPoints, activ
     // 4. API-Parameter holen
     const metricsForParams = activeMetrics || Object.values(METRICS_CONFIG);
     const apiParams = getApiParams(metricsForParams, modelInfo);
-    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
+    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0
+        || Object.keys(apiParams.forecast.forcedModel || {}).length > 0;
     const hasMarineParams = apiParams.marine.hourly.length > 0;
 
     // 5. forecastDays berechnen
@@ -1215,7 +1303,8 @@ export async function batchFetchProfiles(profileEntries, modelInfo, forecastDay)
 
     // 4. API-Parameter und forecastDays
     const apiParams = getApiParams(unionMetrics, modelInfo);
-    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0;
+    const hasForecastParams = apiParams.forecast.hourly.length > 0 || apiParams.forecast.daily.length > 0
+        || Object.keys(apiParams.forecast.forcedModel || {}).length > 0;
     const hasMarineParams = apiParams.marine.hourly.length > 0;
 
     let forecastDays = getModelMaxDays(modelApiName);

@@ -283,29 +283,29 @@ function updateSelectedTime(hour) {
 /**
  * Füllt das Modell-Dropdown-Menü
  * NEU: Versucht, 'preferredModelApiName' beizubehalten
+ *
+ * BRANCH feature/michael-datasource: bewusst KEINE "Auto"-Option mehr --
+ * die App soll in diesem Branch ausschliesslich Michaels Instanz nutzen
+ * (Nutzer-Vorschlag: "Auto" faellt auf die oeffentliche API zurueck, die
+ * bleibt ueber den main-Branch weiterhin nutzbar). Bester Fallback ist jetzt
+ * icon_eu (deckt ganz Europa ab, volle Michael-Abdeckung inkl. Wolken-Level)
+ * statt vorher icon_seamless (nicht mehr in WEATHER_MODELS.LIST).
  */
 function updateModelSelect(models, preferredModelApiName = null) {
     dom.modelSelect.innerHTML = ''; // Leeren
 
-    // 1. "Auto" Option hinzufügen
-    const autoOption = document.createElement('option');
-    autoOption.value = 'auto|latest';
-    autoOption.textContent = '-- Automatische Auswahl (Open-Meteo) --';
-    dom.modelSelect.appendChild(autoOption);
-
     let preferredModelFound = false;
-    let iconSeamlessAvailable = false; // <-- NEU: Merker für unseren besten Fallback
+    let iconEuAvailable = false; // Bester Fallback: deckt ganz Europa ab
 
-    // 2. Verfügbare Modelle hinzufügen
+    // 1. Verfügbare Modelle hinzufügen
     models.forEach(model => {
         const displayLabel = WEATHER_MODELS.DISPLAY_MAP[model.apiName] || model.apiName;
         const option = document.createElement('option');
         option.value = `${model.apiName}|latest`;
         option.textContent = displayLabel;
 
-        // Prüfe, ob dies unser bevorzugtes globales Modell ist
-        if (model.apiName === 'icon_seamless') {
-            iconSeamlessAvailable = true;
+        if (model.apiName === 'icon_eu') {
+            iconEuAvailable = true;
         }
 
         // Prüfen, ob dies das bevorzugte Modell ist
@@ -317,29 +317,26 @@ function updateModelSelect(models, preferredModelApiName = null) {
         dom.modelSelect.appendChild(option);
     });
 
-    // 3. Fallback: Wenn das bevorzugte Modell nicht gefunden wurde
+    // 2. Fallback: Wenn das bevorzugte Modell nicht gefunden wurde
     if (!preferredModelFound) {
         console.log(`[timeSlider] Bevorzugtes Modell (${preferredModelApiName}) nicht gefunden.`);
 
-        // --- KORRIGIERTER FALLBACK ---
-        // Unser bester Fallback ist 'icon_seamless', da es Druckstufen unterstützt
-        if (iconSeamlessAvailable) {
-            dom.modelSelect.querySelector('option[value="icon_seamless|latest"]').selected = true;
-            console.log(`[timeSlider] Fallback auf 'icon_seamless' (global).`);
-        }
-        // Wenn selbst das nicht da ist, versuchen wir das 'auto'
-        else if (preferredModelApiName === 'auto') {
-            autoOption.selected = true;
-            console.log(`[timeSlider] Fallback auf 'auto'.`);
-        }
-        // Wenn alles fehlschlägt, nimm das erste in der Liste (z.B. HRRR in den USA)
-        else {
-            const firstAvailableModel = dom.modelSelect.querySelector('option:nth-child(2)');
+        if (iconEuAvailable) {
+            dom.modelSelect.querySelector('option[value="icon_eu|latest"]').selected = true;
+            console.log(`[timeSlider] Fallback auf 'icon_eu'.`);
+        } else {
+            // Weder das bevorzugte noch icon_eu verfuegbar -- die Flaeche liegt
+            // ausserhalb JEDER Michael-Bbox (icon_d2 UND icon_eu). Bewusst KEIN
+            // stiller Rueckfall auf 'auto'/public in diesem Branch -- nimm das
+            // erste verbliebene Modell (falls z.B. nur icon_d2 passt), sonst
+            // bleibt das Dropdown leer und der Aufrufer sieht das (main.js
+            // zeigt dann ueber die leere Modell-Anzeige, dass nichts passt).
+            const firstAvailableModel = dom.modelSelect.querySelector('option:first-child');
             if (firstAvailableModel) {
                 firstAvailableModel.selected = true;
                 console.log(`[timeSlider] Fallback auf erstes verfügbares Modell: ${firstAvailableModel.value}`);
             } else {
-                autoOption.selected = true; // Letzter Ausweg
+                console.warn('[timeSlider] Kein Michael-Modell (icon_d2/icon_eu) deckt diese Position ab.');
             }
         }
     }

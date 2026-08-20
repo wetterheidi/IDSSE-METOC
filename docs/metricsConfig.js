@@ -361,7 +361,13 @@ export const METRICS_CONFIG = {
 
         // --- DIE NEUE STEUERUNGS-EIGENSCHAFT ---
         maritimeOnly: true,              // Zeigt an: 1. UI nur bei Seegebiet 2. Engine filtert Landpunkte
-        forecastModel: 'icon_seamless',  // Erzwingt dieses Modell für diesen Parameter
+        // KEIN forecastModel mehr (war fest auf icon_seamless verdrahtet):
+        // soil_temperature_0cm ist auch auf icon_d2/icon_eu ganz normal
+        // verfuegbar (curl-verifiziert) -- die Kopplung war unnoetig und
+        // sorgte dafuer, dass die Wassertemperatur ein ANDERES Modell nutzte
+        // als der Rest des Profils (inkonsistente Datenquelle innerhalb
+        // eines Checks). Folgt jetzt wie jede andere Metrik dem im Header
+        // gewaehlten Modell.
 
         // --- UI & Anzeige ---
         uiUnitId: 'unit-seaTemp',
@@ -390,8 +396,22 @@ export const METRICS_CONFIG = {
 export const getApiParams = (metrics, modelInfo) => {
     // Tausche die 'groups'-Struktur gegen ein aufgeteiltes Objekt aus
     const params = {
-        forecast: { hourly: new Set(), daily: new Set(), pressure: new Set(), models: new Set() },
+        forecast: { hourly: new Set(), daily: new Set(), pressure: new Set(), models: new Set(), forcedModel: new Map() },
         marine: { hourly: new Set(), models: new Set() }
+    };
+
+    // Parameter eines Metrik mit erzwungenem Modell (metric.forecastModel,
+    // z.B. seaSurfaceTemp -> immer icon_seamless) gehen NICHT in die gemeinsame
+    // forecast.hourly-Menge, sondern in einen eigenen Eimer je Modell. Grund:
+    // Open-Meteo haengt bei MEHREREN Modellen in einem Request (models=a,b) an
+    // JEDES Feld ein Modell-Suffix (z.B. soil_temperature_0cm_icon_seamless)
+    // -- der unsuffixierte Zugriff in weather.js (hourly[apiName]) faende dann
+    // nichts mehr, sobald das Profil ein ANDERES Hauptmodell nutzt als das
+    // erzwungene. Ein eigener Single-Model-Request pro erzwungenem Modell
+    // (siehe weather.js _fetchRawData) vermeidet die Suffixierung komplett.
+    const addForced = (model, name) => {
+        if (!params.forecast.forcedModel.has(model)) params.forecast.forcedModel.set(model, new Set());
+        params.forecast.forcedModel.get(model).add(name);
     };
 
     // 1. Bestimme die erlaubten Levels für das aktuelle Modell (unverändert)
@@ -424,40 +444,48 @@ export const getApiParams = (metrics, modelInfo) => {
             } else if (metric.paramType === 'derived_pressure') {
                 // Dies ist ein FORECAST-Parameter (Druckstufen)
                 if (name.includes('_2m') || name.includes('_10m') || name.includes('surface_')) {
-                    params.forecast.hourly.add(name);
+                    if (metric.forecastModel) addForced(metric.forecastModel, name);
+                    else params.forecast.hourly.add(name);
                 } else {
                     const requestedLevels = metric.pressureLevels || [];
                     const validLevels = (modelInfo && modelInfo.apiName !== 'auto' && allowedLevels)
                         ? requestedLevels.filter(lvl => allowedLevels.has(lvl))
                         : requestedLevels;
                     validLevels.forEach(level => {
-                        params.forecast.hourly.add(`${name}_${level}hPa`);
+                        const paramName = `${name}_${level}hPa`;
+                        if (metric.forecastModel) addForced(metric.forecastModel, paramName);
+                        else params.forecast.hourly.add(paramName);
                     });
-                }
-                if (metric.forecastModel) {
-                    params.forecast.models.add(metric.forecastModel);
                 }
             } else {
                 // Dies ist ein Standard-FORECAST-Parameter (hourly, daily, derived)
-                const group = (metric.paramType === 'daily') ? params.forecast.daily : params.forecast.hourly;
-                group.add(name);
-                if (name === 'weather_code') {
-                    params.forecast.hourly.add('temperature_2m');
-                }
                 if (metric.forecastModel) {
-                    params.forecast.models.add(metric.forecastModel);
+                    addForced(metric.forecastModel, name);
+                    if (name === 'weather_code') addForced(metric.forecastModel, 'temperature_2m');
+                } else {
+                    const group = (metric.paramType === 'daily') ? params.forecast.daily : params.forecast.hourly;
+                    group.add(name);
+                    if (name === 'weather_code') {
+                        params.forecast.hourly.add('temperature_2m');
+                    }
                 }
             }
         }
     }
 
     // Konvertiere Sets in Strings
+    const forcedModel = {};
+    for (const [model, names] of params.forecast.forcedModel) {
+        forcedModel[model] = Array.from(names);
+    }
+
     return {
         forecast: {
             hourly: Array.from(params.forecast.hourly).join(','),
             daily: Array.from(params.forecast.daily).join(','),
             pressure: '', // (Bleibt leer, da in 'hourly' integriert)
-            models: Array.from(params.forecast.models).join(',') // (z.B. 'icon_seamless')
+            models: Array.from(params.forecast.models).join(','), // (z.B. 'icon_seamless')
+            forcedModel // { modelName: [paramName, ...] } -- eigener Request pro Modell, siehe addForced()
         },
         marine: {
             hourly: Array.from(params.marine.hourly).join(','), // (z.B. 'wave_height')
