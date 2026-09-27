@@ -215,21 +215,18 @@ export const METRICS_CONFIG = {
 
     'cloudBase': {
         // 1. Die Basis-Variablen, die wir brauchen
+        // Genau die Felder, die utils.js buildPressureColumn() für die
+        // Wolkensäule nach clouds.js (meteokit) braucht.
         apiName: [
             // 1. Parameter für Druckstufen
             'relative_humidity',
             'geopotential_height',
-            'temperature',              // Benötigt von analyzeCloudLayers
-            'cloud_cover',              // Benötigt von interpolateWeatherData
-            'wind_speed',               // Benötigt von interpolateWeatherData
-            'wind_direction',           // Benötigt von interpolateWeatherData
+            'temperature',
 
             // 2. Oberflächen-Parameter (Abhängigkeiten)
-            'surface_pressure',         // Benötigt von interpolateWeatherData
-            'wind_speed_10m',           // Benötigt von interpolateWeatherData
-            'wind_direction_10m',       // Benötigt von interpolateWeatherData
-            'temperature_2m',           // Benötigt von analyzeCloudLayers
-            'relative_humidity_2m'      // Benötigt von interpolateWeatherData
+            'surface_pressure',         // Druckflächen unter Grund ausfiltern
+            'temperature_2m',           // unterster Säulenpunkt (2 m)
+            'relative_humidity_2m'
         ],
 
         // 2. Die Druckstufen, die wir *anfragen* wollen
@@ -262,17 +259,11 @@ export const METRICS_CONFIG = {
         // Ceiling: niedrigste BKN (5-7 Achtel) oder OVC (8 Achtel) Schicht.
         // Relevant für IFR-Beurteilung. Unabhängige Grenzwerte von cloudBase.
         apiName: [
-            // Druckstufen-Parameter (identisch zu cloudBase – werden ohnehin gemeinsam abgefragt)
+            // Identisch zu cloudBase – werden ohnehin gemeinsam abgefragt
             'relative_humidity',
             'geopotential_height',
             'temperature',
-            'cloud_cover',
-            'wind_speed',
-            'wind_direction',
-            // Oberflächen-Parameter
             'surface_pressure',
-            'wind_speed_10m',
-            'wind_direction_10m',
             'temperature_2m',
             'relative_humidity_2m'
         ],

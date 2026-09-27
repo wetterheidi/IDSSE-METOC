@@ -241,8 +241,8 @@ export const TERRAIN_MISMATCH_WARN_M = 100;
 // 12 km, 6 Punkte weltweit, alle 168 h ohne Lücke); auf
 // LEGACY_API_BASE_ICON_GLOBAL ist cloud_cover_level{N} durchgehend null.
 // Liefert kein Level-Host brauchbare Wolken, bleiben cloudBase/cloudCeiling
-// leer (mit Hinweis) -- bewusst KEIN Rückfall auf den Druckstufen-Pfad, der
-// auf diesem Branch unsinnige (u. a. negative) Werte liefert.
+// leer (mit Hinweis) -- bewusst KEIN Rückfall auf den Druckstufen-Pfad
+// (siehe weather.js _fetchRawData).
 export const MICHAEL_LEVEL_CLOUD_MODELS = new Set(["icon_d2", "icon_eu", "icon_global"]);
 
 // Level-Anzahl je Modell (für die Cap-Sondierung, wie droneforecast/
