@@ -218,6 +218,53 @@ export function isBelowGround(p, surfacePressure) {
     return Number.isFinite(surfacePressure) && p >= surfacePressure;
 }
 
+/**
+ * Baut aus Druckflächen-Daten EINER Stunde eine Wolkensäule im Format von
+ * clouds.js (meteokit): { h, t, rh, p, model, nLevels }, je Level ein
+ * 1-Element-Array (Stundenindex 0). Aufsteigend nach Höhe (m AGL):
+ * unterster Punkt ist der 2-m-Wert, darüber alle Druckflächen ÜBER Grund
+ * (isBelowGround). cloud_cover_{p}hPa wird bewusst NICHT verwendet -- bei
+ * Open-Meteo ist das selbst nur eine RH-Ableitung, keine Modellbedeckung;
+ * clouds.js rechnet die Wolkenfraktion mit der gegen echtes ICON-CLC
+ * kalibrierten Sundqvist-Feuchteformel (cloudFraction/criticalRH).
+ * @param {object} weatherData  Open-Meteo 'hourly' eines Punkts
+ * @param {number} i            Stundenindex
+ * @param {number} elevation_m  Geländehöhe (m MSL) -- Bezug für AGL
+ * @param {string} [model]      API-Modellname (wählt RH_CRIT_Z_REF in clouds.js)
+ * @returns {object|null}       null, wenn zu wenige Niveaus vorhanden sind
+ */
+export function buildPressureColumn(weatherData, i, elevation_m, model) {
+    const base = Number.isFinite(elevation_m) ? elevation_m : 0;
+    const ps = weatherData.surface_pressure?.[i];
+    const rows = [];
+
+    const t2 = weatherData.temperature_2m?.[i];
+    const rh2 = weatherData.relative_humidity_2m?.[i];
+    if (Number.isFinite(t2) && Number.isFinite(rh2)) {
+        rows.push({ h: 2, t: t2, rh: rh2, p: Number.isFinite(ps) ? ps : null });
+    }
+    for (const hPa of STANDARD_PRESSURE_LEVELS) {
+        if (isBelowGround(hPa, ps)) continue;
+        const z = weatherData[`geopotential_height_${hPa}hPa`]?.[i];
+        const t = weatherData[`temperature_${hPa}hPa`]?.[i];
+        const rh = weatherData[`relative_humidity_${hPa}hPa`]?.[i];
+        if (![z, t, rh].every(Number.isFinite)) continue;
+        const agl = z - base;
+        if (agl <= 2) continue; // Sicherheitsnetz, falls Bodendruck fehlt
+        rows.push({ h: agl, t, rh, p: hPa });
+    }
+    if (rows.length < 2) return null;
+    rows.sort((a, b) => a.h - b.h);
+    return {
+        h: rows.map(r => [r.h]),
+        t: rows.map(r => [r.t]),
+        rh: rows.map(r => [r.rh]),
+        p: rows.map(r => [r.p]),
+        model,
+        nLevels: rows.length,
+    };
+}
+
 export function analyzeCloudLayers(weatherData) {
     if (!weatherData || !weatherData.time || weatherData.time.length === 0) {
         return [];

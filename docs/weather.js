@@ -8,14 +8,13 @@ import { METRICS_CONFIG, getApiParams, getMetricRules } from './metricsConfig.js
 import { WEATHER_MODELS, API_URLS, getModelMaxDays } from './config.js';
 import { LAND_POLYGONS } from './landPolygons.js';
 import {
-    analyzeCloudLayers,
+    buildPressureColumn,
     calculateDewpoint,
-    findCloudLayers,
-    interpolateWeatherData,
     interpolateWindAtAltitude,
     windDirection,
     windSpeed,
 } from './utils.js';
+import { cloudCeiling, lowestCloudBase, cloudFraction, criticalRH, CF_FEW, CF_BKN } from './clouds.js';
 import { showToast } from './ui.js';
 
 // Verhindert Toast-Spam bei mehreren gleichzeitig fehlschlagenden Profilen
@@ -143,112 +142,42 @@ function chunkArray(array, size) {
  * @returns {number | null} - Der berechnete Wert oder null
  */
 /**
- * Gibt ein vollständiges, formatiertes Vertikalprofil für einen Sampling-Punkt
- * und eine Stunde in der Browser-Konsole aus.
- *
- * Zweck: Verifizierung der Wolkenuntergrenze gegen METAR-Beobachtungen
- * und andere NWP-Tools. Alle Höhen in Fuß AGL (METAR-Standard).
- *
- * Aufruf: Wird von calculateDerivedValue() für cloudBase/cloudCeiling ausgelöst.
- *
- * @param {object} locationInfo  - { lat, lon, elevation_m }
- * @param {string} timeISO       - ISO-Zeitstempel des Vorhersagestundepunkts
- * @param {object[]} profile     - Interpolierte Datenpunkte (50-m-Raster)
- * @param {object[]} layers      - Gefundene Wolkenschichten
- * @param {object} thresholds    - Aktive RH-Schwellen { low, mid, high }
+ * Gibt die Wolkensäule eines Sampling-Punkts für eine Stunde in der
+ * Browser-Konsole aus (Verifikation gegen METAR/andere NWP-Tools): je Niveau
+ * Höhe, Druck, T, RH, kritische RH und Wolkenfraktion nach clouds.js.
+ * Aufruf: von calculateDerivedValue() für cloudBase/cloudCeiling.
  */
-function logCloudProfile(locationInfo, timeISO, profile, layers, thresholds) {
+function logCloudProfile(locationInfo, timeISO, col, baseM, ceilingM) {
     const FT = 3.28084;
-
-    // --- Kopfzeile ---
     const lat  = locationInfo.lat  != null ? locationInfo.lat.toFixed(4)  : '?';
     const lon  = locationInfo.lon  != null ? locationInfo.lon.toFixed(4)  : '?';
     const elev = locationInfo.elevation_m != null
         ? `${locationInfo.elevation_m}m / ${Math.round(locationInfo.elevation_m * FT)}ft`
         : '?';
     const model = locationInfo.modelName || 'unbekannt';
-    const label = `☁ Wolkenprofil | ${model} | ${timeISO} UTC | ${lat}°N ${lon}°E | Gelände: ${elev}`;
-
-    console.groupCollapsed(`%c${label}`, 'color: #1abc9c; font-weight: bold;');
-
-    // --- RH-Schwellen ---
-    console.log(
-        `%cRH-Schwellen (aktuell): Tief=${thresholds.low}%  Mittel=${thresholds.mid}%  Hoch=65%`,
-        'color: #888; font-style: italic;'
+    console.groupCollapsed(
+        `%c☁ Wolkenprofil (Druckflächen, meteokit-RH) | ${model} | ${timeISO} UTC | ${lat}°N ${lon}°E | Gelände: ${elev}`,
+        'color: #1abc9c; font-weight: bold;'
     );
-
-    // --- Vollständiges Profil als Tabelle ---
-    // Nur Punkte mit cc > 0 oder rh >= 60% sind typischerweise relevant,
-    // aber wir zeigen ALLE Punkte für lückenlose Verifikation.
-    const tableData = profile
-        .filter(p => p.displayHeight !== undefined)
-        .map(p => {
-            const heightFt = Math.round(p.displayHeight * FT / 100) * 100; // gerundet auf 100ft
-            const cc     = Number.isFinite(p.cc)     ? Math.round(p.cc)     : null;
-            const ccApi  = Number.isFinite(p.cc_api) ? Math.round(p.cc_api) : null;
-            const ccRh   = Number.isFinite(p.cc_rh)  ? Number(p.cc_rh.toFixed(1)) : null;
-            const rh     = Number.isFinite(p.rh)     ? Math.round(p.rh)     : null;
-            const temp   = Number.isFinite(p.temp)   ? Number(p.temp.toFixed(1)) : null;
-            const dew    = Number.isFinite(p.dew)    ? Number(p.dew.toFixed(1))  : null;
-            const spread = (temp != null && dew != null) ? Number((temp - dew).toFixed(1)) : null;
-            const pres   = Number.isFinite(p.pressure) ? Math.round(p.pressure) : null;
-
-            // METAR-Kategorie aus finalem CC bestimmen
-            let metar = 'SKC';
-            if (cc > 87) metar = 'OVC';
-            else if (cc > 50) metar = 'BKN ⚠';
-            else if (cc > 25) metar = 'SCT';
-            else if (cc > 5)  metar = 'FEW';
-
-            return {
-                'Höhe (ft AGL)': heightFt,
-                'Druck (hPa)':   pres,
-                'Temp (°C)':     temp,
-                'Td (°C)':       dew,
-                'T-Td (K)':      spread,
-                'rh (%)':        rh,
-                'CC final (%)':  cc,
-                'CC API (%)':    ccApi,
-                'CC RH (%)':     ccRh,
-                'METAR':         metar
-            };
+    const fmt = (m) => (m == null || m >= 99999 ? 'keine' : `${Math.round(m)} m AGL = ${Math.round(m * FT / 100) * 100} ft AGL`);
+    console.log(`%c-> Untergrenze (≥ FEW): ${fmt(baseM)}  |  Ceiling (≥ BKN): ${fmt(ceilingM)}`,
+        'color: #e74c3c; font-weight: bold; font-size: 1.1em;');
+    const rows = [];
+    for (let k = 0; k < col.nLevels; k++) {
+        const h = col.h[k][0], t = col.t[k][0], rh = col.rh[k][0];
+        const cf = cloudFraction({ t, rh, model: col.model }, h);
+        rows.push({
+            'Höhe (m AGL)': Math.round(h),
+            'Höhe (ft AGL)': Math.round(h * FT / 100) * 100,
+            'Druck (hPa)': col.p[k][0] != null ? Math.round(col.p[k][0]) : null,
+            'Temp (°C)': Number(t.toFixed(1)),
+            'RH (%)': Math.round(rh),
+            'RH krit (%)': Number(criticalRH(h, t, undefined, col.model).toFixed(1)),
+            'CF (%)': Math.round(cf * 100),
+            'Kat.': cf >= CF_BKN ? 'BKN/OVC' : cf >= CF_FEW ? 'FEW/SCT' : '',
         });
-
-    console.table(tableData);
-
-    // --- Erkannte Schichten (Zusammenfassung) ---
-    if (layers.length === 0) {
-        console.log('%c-> Ergebnis: SKC (keine Wolken erkannt)', 'color: green; font-weight: bold;');
-    } else {
-        const layerStr = layers.map(l => {
-            const baseFt = Math.round(l.base * FT / 100) * 100;
-            const ceiling = l.isCeiling ? ' <- CEILING' : '';
-            return `${l.cover} ${String(baseFt).padStart(6)}ft AGL${ceiling}`;
-        }).join('\n  ');
-        console.log(
-            `%c-> Erkannte Schichten:\n  ${layerStr}`,
-            'color: #e67e22; font-weight: bold;'
-        );
-
-        // Explizite Ceiling-Zusammenfassung für schnellen METAR-Vergleich
-        const ceilingLayer = layers.find(l => l.isCeiling);
-        if (ceilingLayer) {
-            const ceilFt = Math.round(ceilingLayer.base * FT / 100) * 100;
-            // METAR-Format: BKN025 = BKN 2500ft -> dreistellig in Hundert Fuß
-            const metarCode = `${ceilingLayer.cover}${String(Math.round(ceilFt / 100)).padStart(3, '0')}`;
-            console.log(
-                `%c-> Ceiling (METAR-Format): ${metarCode}  (${ceilFt} ft AGL)`,
-                'color: #e74c3c; font-weight: bold; font-size: 1.1em;'
-            );
-        } else {
-            const baseFt = Math.round(layers[0].base * FT / 100) * 100;
-            console.log(
-                `%c-> Kein Ceiling. Tiefste Wolke: ${layers[0].cover} ${baseFt}ft AGL`,
-                'color: #27ae60; font-weight: bold;'
-            );
-        }
     }
-
+    console.table(rows);
     console.groupEnd();
 }
 
@@ -269,44 +198,23 @@ function calculateDerivedValue(metric, hourly, h, elevation, locationInfo) {
                 return chill;
             case 'cloudBase':
             case 'cloudCeiling': {
-                // Gemeinsame Interpolationslogik für cloudBase UND cloudCeiling.
-                // Der Unterschied liegt nur in der Layer-Filterung am Ende.
-                // cloudBase  → niedrigste Wolke ab FEW  (alle Layer)
-                // cloudCeiling → niedrigste BKN/OVC     (nur Ceiling-Layer)
-
-                // 1. Schwellenwerte analysieren
-                const cloudThresholds = analyzeCloudLayers(hourly);
-                if (!cloudThresholds || !cloudThresholds[h]) {
-                    console.warn(`[${summaryKey}] Schwellenwert-Analyse für Stunde ${h} fehlgeschlagen.`);
+                // Wolkenfraktion je Niveau wie in meteokit (clouds.js): gegen
+                // ICON-CLC kalibrierte Sundqvist-Feuchteformel mit höhen- und
+                // phasenabhängiger kritischer RH; Basis = unterste Höhe, an der
+                // die Fraktion FEW (cloudBase) bzw. BKN (cloudCeiling) von unten
+                // kreuzt (linear zwischen den Niveaus), bodennaher Nebel
+                // (< 30 m) wird übersprungen. Nur Druckflächen über Grund.
+                // Keine Schicht gefunden -> 99999 (kein Alarm), wie bisher.
+                const col = buildPressureColumn(hourly, h, elevation, locationInfo?.modelApiName);
+                if (!col) {
+                    console.warn(`[${summaryKey}] Zu wenige Druckflächen für Stunde ${h}.`);
                     return null;
                 }
-                const currentThresholds = cloudThresholds[h];
+                const baseM = lowestCloudBase(col, 0);
+                const ceilingM = cloudCeiling(col, 0)?.baseM ?? null;
+                const result = (summaryKey === 'cloudBase' ? baseM : ceilingM) ?? 99999;
 
-                // 2. Basis-Daten
-                const baseHeight_m = elevation || 0;
-                const interpStep = 50;
-
-                // 3. Interpolieren (50-m-Raster, mit RH-Korrektur)
-                const interpolatedData = interpolateWeatherData(
-                    hourly, h, interpStep, baseHeight_m, 'm', currentThresholds
-                );
-
-                // 4. Alle Wolkenschichten finden (FEW, SCT, BKN, OVC)
-                // findCloudLayers arbeitet jetzt direkt auf den Druckniveaus (ccLevels),
-                // nicht auf dem interpolierten 50m-Raster. Das verhindert Artefakte
-                // durch Interpolation zwischen wolkenfreien und bewoelkten Niveaus.
-                const allLayers = findCloudLayers(interpolatedData.ccLevels, baseHeight_m);
-
-                // 5. Ergebnis je nach Metrik
-                let result;
-                if (summaryKey === 'cloudBase') {
-                    result = allLayers.length > 0 ? allLayers[0].base : 99999;
-                } else {
-                    const ceilingLayers = allLayers.filter(l => l.isCeiling);
-                    result = ceilingLayers.length > 0 ? ceilingLayers[0].base : 99999;
-                }
-
-                // 6. Profil-Log: wird von cloudBase ausgeloest.
+                // Profil-Log: wird von cloudBase ausgeloest.
                 //    Falls cloudBase nicht aktiv ist (kein Grenzwert gesetzt),
                 //    uebernimmt cloudCeiling den Log - so gibt es immer genau einen
                 //    Log pro Punkt/Stunde, unabhaengig davon welche Metrik aktiv ist.
@@ -315,8 +223,7 @@ function calculateDerivedValue(metric, hourly, h, elevation, locationInfo) {
                                      !(locationInfo && locationInfo.cloudBaseActive);
                 if (logByBase || logByCeiling) {
                     const timeISO = hourly.time?.[h] ?? `Index ${h}`;
-                    const loc = locationInfo || {};
-                    logCloudProfile(loc, timeISO, interpolatedData, allLayers, currentThresholds);
+                    logCloudProfile(locationInfo || {}, timeISO, col, baseM, ceilingM);
                 }
 
                 return result;
@@ -567,6 +474,8 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                         // Log wird von cloudBase ausgeloest - falls cloudBase nicht aktiv ist,
                         // uebernimmt cloudCeiling den Log (verhindert Doppelausgabe).
                         cloudBaseActive: metrics.some(m => m.summaryKey === 'cloudBase'),
+                        // API-Modellname: waehlt in clouds.js die modellspezifische RH_CRIT_Z_REF
+                        modelApiName: modelInfo ? modelInfo.apiName : null,
                         // Modellname fuer den Profil-Log
                         modelName: modelInfo
                             ? (WEATHER_MODELS.DISPLAY_MAP[modelInfo.apiName] || modelInfo.apiName)
