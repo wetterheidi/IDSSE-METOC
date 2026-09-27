@@ -301,6 +301,27 @@ const TEST_CASES = [
         })
     },
 
+    {
+        name: 'T13 - Druckflaechen unter Grund (Muenchen, Bodendruck 962 hPa)',
+        description: 'Open-Meteo liefert 1000/975 hPa auch unter Grund, extrapoliert mit ' +
+                     'bodennaher Feuchte (RH 80%). Diese Flaechen duerfen nicht als Wolke ' +
+                     'zaehlen (vorher: FEW bei -325 m AGL). Darueber trocken. ' +
+                     'Erwartet: SKC, kein Ceiling.',
+        expected: { cloudBase_m: 99999, cloudCeiling_m: 99999, topLayer: null },
+        baseHeight_m: 524,
+        setup: () => buildHourly({
+            groundTemp_C: 12, groundRh: 70, surfacePressure: 962,
+            levels: [
+                { hPa: 1000, height_m:  199, temp_C: 14, rh: 80, cc:  0 },
+                { hPa:  975, height_m:  412, temp_C: 13, rh: 80, cc:  0 },
+                { hPa:  950, height_m:  630, temp_C: 11, rh: 58, cc:  0 },
+                { hPa:  850, height_m: 1500, temp_C:  4, rh: 40, cc:  0 },
+                { hPa:  700, height_m: 3000, temp_C: -5, rh: 30, cc:  0 },
+                { hPa:  500, height_m: 5600, temp_C:-20, rh: 20, cc:  0 },
+            ]
+        })
+    },
+
 ];
 
 
