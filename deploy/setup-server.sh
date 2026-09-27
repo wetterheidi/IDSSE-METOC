@@ -5,6 +5,17 @@ DOMAIN="idsse.wetterheidi.de"
 APP_DIR="/apps/IDSSE-METOC"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Sicherung wie in setup-server-modellevel.sh: nur von einem Checkout auf
+# main deployen. Sonst landet z. B. die Modell-Level-Version (Branch
+# feature/michael-datasource) unter idsse.wetterheidi.de.
+CURRENT_BRANCH="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)"
+if [ "$CURRENT_BRANCH" != "main" ]; then
+    echo "FEHLER: Checkout steht auf '$CURRENT_BRANCH', nicht auf 'main'."
+    echo "Für idsseml.wetterheidi.de: bash deploy/setup-server-modellevel.sh"
+    echo "Für idsse.wetterheidi.de: im main-Checkout 'git checkout main && git pull', dann erneut ausführen."
+    exit 1
+fi
+
 echo "=== IDSSE-METOC Setup ==="
 
 # App-Verzeichnis anlegen und Dateien kopieren

@@ -53,6 +53,10 @@ bash deploy/setup-server.sh
 
 Deployt nach `/apps/IDSSE-METOC` → https://idsse.wetterheidi.de
 
+Das Skript bricht mit einer Fehlermeldung ab, falls der Checkout NICHT auf
+`main` steht — Sicherung dagegen, dass die Modell-Level-Version
+versehentlich unter idsse.wetterheidi.de landet.
+
 ## Routine-Update: Modell-Level
 
 ```bash
