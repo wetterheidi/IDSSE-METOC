@@ -699,6 +699,23 @@ body.dark select[id$="_warn"] {
     position: relative;
 }
 
+/* Quellenhinweis unter der Modellauswahl: dezent, bei Fallback auffällig */
+.data-source-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin: 0 0 6px;
+    cursor: help;
+}
+
+.data-source-hint.fallback {
+    color: var(--color-danger);
+    font-weight: 600;
+}
+
+.run-source {
+    color: var(--text-secondary);
+}
+
 #selectedTime {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
     font-size: 13px;
@@ -1145,6 +1162,18 @@ body.dark .leaflet-control-coords {
     font-size: 0.82em;
     color: var(--color-warning);
     padding: 1px 0;
+}
+
+/* Orographie-Hinweis (Modell- vs. DEM-Geländehöhe) */
+.terrain-info {
+    display: block;
+    font-size: 0.78em;
+    color: var(--text-secondary);
+    padding: 1px 0;
+}
+
+.terrain-info.warn {
+    color: var(--color-warning);
 }
 
 .dashboard-error {

@@ -7,9 +7,11 @@ import { getCache, setCache } from './db.js';
 import { METRICS_CONFIG, getApiParams, getMetricRules } from './metricsConfig.js';
 import {
     WEATHER_MODELS, API_URLS, getModelMaxDays,
-    MICHAEL_HOSTS, MICHAEL_LEVEL_CLOUD_MODELS, MICHAEL_MODEL_LEVELS,
+    MODEL_API_BASES, modelLevelApiBases, ELEVATION_API_BASES, TERRAIN_MISMATCH_WARN_M,
+    MICHAEL_LEVEL_CLOUD_MODELS, MICHAEL_MODEL_LEVELS,
     MICHAEL_CLOUD_CAP_M, MICHAEL_SURFACE_WHITELIST,
 } from './config.js';
+import { fetchModelJson, fetchPublicJson } from './apiClient.js';
 import { cloudCeiling, lowestCloudBase } from './clouds.js';
 import { LAND_POLYGONS } from './landPolygons.js';
 import {
@@ -34,112 +36,8 @@ function showApiErrorToast(message, type = 'error') {
 }
 
 // -----------------------------------------------------------
-// 2. GLOBALE REQUEST-QUEUE (Rate Limiter)
+// 2. REQUEST-QUEUE & HOST-FALLBACK: siehe apiClient.js
 // -----------------------------------------------------------
-
-/**
- * Zentraler Rate-Limiter für ALLE Open-Meteo API-Calls.
- * Stellt sicher, dass nie mehr als MAX_CONCURRENT Requests gleichzeitig
- * laufen und zwischen jedem Request MIN_DELAY_MS gewartet wird.
- * So werden 429-Fehler bei vielen Profilen zuverlässig verhindert.
- */
-const RequestQueue = (() => {
-    const MAX_CONCURRENT = 2;   // Maximal 2 parallele Requests
-    const MIN_DELAY_MS   = 400; // Mindest-Pause zwischen Requests (= max ~2.5 req/s)
-
-    let active   = 0;
-    let lastSent = 0;
-    const queue  = [];
-
-    function tryNext() {
-        if (queue.length === 0 || active >= MAX_CONCURRENT) return;
-
-        const now         = Date.now();
-        const sinceLastMs = now - lastSent;
-        const waitMs      = Math.max(0, MIN_DELAY_MS - sinceLastMs);
-
-        setTimeout(() => {
-            if (active >= MAX_CONCURRENT) { tryNext(); return; }
-
-            const { url, resolve, reject, retries } = queue.shift();
-            active++;
-            lastSent = Date.now();
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-            fetch(url, { signal: controller.signal })
-                .then(async res => {
-                    clearTimeout(timeoutId);
-                    if (res.status === 429 && retries > 0) {
-                        const backoffMs = Math.pow(2, 3 - retries) * 1500; // 1.5s, 3s, 6s
-                        console.warn(`[Queue] 429 – Retry in ${backoffMs}ms (${retries} versuche übrig)`);
-                        await new Promise(r => setTimeout(r, backoffMs));
-                        queue.unshift({ url, resolve, reject, retries: retries - 1 });
-                        active--;
-                        tryNext();
-                        return;
-                    }
-                    active--;
-                    tryNext();
-                    resolve(res);
-                })
-                .catch(err => {
-                    clearTimeout(timeoutId);
-                    active--;
-                    tryNext();
-                    if (err.name === 'AbortError') {
-                        reject(new Error('Open-Meteo API antwortet nicht (Timeout nach 15s). Bitte später erneut versuchen.'));
-                    } else {
-                        reject(err);
-                    }
-                });
-        }, waitMs);
-    }
-
-    return {
-        /**
-         * Führt einen fetch()-Aufruf über die Queue durch.
-         * Ersetze alle fetch()-Aufrufe in dieser Datei damit.
-         * @param {string} url
-         * @param {number} retries - Wiederholungsversuche bei 429
-         * @returns {Promise<Response>}
-         */
-        fetch(url, retries = 3) {
-            return new Promise((resolve, reject) => {
-                queue.push({ url, resolve, reject, retries });
-                tryNext();
-            });
-        },
-
-        /** Debugging: Aktueller Status der Queue */
-        status() {
-            return { queued: queue.length, active };
-        }
-    };
-})();
-
-
-// -----------------------------------------------------------
-// 2b. MICHAELS INSTANZ: DIREKTER FETCH (kein Rate-Limiting noetig)
-// -----------------------------------------------------------
-
-/**
- * Einfacher fetch() mit Timeout, OHNE die RequestQueue -- Michaels Instanz ist
- * ratenlimitfrei, die Drosselung/Concurrency-Begrenzung der RequestQueue ist
- * ausschliesslich fuer die oeffentliche API noetig (siehe config.js
- * MICHAEL_HOSTS-Kommentar). So bleibt die (fuer public ohnehin knappe)
- * RequestQueue-Kapazitaet ungeschmaelert.
- */
-async function fetchDirect(url, timeoutMs = 15000) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        return await fetch(url, { signal: controller.signal });
-    } finally {
-        clearTimeout(timeoutId);
-    }
-}
 
 /**
  * Teilt eine Liste angefragter hourly-Parameter danach auf, ob sie auf
@@ -153,6 +51,30 @@ function splitHourlyParams(paramNames, whitelist) {
         (whitelist.has(name) ? michael : publicOnly).push(name);
     }
     return { michael, publicOnly };
+}
+
+// Felder, die für ein Modell auf JEDER Instanz (auch public) durchgehend null
+// sind -- zählen bei der Null-Prüfung nicht (Stichprobe 2026-09-27).
+const ALWAYS_NULL_VARS = {
+    icon_global: new Set(['visibility']),
+    icon_seamless: new Set(['visibility']),
+};
+
+const asLocations = (json) => (json == null ? [] : (Array.isArray(json) ? json : [json]));
+
+/**
+ * Validator für fetchModelJson: eine Antwort mit HTTP 200, in der für einen
+ * Punkt ALLE geprüften Variablen durchgehend null sind, gilt als unbrauchbar
+ * (z. B. open-meteo-temp für ICON Global) -- dann kommt der nächste Host.
+ * Ohne prüfbare Variable wird nicht verworfen.
+ */
+function hasValuesFor(vars) {
+    return (data) => {
+        if (vars.length === 0) return true;
+        const locs = asLocations(data);
+        return locs.length > 0 && locs.every(loc =>
+            vars.some(v => (loc?.hourly?.[v] || []).some(x => x != null)));
+    };
 }
 
 // Modul-Level-Cache: das sondierte Level-Band aendert sich pro Modell kaum
@@ -178,14 +100,14 @@ async function ensureCloudBand(modelApiName, sampleCoord) {
 
     const probeLevels = [];
     for (let l = nLevels; l >= 1; l--) probeLevels.push(l);
-    const vars = probeLevels.map(l => `height_agl_level${l}`).join(',');
-    const url = `${MICHAEL_HOSTS[modelApiName]}/v1/forecast?latitude=${sampleCoord.lat.toFixed(4)}&longitude=${sampleCoord.lon.toFixed(4)}&hourly=${vars}&models=${modelApiName}&forecast_days=1`;
+    const varNames = probeLevels.map(l => `height_agl_level${l}`);
+    const path = `/v1/forecast?latitude=${sampleCoord.lat.toFixed(4)}&longitude=${sampleCoord.lon.toFixed(4)}&hourly=${varNames.join(',')}&models=${modelApiName}&forecast_days=1`;
 
     try {
-        const res = await fetchDirect(url);
-        if (!res.ok) throw new Error(`Sondierung fehlgeschlagen: ${res.statusText}`);
-        const data = await res.json();
-        const hourly = (Array.isArray(data) ? data[0] : data)?.hourly;
+        const { data } = await fetchModelJson(modelLevelApiBases(modelApiName), path, {
+            sourceKey: `${modelApiName}:levels`, validate: hasValuesFor(varNames),
+        });
+        const hourly = asLocations(data)[0]?.hourly;
         if (!hourly) throw new Error('Sondierung: keine hourly-Daten erhalten.');
 
         const levels = [];
@@ -319,7 +241,7 @@ function logCloudProfile(locationInfo, timeISO, profile, layers, thresholds) {
         ? `${locationInfo.elevation_m}m / ${Math.round(locationInfo.elevation_m * FT)}ft`
         : '?';
     const model = locationInfo.modelName || 'unbekannt';
-    const label = `☁ Wolkenprofil | ${model} | ${timeISO} UTC | ${lat}°N ${lon}°E | Gelände: ${elev}`;
+    const label = `☁ Wolkenprofil | ${model} | ${timeISO} UTC | ${lat}°N ${lon}°E | Modellhöhe: ${elev}`;
 
     console.groupCollapsed(`%c${label}`, 'color: #1abc9c; font-weight: bold;');
 
@@ -948,7 +870,41 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
         }
     });
 
+    summary.terrain = summarizeTerrain(locationsData);
+
     return summary;
+}
+
+/**
+ * Orographie-Hinweis wie in droneforecast: Die Bodenwerte gelten für die
+ * MODELLHÖHE am Gitterpunkt, nicht für die echte (DEM90-)Geländehöhe. Große
+ * Differenz = lokales Gelände vom Modellgitter nicht aufgelöst (Werte mit
+ * Vorsicht interpretieren), nicht dass ein Wert falsch berechnet ist.
+ * @returns {null | {nPoints, nDem, modelMin, modelMax, demMin, demMax,
+ *   maxDeltaM, nMismatch, warnM}}  maxDeltaM = betragsgrößtes Δ (Modell − DEM)
+ */
+function summarizeTerrain(locationsData) {
+    const pts = locationsData.filter(l => l && Number.isFinite(l.modelElevation));
+    if (pts.length === 0) return null;
+    const withDem = pts.filter(l => Number.isFinite(l.demElevation));
+    const model = pts.map(l => l.modelElevation);
+    const t = {
+        nPoints: pts.length,
+        nDem: withDem.length,
+        modelMin: Math.min(...model),
+        modelMax: Math.max(...model),
+        demMin: null, demMax: null, maxDeltaM: null, nMismatch: 0,
+        warnM: TERRAIN_MISMATCH_WARN_M,
+    };
+    if (withDem.length > 0) {
+        const dem = withDem.map(l => l.demElevation);
+        const deltas = withDem.map(l => l.modelElevation - l.demElevation);
+        t.demMin = Math.min(...dem);
+        t.demMax = Math.max(...dem);
+        t.maxDeltaM = deltas.reduce((a, d) => (Math.abs(d) > Math.abs(a) ? d : a), 0);
+        t.nMismatch = deltas.filter(d => Math.abs(d) >= TERRAIN_MISMATCH_WARN_M).length;
+    }
+    return t;
 }
 
 // -----------------------------------------------------------
@@ -990,7 +946,7 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
     // (siehe michaelSurface/michaelClouds-URLs unten) -- sie liefert immer
     // ihren eigenen aktuellsten eingelesenen Lauf.
     const michaelApiName = modelInfo ? modelInfo.apiName : null;
-    const useMichael = hasForecastParams && !!michaelApiName && !!MICHAEL_HOSTS[michaelApiName];
+    const useMichael = hasForecastParams && !!michaelApiName && !!MODEL_API_BASES[michaelApiName];
 
     const allHourlyParams = apiParams.forecast.hourly ? apiParams.forecast.hourly.split(',').filter(Boolean) : [];
     let michaelHourly = [];
@@ -1031,8 +987,28 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
         const jobs = {};
 
         if (useMichael && michaelHourly.length > 0) {
-            const url = `${MICHAEL_HOSTS[michaelApiName]}/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${michaelHourly.join(',')}&models=${michaelApiName}`;
-            jobs.michaelSurface = fetchDirect(url);
+            // elevation=nan je Punkt: Bodenwerte bewusst auf MODELLHÖHE (kein
+            // Downscaling auf DEM), passend zu den Modelllevel-Daten. Auf den
+            // ICON-Instanzen ist das ohnehin so; so bleibt es auch, wenn ein
+            // Host DEM-Downscaling bekommt oder public als Fallback liefert
+            // (Stichprobe 2026-09-27: dann dieselbe `elevation` = Modellhöhe).
+            const elevNan = chunk.map(() => 'nan').join(',');
+            const path = `/v1/forecast?latitude=${lats}&longitude=${lons}&elevation=${elevNan}&forecast_days=${forecastDays}&hourly=${michaelHourly.join(',')}&models=${michaelApiName}`;
+            const skipNull = ALWAYS_NULL_VARS[michaelApiName];
+            const probeVars = michaelHourly.filter(v => !skipNull?.has(v));
+            jobs.michaelSurface = fetchModelJson(MODEL_API_BASES[michaelApiName], path, {
+                sourceKey: michaelApiName, validate: hasValuesFor(probeVars),
+            });
+            // DEM90-Geländehöhe NUR für den Orographie-Hinweis (Δ Modell- vs.
+            // Geländehöhe). Fehlt sie, gibt es eben keinen Hinweis -- kein
+            // Abbruch des Profil-Checks.
+            jobs.dem = fetchModelJson(ELEVATION_API_BASES, `/v1/elevation?latitude=${lats}&longitude=${lons}`, {
+                sourceKey: 'elevation',
+                validate: d => Array.isArray(d.elevation) && d.elevation.length === chunk.length && d.elevation.every(Number.isFinite),
+            }).catch(err => {
+                console.warn(`[weather.js] DEM-Höhe nicht verfügbar (${err.message}) -- kein Orographie-Hinweis.`);
+                return null;
+            });
         }
 
         if (hasForecastParams && (!useMichael || publicOnlyHourly.length > 0 || apiParams.forecast.daily.length > 0)) {
@@ -1052,20 +1028,23 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             if (modelInfo && modelInfo.apiName !== 'auto' && modelInfo.runTimeISO) {
                 forecastUrl += `&forecast_run=${modelInfo.runTimeISO}`;
             }
-            jobs.publicSurface = RequestQueue.fetch(forecastUrl);
+            jobs.publicSurface = fetchPublicJson(forecastUrl);
         }
 
         if (hasMarineParams) {
             let marineUrl = `${API_URLS.MARINE}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}`;
             marineUrl += `&hourly=${apiParams.marine.hourly}`;
             marineUrl += `&models=${apiParams.marine.models}`;
-            jobs.marine = RequestQueue.fetch(marineUrl);
+            jobs.marine = fetchPublicJson(marineUrl);
         }
 
         if (cloudBand) {
             const vars = cloudBand.levels.flatMap(l => [`cloud_cover_level${l}`, `height_agl_level${l}`]).join(',');
-            const url = `${MICHAEL_HOSTS[michaelApiName]}/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${vars}&models=${michaelApiName}`;
-            jobs.michaelClouds = fetchDirect(url);
+            const path = `/v1/forecast?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${vars}&models=${michaelApiName}`;
+            jobs.michaelClouds = fetchModelJson(modelLevelApiBases(michaelApiName), path, {
+                sourceKey: `${michaelApiName}:levels`,
+                validate: hasValuesFor(cloudBand.levels.map(l => `cloud_cover_level${l}`)),
+            });
         }
 
         // Metriken mit erzwungenem Modell (z.B. seaSurfaceTemp -> immer
@@ -1081,25 +1060,32 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             const paramNames = apiParams.forecast.forcedModel[modelName];
             if (!paramNames || paramNames.length === 0) continue;
             const url = `${API_URLS.FORECAST}?latitude=${lats}&longitude=${lons}&forecast_days=${forecastDays}&hourly=${paramNames.join(',')}&models=${modelName}`;
-            jobs[`forcedModel:${modelName}`] = RequestQueue.fetch(url);
+            jobs[`forcedModel:${modelName}`] = fetchPublicJson(url);
         }
 
         let mergedLocationsData;
         try {
             const jobNames = Object.keys(jobs);
-            const responses = await Promise.all(jobNames.map(name => jobs[name]));
-
-            for (const response of responses) {
-                if (!response.ok) {
-                    throw new Error(`API-Fehler bei Chunk: ${response.statusText}`);
-                }
-            }
-
-            const allData = await Promise.all(responses.map(res => res.json()));
+            const allData = await Promise.all(jobNames.map(name => jobs[name]));
             const byName = {};
             jobNames.forEach((name, i) => { byName[name] = allData[i]; });
 
-            const asArray = (json) => (json == null ? [] : (Array.isArray(json) ? json : [json]));
+            // Fallback-fähige Jobs liefern { data, base } -- base = der Host,
+            // der TATSÄCHLICH geliefert hat (für Quellenhinweis/Summary).
+            const sources = {};
+            for (const name of ['michaelSurface', 'michaelClouds', 'dem']) {
+                if (byName[name]) {
+                    sources[name] = byName[name].base;
+                    byName[name] = byName[name].data;
+                }
+            }
+            const demElevations = byName.dem?.elevation || null;
+            if (Object.keys(sources).length) {
+                console.log(`[weather.js] Datenquelle (${chunk.length} Punkte): ` +
+                    Object.entries(sources).map(([k, b]) => `${k}=${b}`).join(', '));
+            }
+
+            const asArray = asLocations;
             const michaelSurfaceData = asArray(byName.michaelSurface);
             const publicSurfaceData = asArray(byName.publicSurface);
             const marineData = asArray(byName.marine);
@@ -1136,6 +1122,12 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
                 }
                 if (michaelCloudsData[i]?.hourly && cloudBand) {
                     merged.levelCloud = buildLevelCloud(michaelCloudsData[i].hourly, cloudBand);
+                }
+                // `elevation` bleibt die Modellhöhe der Bodenwerte (s. o.);
+                // modelElevation/demElevation nur für den Orographie-Hinweis.
+                if (michaelSurfaceData[i]) {
+                    merged.modelElevation = Number.isFinite(michaelSurfaceData[i].elevation) ? michaelSurfaceData[i].elevation : null;
+                    merged.demElevation = Number.isFinite(demElevations?.[i]) ? demElevations[i] : null;
                 }
                 return merged;
             });
@@ -1374,7 +1366,7 @@ function isPointOverLand(pointFeature) {
  * Vorher: ein Open-Meteo-Elevation-API-Request pro gezeichnetem Prüfgebiet
  * (Höhe 0 an irgendeinem Sampling-Punkt -> als "See" gewertet). Das war der
  * letzte verbliebene, nicht auf Michael umleitbare public-Aufruf im
- * Zeichnen-Flow (Michaels /v1/elevation liefert nachweislich nur 'nan') und
+ * Zeichnen-Flow (Michaels /v1/elevation lieferte damals nur 'nan') und
  * trug zu den 429ern bei. Eine reine Ja/Nein-Frage ("liegt irgendein Punkt
  * des Gebiets im Wasser?") braucht aber gar keine echte Höhenauflösung --
  * turf.booleanPointInPolygon gegen eine (fuer Europa/Nordatlantik

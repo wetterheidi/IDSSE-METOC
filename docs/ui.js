@@ -28,6 +28,38 @@ const NAME_PATTERN = /^[a-zA-Z0-9äöüÄÖÜß\s\-_.()]+$/;
 // -----------------------------------------------------------
 
 /**
+ * Orographie-Hinweis (wie droneforecast): Die Bodenwerte gelten für die
+ * Modellhöhe am Gitterpunkt, nicht für die echte (DEM90-)Geländehöhe.
+ * `compact`: nur bei Überschreitung der Warnschwelle etwas ausgeben
+ * (Alarm-Dashboard); sonst immer eine Zeile (Prüfbericht).
+ * @param {object|null} t  summary.terrain (weather.js summarizeTerrain)
+ */
+function terrainInfoHtml(t, profile, compact = false) {
+    if (!t) return '';
+    const ft = profile?.rules?.unitMode === 'aviation';
+    const fmt = (m) => ft ? `${Math.round(m * CONVERSIONS.METER_TO_FEET / 10) * 10} ft` : `${Math.round(m)} m`;
+    const range = (a, b) => (Math.round(a) === Math.round(b) ? fmt(a) : `${fmt(a).split(' ')[0]}–${fmt(b)}`);
+    const warn = t.nMismatch > 0;
+    if (compact && !warn) return '';
+
+    let text;
+    if (t.nDem === 0) {
+        text = `Orographie: Modell ${range(t.modelMin, t.modelMax)} · DEM nicht verfügbar`;
+    } else {
+        const d = t.maxDeltaM;
+        const sign = d >= 0 ? '+' : '−';
+        text = `Orographie: Modell ${range(t.modelMin, t.modelMax)} · DEM ${range(t.demMin, t.demMax)} · Δ max ${sign}${fmt(Math.abs(d))}`;
+    }
+    const title = 'Bodenwerte gelten für die Modellhöhe am Gitterpunkt (keine Umrechnung auf DEM). '
+        + 'Δ = Modellhöhe − DEM90-Geländehöhe.';
+    let html = compact ? '' : `<span class="terrain-info${warn ? ' warn' : ''}" title="${title}">${text}</span>`;
+    if (warn) {
+        html += `<span class="terrain-info warn" title="${title}">⚠ Gelände an ${t.nMismatch} von ${t.nDem} Punkten vom Modellgitter nicht aufgelöst (|Δ| ≥ ${fmt(t.warnM)}) — Bodenwerte gelten für Modellhöhe, mit Vorsicht interpretieren.</span>`;
+    }
+    return html;
+}
+
+/**
  * Escaped HTML-Sonderzeichen, um XSS bei innerHTML zu verhindern.
  */
 function escapeHtml(str) {
@@ -529,6 +561,7 @@ export const displayAutoWarnings = (alarmResults) => {
         }
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
+        html += terrainInfoHtml(s.terrain, p, true);
         if (s.error) html += `<span class="dashboard-error">⚠ FEHLER: ${s.error}</span>`;
         html += `</div>`;
     });
@@ -556,6 +589,7 @@ export const displayManualWarning = (profile, summary) => {
     if (summary.error) {
         html += `<div class="dashboard-error-box"><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
     }
+    html += terrainInfoHtml(summary.terrain, profile);
 
     // --- Ampel-Matrix ---
     let tableHtml = "";

@@ -1,4 +1,5 @@
-import { WEATHER_MODELS, API_URLS, MICHAEL_HOSTS } from './config.js';
+import { WEATHER_MODELS, API_URLS, MODEL_API_BASES, SURFACE_API_BASE } from './config.js';
+import { fetchModelJson, getApiSources, onApiSourceChange, hostLabel } from './apiClient.js';
 
 // -----------------------------------------------------------
 // 0. TIMEOUT-HILFSFUNKTION
@@ -87,24 +88,39 @@ function isInModelBbox(lat, lng, bbox) {
     return lat >= bbox.latMin && lat <= bbox.latMax && lng >= bbox.lonMin && lng <= bbox.lonMax;
 }
 
+// Ein Lauf, der älter ist, gilt als "Server hängt" (z. B. open-meteo-temp:
+// dwd_icon-Lauf vom 16.09. bei Stichprobe am 27.09.) -- dann nächster Host.
+const MAX_RUN_AGE_H = 48;
+
 /**
- * Prüft gegen Michaels eigenes meta.json, ob für ein Modell aktuell ein
- * gültiger Lauf geladen ist. Nur für globale (bbox-lose) Michael-Modelle
- * relevant, z.B. icon_global -- laut Nutzer "nicht immer verfügbar". Bewusst
- * KEIN Public-Fallback: schlägt die Prüfung fehl, bleibt das Modell trotzdem
- * wählbar (Nutzer-Vorgabe: als Option für Gebiete außerhalb EU/D2 nötig),
- * aber mit sichtbarer Warnung statt eines stillen Rückfalls auf public.
+ * meta.json eines Modells über dessen Host-Kette (MODEL_API_BASES): erster
+ * Host mit plausiblem, nicht veraltetem Lauf. Liefert { runSec, base } oder
+ * wirft, wenn kein Host brauchbar antwortet.
+ */
+async function fetchRunMeta(apiName) {
+    const dataset = WEATHER_MODELS.API_MAP[apiName];
+    const bases = MODEL_API_BASES[apiName] || [SURFACE_API_BASE];
+    const { data, base } = await fetchModelJson(bases, `/data/${dataset}/static/meta.json`, {
+        sourceKey: `${apiName}:meta`,
+        timeoutMs: 6000,
+        validate: d => typeof d.last_run_initialisation_time === 'number'
+            && Date.now() / 1000 - d.last_run_initialisation_time < MAX_RUN_AGE_H * 3600,
+    });
+    return { runSec: data.last_run_initialisation_time, base };
+}
+
+/**
+ * Prüft über die Host-Kette, ob für ein Modell aktuell irgendwo ein gültiger
+ * Lauf geladen ist. Nur für globale (bbox-lose) Modelle relevant, z.B.
+ * icon_global. Schlägt die Prüfung fehl, bleibt das Modell trotzdem wählbar
+ * (Nutzer-Vorgabe: als Option für Gebiete außerhalb EU/D2 nötig), aber mit
+ * sichtbarer Warnung.
  */
 async function checkMichaelRunAvailable(apiName) {
-    const host = MICHAEL_HOSTS[apiName];
-    const dataset = WEATHER_MODELS.API_MAP[apiName];
-    if (!host || !dataset) return true;
+    if (!WEATHER_MODELS.API_MAP[apiName]) return true;
     try {
-        const metaUrl = `${host}/data/${dataset}/static/meta.json`;
-        const response = await fetchWithTimeout(metaUrl, 6000);
-        if (!response.ok) return false;
-        const metaData = await response.json();
-        return typeof metaData.last_run_initialisation_time === 'number';
+        await fetchRunMeta(apiName);
+        return true;
     } catch (e) {
         return false;
     }
@@ -146,15 +162,15 @@ async function checkAvailableModels(lat, lng) {
             continue;
         }
 
-        if (MICHAEL_HOSTS[apiName]) {
+        if (MODEL_API_BASES[apiName]) {
             const isRunAvailable = await checkMichaelRunAvailable(apiName);
             availableModels.push({
                 apiName: apiName,
                 name: WEATHER_MODELS.DISPLAY_MAP[apiName] || apiName,
-                warning: isRunAvailable ? null : 'Michaels Server hat aktuell keinen gültigen Modelllauf für dieses Modell geladen.',
+                warning: isRunAvailable ? null : 'Kein Server hat aktuell einen gültigen Modelllauf für dieses Modell geladen.',
             });
             if (!isRunAvailable) {
-                console.warn(`[timeSlider] Modell '${apiName}': kein gültiger Lauf auf Michaels Server (meta.json).`);
+                console.warn(`[timeSlider] Modell '${apiName}': kein gültiger Lauf auf einem der Server (meta.json).`);
             }
             continue;
         }
@@ -224,23 +240,15 @@ async function fetchLastRunTime(selectedApiName) {
         return 'latest';
     }
 
-    // 3. Metadaten-URL erstellen
-    // Michael-Modelle: Laufzeit von Michaels eigenem Server abfragen, nicht
-    // von public -- sonst könnte die angezeigte "Run:"-Zeit von einem anderen
-    // Lauf stammen als die tatsächlich von Michael bezogenen Wetterdaten.
-    const metaHost = MICHAEL_HOSTS[selectedApiName] || 'https://api.open-meteo.com';
-    const metaUrl = `${metaHost}/data/${modelMetaId}/static/meta.json`;
-
+    // 3. Laufzeit über dieselbe Host-Kette wie die Wetterdaten abfragen --
+    // sonst könnte die angezeigte "Run:"-Zeit von einem anderen Server (und
+    // damit ggf. anderen Lauf, ICON Global ist auf API_BASE oft einen Lauf
+    // hinter public) stammen als die tatsächlich bezogenen Wetterdaten.
     try {
-        const metaResponse = await fetchWithTimeout(metaUrl, 6000);
-        if (!metaResponse.ok) {
-            // Loggt den Statuscode (z.B. 404) zur besseren Diagnose
-            throw new Error(`Status ${metaResponse.status}`);
-        }
-        const metaData = await metaResponse.json();
+        const { runSec } = await fetchRunMeta(selectedApiName);
 
         // Zeitstempel ist in Sekunden (UNIX Epoch)
-        const runDate = new Date(metaData.last_run_initialisation_time * 1000);
+        const runDate = new Date(runSec * 1000);
 
         // WICHTIG: Rückgabe als ISO-String
         return runDate.toISOString();
@@ -454,7 +462,54 @@ function updateModelInfoDisplay(apiName, runKey) {
     }
 
     // Info-Popup Text aktualisieren
-    dom.modelInfoPopup.innerHTML = `<strong>Run:</strong> ${runTimeDisplay}`;
+    const metaSrc = getApiSources().find(s => s.key === `${apiName}:meta`);
+    const metaHost = metaSrc ? ` <span class="run-source">(${hostLabel(metaSrc.base)})</span>` : '';
+    dom.modelInfoPopup.innerHTML = `<strong>Run:</strong> ${runTimeDisplay}${metaHost}`;
+    updateDataSourceHint();
+}
+
+// Anzeige-Namen der Quellen-Schlüssel (sourceKey in apiClient/apifetch).
+function sourceLabel(key) {
+    if (key === 'elevation') return 'Geländehöhe (DEM90)';
+    const [model, kind] = key.split(':');
+    const name = WEATHER_MODELS.DISPLAY_MAP[model] || model;
+    if (kind === 'levels') return `${name} Modelllevel-Wolken`;
+    if (kind === 'meta') return `${name} Modelllauf (meta.json)`;
+    return `${name} Bodenwerte`;
+}
+
+/**
+ * Dezenter Hinweis unter der Modellauswahl, welcher Server die Wetterdaten
+ * des gewählten Modells ZULETZT tatsächlich geliefert hat (Bodenwerte, sonst
+ * Modelllevel, sonst meta.json). Auffällig markiert, sobald ein Fallback statt
+ * des bevorzugten Servers geliefert hat -- auch wenn nur eine der Datenarten
+ * betroffen ist. Der Tooltip listet alle bisher genutzten Quellen.
+ */
+function updateDataSourceHint() {
+    const hint = dom.dataSourceHint;
+    if (!hint || !dom.modelSelect) return;
+    const [apiName] = (dom.modelSelect.value || '').split('|');
+    const all = getApiSources();
+    const mine = all.filter(s => s.key === apiName || s.key.startsWith(`${apiName}:`));
+    const main = mine.find(s => s.key === apiName)
+        || mine.find(s => s.key === `${apiName}:levels`)
+        || mine.find(s => s.key === `${apiName}:meta`);
+    const fallback = mine.some(s => s.fallback);
+
+    if (!MODEL_API_BASES[apiName]) {
+        hint.textContent = `Datenserver: ${hostLabel(SURFACE_API_BASE)}`;
+    } else if (!main) {
+        hint.textContent = 'Datenserver: –';
+    } else {
+        const fb = mine.filter(s => s.fallback);
+        hint.textContent = fallback
+            ? `⚠ Fallback-Server: ${[...new Set(fb.map(s => hostLabel(s.base)))].join(', ')}`
+            : `Datenserver: ${hostLabel(main.base)}`;
+    }
+    hint.classList.toggle('fallback', fallback);
+    hint.title = all.length
+        ? all.map(s => `${sourceLabel(s.key)}: ${hostLabel(s.base)}${s.fallback ? ' (Fallback)' : ''}`).join('\n')
+        : '';
 }
 
 // -----------------------------------------------------------
@@ -481,6 +536,8 @@ export async function initTimeSlider(callbacks) {
     dom.modelSelect = document.getElementById('modelSelect');
     dom.modelInfoButton = document.getElementById('modelInfoButton');
     dom.modelInfoPopup = document.getElementById('modelInfoPopup');
+    dom.dataSourceHint = document.getElementById('dataSourceHint');
+    onApiSourceChange(updateDataSourceHint);
     dom.daySelect = document.getElementById('daySelect');
 
     // 2. Interne Event-Listener

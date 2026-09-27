@@ -55,7 +55,7 @@ export const WEATHER_MODELS = {
         'icon_d2',
         // icon_global: kein Bbox-Eintrag in MODEL_PROPERTIES (globale Abdeckung) --
         // timeSlider.js checkAvailableModels() prueft es deshalb nicht geometrisch,
-        // sondern gegen Michaels eigenes meta.json (siehe MICHAEL_HOSTS). Fuer
+        // sondern per meta.json ueber die Host-Kette (siehe MODEL_API_BASES). Fuer
         // Gebiete ausserhalb von EU/D2 (Nutzer-Vorgabe: "dringend erforderlich").
         'icon_global',
     ],
@@ -183,26 +183,57 @@ export const API_URLS = {
 };
 
 // -----------------------------------------------------------
-// 4b. MICHAELS INSTANZ (ratenlimitfrei, nur ICON-Modelle)
+// 4b. RATENLIMITFREIE ICON-INSTANZEN (Host-Ketten mit Fallback)
 // -----------------------------------------------------------
-// Verifiziert per curl-Stichprobe (2026-08-19) gegen open-meteo.mah.priv.at /
-// open-meteo-temp.mah.priv.at, siehe Plan "IDSSE-METOC: Michael-Instanz als
-// primäre Datenquelle". Nicht geraten/versucht-und-zurückgefallen, sondern
-// deterministisch geroutet: Michael liefert bei fehlenden Feldern still
-// `null` statt eines Fehlers, ein reiner try/catch-Fallback würde das nicht
-// abfangen -- bei einem Alarm-Tool wäre ein stiller Fehlalarm gefährlicher
-// als ein 429.
+// Namen wie in meteokit/src/config.js. Alle Instanzen sind identisch
+// aufgebaut (/v1/forecast, /v1/elevation, /data/<dataset>/static/meta.json),
+// nur die Basis-URL unterscheidet sich. Abrufe laufen über apifetch.js
+// (fetchJsonWithFallback): bevorzugter Host zuerst, bei Netzwerkfehler,
+// HTTP ≠ 2xx, kaputtem JSON oder unbrauchbarer Antwort (z. B. HTTP 200 mit
+// lauter null) der nächste; ein ausgefallener Host rückt je Endpunkt und
+// Modell für 5 min ans Ende.
+//
+// Seit 2026-09 bevorzugt: neuer Server mit ICON-D2, ICON-EU und ICON Global.
+// Stichprobe 2026-09-27: für ICON-D2 Boden- und Modelllevel-Felder wertgleich
+// mit open-meteo.mah.priv.at (gleicher Lauf); ICON Global dort ggf. einen
+// Lauf hinter api.open-meteo.com.
+export const API_BASE = "https://open-meteo.wetterheidi.de";
+// Bisherige Instanzen (Michael), jetzt Fallback. open-meteo.mah.priv.at
+// antwortet ohne Referer-Header mit 403 (Browser senden ihn, curl nicht).
+export const LEGACY_API_BASE = "https://open-meteo.mah.priv.at";
+// ICON Global lief seit 2026-08 auf einem eigenen Temp-Server (auf
+// LEGACY_API_BASE ist die dwd_icon-Ingestion kaputt). Stichprobe 2026-09-27:
+// liefert für dwd_icon nur noch null (meta.json: Lauf vom 16.09.) -- bleibt
+// als Fallback, die Null-Prüfung in weather.js überspringt ihn dann.
+export const LEGACY_API_BASE_ICON_GLOBAL = "https://open-meteo-temp.mah.priv.at";
+// Öffentliche, gemeterte Instanz -- letzter Fallback (Abrufe dorthin laufen
+// durch die RequestQueue in weather.js).
+export const SURFACE_API_BASE = "https://api.open-meteo.com";
 
-// Zwei Hosts: icon_d2/icon_eu laufen über die Hauptinstanz; icon_global/
-// icon_seamless (== dwd_icon) über eine zweite, dedizierte Instanz -- auf der
-// Hauptinstanz ist die icon_global-Level-Ingestion kaputt (bestätigt: Level-
-// Request dort liefert keine gültige JSON-Antwort).
-export const MICHAEL_HOSTS = {
-    icon_d2: "https://open-meteo.mah.priv.at",
-    icon_eu: "https://open-meteo.mah.priv.at",
-    icon_global: "https://open-meteo-temp.mah.priv.at",
-    icon_seamless: "https://open-meteo-temp.mah.priv.at",
+// Host-Kette je Modell, bevorzugter Host zuerst. Nur Modelle mit Eintrag
+// werden über die ratenlimitfreien Instanzen geroutet.
+export const MODEL_API_BASES = {
+    icon_d2: [API_BASE, LEGACY_API_BASE, SURFACE_API_BASE],
+    icon_eu: [API_BASE, LEGACY_API_BASE, SURFACE_API_BASE],
+    icon_global: [API_BASE, LEGACY_API_BASE_ICON_GLOBAL, SURFACE_API_BASE],
+    icon_seamless: [API_BASE, LEGACY_API_BASE_ICON_GLOBAL, SURFACE_API_BASE],
 };
+
+// Modelllevel-Variablen (cloud_cover_level{N}, height_agl_level{N}) gibt es
+// auf der öffentlichen Instanz nicht -- dort ohne SURFACE_API_BASE.
+export const modelLevelApiBases = (apiName) =>
+    (MODEL_API_BASES[apiName] || []).filter(b => b !== SURFACE_API_BASE);
+
+// DEM90-Geländehöhe (/v1/elevation), nur für den Orographie-Hinweis (Δ
+// Modell- vs. Geländehöhe) -- die Bodenwerte bleiben auf Modellhöhe. Wie
+// meteokit elevationApiBases(). Antwortet ein Host mit {"elevation":[nan]}
+// (kein gültiges JSON), geht es zum nächsten.
+export const ELEVATION_API_BASES = [API_BASE, LEGACY_API_BASE, SURFACE_API_BASE];
+
+// Ab dieser Differenz zwischen DEM-Geländehöhe und Modell-Orographie gilt das
+// lokale Gelände als vom Modellgitter nicht aufgelöst -- grobe Faustregel,
+// derselbe Wert wie droneforecast TERRAIN_MISMATCH_WARN_M.
+export const TERRAIN_MISMATCH_WARN_M = 100;
 
 // Modelle, bei denen Michael native Modell-Level-Wolkendaten
 // (cloud_cover_level{N}, height_agl_level{N}) tatsächlich führt -- bei
@@ -220,7 +251,9 @@ export const MICHAEL_MODEL_LEVELS = { icon_d2: 65, icon_eu: 74 };
 export const MICHAEL_CLOUD_CAP_M = 12000;
 
 // Whitelist: NUR diese Oberflächen-Parameter sind auf Michael bestätigt real
-// befüllt (curl-Stichprobe). Alles andere (snow_depth, soil_temperature_0cm,
+// befüllt (curl-Stichprobe; 2026-09-27 auch auf API_BASE bestätigt, dort
+// ebenfalls null: precipitation_probability, soil_temperature_0cm,
+// snow_depth). Alles andere (snow_depth, soil_temperature_0cm,
 // precipitation_probability, alle *_hPa-Druckstufenparameter) geht immer an
 // die öffentliche API -- bewusst als Whitelist (fail-closed), nicht als
 // Blacklist: ein künftiger, hier nicht gelisteter Parameter landet damit

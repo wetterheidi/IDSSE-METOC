@@ -6,11 +6,29 @@ zwei verschiedenen Domains:
 | Variante              | Branch                      | Domain                       | Datenquelle                                    |
 |------------------------|------------------------------|-------------------------------|--------------------------------------------------|
 | **main**               | `main`                       | https://idsse.wetterheidi.de   | öffentliche Open-Meteo API, alle Modelle          |
-| **Modell-Level**       | `feature/michael-datasource` | https://idsseml.wetterheidi.de | Michaels ratenlimitfreie Instanz, native Modell-Level-Wolken statt Druckstufen, nur icon_d2/icon_eu/icon_global |
+| **Modell-Level**       | `feature/michael-datasource` | https://idsseml.wetterheidi.de | ratenlimitfreie ICON-Instanzen (bevorzugt open-meteo.wetterheidi.de, Fallback Michaels Instanzen, dann public), native Modell-Level-Wolken statt Druckstufen, nur icon_d2/icon_eu/icon_global |
 
 Es gibt **keinen Build-Schritt** — `docs/` wird 1:1 auf den Server kopiert.
 Deployen heißt also: Branch auschecken, `docs/`-Ordner in das passende
 App-Verzeichnis kopieren, nginx neu laden.
+
+## Datenquellen der Modell-Level-Variante
+
+Host-Ketten stehen zentral in `docs/config.js` (`MODEL_API_BASES`,
+`ELEVATION_API_BASES`), die Umschaltlogik in `docs/apifetch.js` (Kopie aus
+meteokit) bzw. `docs/apiClient.js`:
+
+1. https://open-meteo.wetterheidi.de (ICON-D2, -EU, Global)
+2. https://open-meteo.mah.priv.at (D2/EU) bzw. https://open-meteo-temp.mah.priv.at (Global)
+3. https://api.open-meteo.com (öffentlich, gedrosselt über die RequestQueue)
+
+Ein Host wird übersprungen bei Netzwerkfehler/Timeout, HTTP ≠ 2xx, kaputtem
+JSON oder Antworten mit lauter `null`; danach 5 min lang je Endpunkt und
+Modell ans Ende gestellt. Unter der Modellauswahl zeigt die App, welcher
+Server geliefert hat (rot bei Fallback). Bodenwerte bleiben auf Modellhöhe
+(`elevation=nan`), die DEM90-Höhe dient nur dem Orographie-Hinweis im
+Prüfbericht. Für curl-Tests gegen open-meteo.mah.priv.at einen
+`Referer`-Header mitschicken, sonst 403.
 
 ## Einmalige Einrichtung (bereits erledigt, nur zur Erinnerung)
 
