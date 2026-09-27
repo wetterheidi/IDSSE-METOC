@@ -474,6 +474,7 @@ function sourceLabel(key) {
     const [model, kind] = key.split(':');
     const name = WEATHER_MODELS.DISPLAY_MAP[model] || model;
     if (kind === 'levels') return `${name} Modelllevel-Wolken`;
+    if (kind === 'levelheights') return `${name} Modelllevel-Höhen (Sondierung)`;
     if (kind === 'meta') return `${name} Modelllauf (meta.json)`;
     return `${name} Bodenwerte`;
 }

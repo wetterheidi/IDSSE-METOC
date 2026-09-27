@@ -235,16 +235,20 @@ export const ELEVATION_API_BASES = [API_BASE, LEGACY_API_BASE, SURFACE_API_BASE]
 // derselbe Wert wie droneforecast TERRAIN_MISMATCH_WARN_M.
 export const TERRAIN_MISMATCH_WARN_M = 100;
 
-// Modelle, bei denen Michael native Modell-Level-Wolkendaten
-// (cloud_cover_level{N}, height_agl_level{N}) tatsächlich führt -- bei
-// icon_global/icon_seamless kommt cloud_cover_level{N} auch auf der
-// dedizierten Instanz durchgehend null zurück, dort bleibt cloudBase/
-// cloudCeiling auf dem alten Druckstufen-Pfad (siehe weather.js).
-export const MICHAEL_LEVEL_CLOUD_MODELS = new Set(["icon_d2", "icon_eu"]);
+// Modelle mit nativen Modell-Level-Wolkendaten (cloud_cover_level{N},
+// height_agl_level{N}) für cloudBase/cloudCeiling. icon_global seit 2026-09:
+// auf API_BASE vollständig befüllt (Stichprobe 2026-09-27: 52 Level bis
+// 12 km, 6 Punkte weltweit, alle 168 h ohne Lücke); auf
+// LEGACY_API_BASE_ICON_GLOBAL ist cloud_cover_level{N} durchgehend null.
+// Liefert kein Level-Host brauchbare Wolken, bleiben cloudBase/cloudCeiling
+// leer (mit Hinweis) -- bewusst KEIN Rückfall auf den Druckstufen-Pfad, der
+// auf diesem Branch unsinnige (u. a. negative) Werte liefert.
+export const MICHAEL_LEVEL_CLOUD_MODELS = new Set(["icon_d2", "icon_eu", "icon_global"]);
 
 // Level-Anzahl je Modell (für die Cap-Sondierung, wie droneforecast/
-// cloudoverlay.js ensureBand()). Nur für die oben gelisteten Modelle nötig.
-export const MICHAEL_MODEL_LEVELS = { icon_d2: 65, icon_eu: 74 };
+// cloudoverlay.js ensureBand(); Werte wie meteokit MODELS[].nLevels).
+// Nur für die oben gelisteten Modelle nötig.
+export const MICHAEL_MODEL_LEVELS = { icon_d2: 65, icon_eu: 74, icon_global: 120 };
 
 // Höhen-Cap für die Wolken-Level-Sondierung (m AGL) -- wie meteokit
 // CLOUD_OVERLAY_CAP_M, deckt auch Cirren ab.

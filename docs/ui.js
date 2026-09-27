@@ -562,6 +562,7 @@ export const displayAutoWarnings = (alarmResults) => {
         // --- ENDE DYNAMISCHE SCHLEIFE ---
 
         html += terrainInfoHtml(s.terrain, p, true);
+        if (s.cloudLevelsMissing) html += `<span class="terrain-info warn">⚠ Wolkenuntergrenze/Ceiling ohne Werte (keine Modelllevel-Wolken)</span>`;
         if (s.error) html += `<span class="dashboard-error">⚠ FEHLER: ${s.error}</span>`;
         html += `</div>`;
     });
@@ -590,6 +591,9 @@ export const displayManualWarning = (profile, summary) => {
         html += `<div class="dashboard-error-box"><strong>SYSTEM-FEHLER</strong><br>${summary.error}</div>`;
     }
     html += terrainInfoHtml(summary.terrain, profile);
+    if (summary.cloudLevelsMissing) {
+        html += `<span class="terrain-info warn">⚠ Wolkenuntergrenze/Ceiling: keine Modelllevel-Wolken verfügbar – keine Werte (bewusst kein Rückfall auf Druckstufen).</span>`;
+    }
 
     // --- Ampel-Matrix ---
     let tableHtml = "";

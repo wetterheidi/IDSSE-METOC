@@ -105,7 +105,7 @@ async function ensureCloudBand(modelApiName, sampleCoord) {
 
     try {
         const { data } = await fetchModelJson(modelLevelApiBases(modelApiName), path, {
-            sourceKey: `${modelApiName}:levels`, validate: hasValuesFor(varNames),
+            sourceKey: `${modelApiName}:levelheights`, validate: hasValuesFor(varNames),
         });
         const hourly = asLocations(data)[0]?.hourly;
         if (!hourly) throw new Error('Sondierung: keine hourly-Daten erhalten.');
@@ -343,8 +343,8 @@ function calculateDerivedValue(metric, hourly, h, elevation, locationInfo, level
                 return chill;
             case 'cloudBase':
             case 'cloudCeiling': {
-                // Neuer Pfad: native Modell-Level-Wolkendaten von Michaels Instanz
-                // (nur icon_d2/icon_eu, siehe config.js MICHAEL_LEVEL_CLOUD_MODELS).
+                // Neuer Pfad: native Modell-Level-Wolkendaten der ICON-Instanzen
+                // (icon_d2/icon_eu/icon_global, siehe config.js MICHAEL_LEVEL_CLOUD_MODELS).
                 // clc ist ICONs eigene Bedeckungsdiagnose je Modell-Level -- direkter
                 // und praeziser als die RH-Heuristik auf Druckstufen unten, siehe
                 // clouds.js Kopfkommentar. Faellt levelCloud aus (Sondierung
@@ -677,7 +677,9 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
                             ? (WEATHER_MODELS.DISPLAY_MAP[modelInfo.apiName] || modelInfo.apiName)
                             : 'unbekannt'
                     };
-                    value = calculateDerivedValue(metric, hourly, dataIndex, elevation, locInfo, locationData.levelCloud);
+                    value = locationData.levelCloudMissing
+                        ? null
+                        : calculateDerivedValue(metric, hourly, dataIndex, elevation, locInfo, locationData.levelCloud);
                 }
 
                 // Prüft, ob diese Metrik 'maritimeOnly' ist UND ob der aktuelle Punkt 'land' ist.
@@ -871,6 +873,8 @@ function checkThresholds_Sampling(profile, locationsData, activeMetrics, forecas
     });
 
     summary.terrain = summarizeTerrain(locationsData);
+    summary.cloudLevelsMissing = metrics.some(m => m.paramType === 'derived_pressure')
+        && locationsData.some(l => l && l.levelCloudMissing);
 
     return summary;
 }
@@ -959,22 +963,26 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
 
     // Cloud-Level-Band: nur sondieren, wenn cloudBase/cloudCeiling ueberhaupt
     // aktiv ist (erkennbar an *_hPa-Parametern in publicOnlyHourly) UND das
-    // Modell native Level-Wolkendaten fuehrt. Schlaegt die Sondierung fehl,
-    // bleiben die *_hPa-Parameter in publicOnlyHourly -- der alte
-    // Druckstufen-Pfad greift dann unveraendert ueber public.
+    // Modell native Level-Wolkendaten fuehrt.
+    //
+    // KEIN Rückfall auf den alten Druckstufen-Pfad für diese Modelle: der
+    // liefert auf diesem Branch unsinnige Werte (Stichprobe 2026-09-27:
+    // negative Basen, z. B. München −332 m mit icon_d2, Nairobi −1527 m mit
+    // icon_global; Hamburg konstant ~180 m bei Level-Basis 1800–3000 m).
+    // Fehlen die Level-Wolken (Sondierung oder Abruf gescheitert), bleiben
+    // cloudBase/cloudCeiling daher leer (levelCloudMissing) statt falsch --
+    // mit sichtbarem Hinweis im Prüfbericht.
     const hasCloudPressureParams = publicOnlyHourly.some(p => p.endsWith('hPa'));
+    const needsLevelClouds = useMichael && hasCloudPressureParams && MICHAEL_LEVEL_CLOUD_MODELS.has(michaelApiName);
     let cloudBand = null;
-    if (useMichael && hasCloudPressureParams && MICHAEL_LEVEL_CLOUD_MODELS.has(michaelApiName) && allCoords.length > 0) {
-        cloudBand = await ensureCloudBand(michaelApiName, allCoords[0]);
-        if (cloudBand) {
-            // *_hPa-Parameter UND ihre Oberflaechen-Abhaengigkeit surface_pressure
-            // (siehe metricsConfig.js cloudBase/cloudCeiling apiName-Liste) werden
-            // beide nur vom ALTEN Druckstufen-Pfad gebraucht -- beim neuen
-            // Level-Pfad (col = {h, clc, nLevels}) unbenutzt. surface_pressure
-            // matcht die MICHAEL_SURFACE_WHITELIST nicht und wuerde sonst pro
-            // Chunk einen eigenen (kleinen, aber unnoetigen) Public-Request
-            // ausloesen.
-            publicOnlyHourly = publicOnlyHourly.filter(p => !p.endsWith('hPa') && p !== 'surface_pressure');
+    if (needsLevelClouds) {
+        if (allCoords.length > 0) cloudBand = await ensureCloudBand(michaelApiName, allCoords[0]);
+        // *_hPa-Parameter UND ihre Oberflaechen-Abhaengigkeit surface_pressure
+        // (siehe metricsConfig.js cloudBase/cloudCeiling apiName-Liste) braucht
+        // nur der alte Druckstufen-Pfad -- hier nicht mehr anfragen.
+        publicOnlyHourly = publicOnlyHourly.filter(p => !p.endsWith('hPa') && p !== 'surface_pressure');
+        if (!cloudBand) {
+            showApiErrorToast('Modelllevel-Wolken nicht verfügbar – Wolkenuntergrenze/Ceiling ohne Werte.', 'warning');
         }
     }
 
@@ -1044,6 +1052,13 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
             jobs.michaelClouds = fetchModelJson(modelLevelApiBases(michaelApiName), path, {
                 sourceKey: `${michaelApiName}:levels`,
                 validate: hasValuesFor(cloudBand.levels.map(l => `cloud_cover_level${l}`)),
+            }).catch(err => {
+                // Kein Level-Host mit brauchbaren Wolken (z. B. API_BASE aus,
+                // Fallback für icon_global liefert nur null) -- kein Abbruch
+                // des Profil-Checks, cloudBase/cloudCeiling bleiben leer.
+                console.warn(`[weather.js] Modelllevel-Wolken für ${michaelApiName} nicht verfügbar (${err.message}) -- Wolkenuntergrenze/Ceiling ohne Werte.`);
+                showApiErrorToast('Modelllevel-Wolken nicht verfügbar – Wolkenuntergrenze/Ceiling ohne Werte.', 'warning');
+                return null;
             });
         }
 
@@ -1080,6 +1095,7 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
                 }
             }
             const demElevations = byName.dem?.elevation || null;
+
             if (Object.keys(sources).length) {
                 console.log(`[weather.js] Datenquelle (${chunk.length} Punkte): ` +
                     Object.entries(sources).map(([k, b]) => `${k}=${b}`).join(', '));
@@ -1123,6 +1139,7 @@ async function _fetchRawData(allCoords, apiParams, hasForecastParams, hasMarineP
                 if (michaelCloudsData[i]?.hourly && cloudBand) {
                     merged.levelCloud = buildLevelCloud(michaelCloudsData[i].hourly, cloudBand);
                 }
+                if (needsLevelClouds && !merged.levelCloud) merged.levelCloudMissing = true;
                 // `elevation` bleibt die Modellhöhe der Bodenwerte (s. o.);
                 // modelElevation/demElevation nur für den Orographie-Hinweis.
                 if (michaelSurfaceData[i]) {
