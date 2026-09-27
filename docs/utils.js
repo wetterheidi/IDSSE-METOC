@@ -207,6 +207,17 @@ export function interpolateWindAtAltitude(z, pressureLevels, heights, uComponent
  * @param {object} weatherData - Das 'hourly' Objekt aus der API-Antwort.
  * @returns {object[]} Ein Array von Schwellenwert-Objekten für jeden Zeitpunkt.
  */
+/**
+ * true, wenn die Druckfläche p (hPa) unter Grund liegt (p ≥ Bodendruck).
+ * Open-Meteo liefert auch für solche Flächen Werte (nach unten extrapoliert,
+ * mit bodennaher Feuchte) -- als Wolkenniveau gewertet ergaben sie negative
+ * Untergrenzen (z. B. München, Bodendruck 962 hPa: 1000 hPa bei −325 m AGL).
+ * Ohne Bodendruck wird nicht gefiltert.
+ */
+export function isBelowGround(p, surfacePressure) {
+    return Number.isFinite(surfacePressure) && p >= surfacePressure;
+}
+
 export function analyzeCloudLayers(weatherData) {
     if (!weatherData || !weatherData.time || weatherData.time.length === 0) {
         return [];
@@ -224,6 +235,7 @@ export function analyzeCloudLayers(weatherData) {
 
     for (let i = 0; i < weatherData.time.length; i++) {
         const groundTemp = weatherData.temperature_2m?.[i];
+        const surfacePressure = weatherData.surface_pressure?.[i];
         let stockwerke = { low: [], mid: [], high: [] };
 
         // 1. Druckstufen den Stockwerken zuordnen – nur mit tatsächlich vorhandenen Levels
@@ -232,6 +244,7 @@ export function analyzeCloudLayers(weatherData) {
             const height = weatherData[`geopotential_height_${p}hPa`]?.[i];
 
             if (temp == null || height == null) continue;
+            if (isBelowGround(p, surfacePressure)) continue;
 
             if (groundTemp != null && groundTemp <= 0) { // Sonderfall Kaltluft
                 if (height <= 2000) stockwerke.low.push(p);
@@ -279,7 +292,9 @@ export function interpolateWeatherData(weatherData, sliderIndex, interpStep, bas
         return [];
     }
 
-    const allPressureLevels = STANDARD_PRESSURE_LEVELS;
+    // Druckflächen unter Grund (p ≥ Bodendruck) nie verwenden, s. isBelowGround().
+    const surfacePressureAtIndex = weatherData.surface_pressure?.[sliderIndex];
+    const allPressureLevels = STANDARD_PRESSURE_LEVELS.filter(hPa => !isBelowGround(hPa, surfacePressureAtIndex));
 
     // Filtere Drucklevel nur, wenn ALLE benötigten Daten für diesen Level vorhanden sind.
     const validPressureLevels = allPressureLevels.filter(hPa => {
